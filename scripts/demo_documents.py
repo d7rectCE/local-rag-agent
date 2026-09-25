@@ -12,17 +12,20 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import matplotlib
-import nbformat
 import numpy as np
 
-FONT_DIR = Path(matplotlib.get_data_path()) / "fonts" / "ttf"
-FONT = FONT_DIR / "DejaVuSans.ttf"
-FONT_BOLD = FONT_DIR / "DejaVuSans-Bold.ttf"
+
+def font(bold: bool = False) -> Path:
+    """DejaVu Sans shipped with matplotlib (imported lazily: the tests use this module without it)."""
+    import matplotlib
+
+    return Path(matplotlib.get_data_path()) / "fonts" / "ttf" / ("DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf")
 
 
 def notebook_png(nb_path: Path, cell: int) -> bytes:
     """PNG output of a notebook cell (1-based index)."""
+    import nbformat
+
     nb = nbformat.read(str(nb_path), as_version=4)
     for out in nb.cells[cell - 1].get("outputs", []):
         data = out.get("data", {})
@@ -141,8 +144,8 @@ def _fonts():
     from reportlab.pdfbase.ttfonts import TTFont
 
     if "DejaVu" not in pdfmetrics.getRegisteredFontNames():
-        pdfmetrics.registerFont(TTFont("DejaVu", str(FONT)))
-        pdfmetrics.registerFont(TTFont("DejaVu-Bold", str(FONT_BOLD)))
+        pdfmetrics.registerFont(TTFont("DejaVu", str(font())))
+        pdfmetrics.registerFont(TTFont("DejaVu-Bold", str(font(bold=True))))
 
 
 def _styles():
@@ -288,8 +291,8 @@ def build_scanned_pdf(path: Path) -> None:
     draw = ImageDraw.Draw(img)
     y = 180
     for text, size in lines:
-        font = ImageFont.truetype(str(FONT_BOLD if size > 40 else FONT), size)
-        draw.text((150, y), text, fill=25, font=font)
+        face = ImageFont.truetype(str(font(bold=size > 40)), size)
+        draw.text((150, y), text, fill=25, font=face)
         y += int(size * 1.9)
     img = img.rotate(0.6, resample=Image.BICUBIC, fillcolor=250).filter(ImageFilter.GaussianBlur(0.6))
     noise = np.random.default_rng(0).normal(0, 6, (img.height, img.width))

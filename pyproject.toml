@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "local-rag-agent"
+version = "0.1.0"
+description = "Local multimodal RAG agent over a heterogeneous research archive (.py, .ipynb, .pdf, .png)"
+readme = "README.md"
+requires-python = ">=3.11"
+# torch is expected to be installed separately (ROCm or CUDA build).
+dependencies = [
+    "torch",
+    "transformers>=4.45",
+    "huggingface-hub",
+    "numpy",
+    "nbformat",
+    "qdrant-client>=1.12",
+    "fastapi",
+    "uvicorn",
+    "httpx",
+    "pydantic>=2",
+    "pyyaml",
+    "typer",
+    "streamlit",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "nbclient", "ipykernel", "scikit-learn", "matplotlib", "pandas"]
+
+[project.scripts]
+rag = "rag_agent.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]

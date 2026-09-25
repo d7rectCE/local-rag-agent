@@ -1,0 +1,66 @@
+# Default configuration. Any key can be overridden with an environment variable
+# RAG__<SECTION>__<KEY>, e.g. RAG__LLM__MODEL=qwen3.6:27b, or by pointing
+# RAG_CONFIG to another YAML file.
+
+corpus:
+  include_ext: [".py", ".ipynb"]      # .pdf (Э4) and .png (Э5) come later
+  # Glob patterns. A pattern without "/" matches any path component
+  # (directory or file name); a pattern with "/" matches the relative path.
+  exclude:
+    - ".git"
+    - "__pycache__"
+    - ".ipynb_checkpoints"
+    - "node_modules"
+    - ".venv"
+    - "venv"
+    - "site-packages"
+    - "*.egg-info"
+    - "Аккаунты"
+  skip_hidden: true                   # skip files and folders starting with "."
+  max_file_mb: 20
+
+storage:
+  data_dir: "~/.local-rag-agent"      # indexes, catalogs and traces live here, outside the repo
+  qdrant_url: null                    # null = embedded local Qdrant; or http://localhost:6333
+
+chunking:
+  python: lines                       # lines (baseline) | ast (Э3)
+  lines_per_chunk: 60
+  overlap_lines: 10
+  max_chunk_chars: 6000
+  output_max_chars: 2000              # notebook outputs are truncated, keeping the tail
+  context_header: true                # prepend file path / title / section to the embedded text
+
+embedding:
+  model: BAAI/bge-m3
+  device: auto                        # auto | cuda | cpu
+  fp16: true
+  batch_size: 16
+  max_length: 1024
+  pooling: cls                        # cls | mean
+
+retrieval:
+  mode: dense                         # dense | sparse | hybrid (sparse needs BGE-M3)
+  top_k: 6
+
+llm:
+  provider: ollama                    # ollama | openai (any OpenAI-compatible endpoint)
+  model: qwen3.5:9b
+  base_url: http://localhost:11434
+  api_key_env: null                   # env var with the API key for provider=openai
+  temperature: 0.0
+  think: false
+  num_ctx: 16384
+  max_tokens: 1024
+  timeout_s: 300
+
+generation:
+  max_source_chars: 2500              # per retrieved fragment in the prompt
+
+tracing:
+  enabled: true
+  log_prompts: true                   # traces stay local, inside storage.data_dir
+
+api:
+  host: 127.0.0.1
+  port: 8765

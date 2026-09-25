@@ -1,0 +1,18 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Tests use a fake embedder and a fake LLM: no torch, no models, no private data.
+      - run: pip install numpy nbformat qdrant-client fastapi httpx pydantic pyyaml pytest
+      - run: python -m pytest -q

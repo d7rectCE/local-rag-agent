@@ -1,0 +1,29 @@
+# Local-only documents (ТЗ, drafts) — never published
+/*.docx
+/*.pdf
+/local/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# Environments, IDE, secrets
+.venv/
+venv/
+.env
+.env.*
+.idea/
+.vscode/
+.claude/
+configs/local.yaml
+
+# Indexes, caches, traces, runs — derived from (possibly private) data
+.rag_data/
+/data/
+/runs/
+traces/
+*.log

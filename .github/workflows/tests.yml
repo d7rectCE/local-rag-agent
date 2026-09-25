@@ -14,5 +14,5 @@ jobs:
         with:
           python-version: "3.12"
       # Tests use a fake embedder and a fake LLM: no torch, no models, no private data.
-      - run: pip install numpy nbformat qdrant-client fastapi httpx pydantic pyyaml pytest
+      - run: pip install numpy nbformat qdrant-client fastapi httpx pydantic pyyaml pytest python-docx charset-normalizer
       - run: python -m pytest -q

@@ -14,6 +14,8 @@ class FileType(StrEnum):
     IPYNB = "ipynb"
     PDF = "pdf"
     PNG = "png"
+    DOCX = "docx"
+    TXT = "txt"
 
 
 class NodeType(StrEnum):
@@ -24,10 +26,14 @@ class NodeType(StrEnum):
     MARKDOWN_CELL = "markdown_cell"
     CODE_CELL = "code_cell"
     CELL_OUTPUT = "cell_output"
-    PDF_SECTION = "pdf_section"
+    SECTION = "section"  # prose of a PDF / DOCX / TXT section (a chunk of it)
     TABLE = "table"
     FIGURE = "figure"
     IMAGE = "image"
+    REVISION = "revision"  # DOCX tracked change: deleted or inserted text
+    COMMENT = "comment"  # DOCX reviewer comment
+    LOG_CHUNK = "log_chunk"  # window of a training / console log
+    SUMMARY = "summary"  # generated digest of a file (e.g. metrics of a training log)
 
 
 class EdgeType(StrEnum):
@@ -40,17 +46,31 @@ class EdgeType(StrEnum):
 
 
 class Location(BaseModel):
-    """Where a node lives inside its file. Cells and pages are 1-based."""
+    """Where a node lives inside its file. Cells, pages and paragraphs are 1-based."""
 
     line_start: int | None = None
     line_end: int | None = None
     cell: int | None = None
     page: int | None = None
+    page_end: int | None = None
+    section: str | None = None  # heading path, "Title > Section"
+    paragraph_start: int | None = None  # DOCX body paragraphs
+    paragraph_end: int | None = None
 
     def describe(self) -> str:
         parts = []
+        if self.section:
+            parts.append(f"раздел «{self.section.split(' > ')[-1]}»")
         if self.page is not None:
-            parts.append(f"стр. {self.page}")
+            if self.page_end is not None and self.page_end != self.page:
+                parts.append(f"стр. {self.page}–{self.page_end}")
+            else:
+                parts.append(f"стр. {self.page}")
+        if self.paragraph_start is not None:
+            if self.paragraph_end is not None and self.paragraph_end != self.paragraph_start:
+                parts.append(f"абз. {self.paragraph_start}–{self.paragraph_end}")
+            else:
+                parts.append(f"абз. {self.paragraph_start}")
         if self.cell is not None:
             parts.append(f"ячейка {self.cell}")
         if self.line_start is not None:

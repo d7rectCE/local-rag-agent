@@ -36,7 +36,7 @@ def index(
     """Index a folder (incrementally)."""
     engine = _engine()
     prefs = engine.corpus_prefs(root)
-    excl = prefs["exclude"] + list(exclude or [])
+    excl = prefs["exclude"] + list(exclude) if exclude else None  # extra patterns are remembered for the folder
     progress = engine.index_folder(root, include_ext=ext or None, exclude=excl, force=force, background=True)
     last = None
     while engine.indexing_alive:

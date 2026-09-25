@@ -16,10 +16,14 @@ API_URL = os.environ.get("RAG_API_URL", "http://127.0.0.1:8765")
 TYPE_LABELS = {
     ".py": "Python (.py)",
     ".ipynb": "Ноутбуки (.ipynb)",
-    ".pdf": "PDF (этап 4)",
-    ".png": "Изображения (этап 5)",
+    ".pdf": "PDF (.pdf)",
+    ".docx": "Word (.docx)",
+    ".doc": "Word 97–2003 (.doc, нужен LibreOffice)",
+    ".txt": "Текст (.txt)",
+    ".md": "Markdown (.md)",
+    ".log": "Логи (.log)",
 }
-SUPPORTED_TYPES = [".py", ".ipynb"]
+SUPPORTED_TYPES = list(TYPE_LABELS)
 ROUTE_LABELS = {"auto": "Авто", "corpus": "Мои файлы", "general": "Общие знания"}
 STATE_LABELS = {
     "idle": "ожидание",
@@ -139,7 +143,7 @@ def sidebar(status: dict) -> None:
             default=[t for t in prefs["include_ext"] if t in SUPPORTED_TYPES],
             format_func=TYPE_LABELS.get,
         )
-        st.caption("PDF и изображения подключатся на этапах 4–5.")
+        st.caption("Изображения (.png) подключатся на этапе 5.")
         exclude = st.text_area(
             "Исключения",
             value="\n".join(prefs["exclude"]),

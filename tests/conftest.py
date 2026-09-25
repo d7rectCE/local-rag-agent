@@ -68,6 +68,7 @@ def settings(tmp_path: Path) -> Settings:
     s = Settings()
     s.storage.data_dir = str(tmp_path / "data")
     s.corpus.exclude = ["__pycache__", "Аккаунты"]
+    s.corpus.include_ext = [".py", ".ipynb"]  # document formats are tested in test_documents.py
     s.chunking.lines_per_chunk = 6
     s.chunking.overlap_lines = 2
     # no real models in tests: the reranker is injected explicitly where needed

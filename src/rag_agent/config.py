@@ -21,7 +21,7 @@ ENV_PREFIX = "RAG__"
 
 
 class CorpusConfig(BaseModel):
-    include_ext: list[str] = [".py", ".ipynb"]
+    include_ext: list[str] = [".py", ".ipynb", ".pdf", ".docx", ".txt", ".md", ".log"]
     exclude: list[str] = []
     skip_hidden: bool = True
     max_file_mb: float = 20.0
@@ -41,6 +41,19 @@ class ChunkingConfig(BaseModel):
     output_max_chars: int = 2000
     context_header: bool = True
     notebook_context: bool = True  # notebook title and heading path in every cell's header
+    text_max_chars: int = 1500  # prose chunks of PDF / DOCX / TXT, cut at paragraph boundaries
+    docx: Literal["structured", "plain"] = "structured"  # plain = flat text in fixed windows (H10 baseline)
+
+
+class DocumentsConfig(BaseModel):
+    """PDF conversion (Docling) and OCR (ТЗ S1)."""
+
+    models_dir: str = "~/.cache/docling/models"  # filled by `docling-tools models download`
+    device: Literal["auto", "cpu", "cuda"] = "auto"
+    ocr: Literal["auto", "always", "never"] = "auto"  # auto: only pages without a text layer
+    ocr_langs: list[str] = ["ru", "en"]
+    min_text_chars: int = 30  # a page with fewer extractable characters counts as scanned
+    table_mode: Literal["accurate", "fast"] = "accurate"
 
 
 class EmbeddingConfig(BaseModel):
@@ -104,6 +117,7 @@ class Settings(BaseModel):
     corpus: CorpusConfig = CorpusConfig()
     storage: StorageConfig = StorageConfig()
     chunking: ChunkingConfig = ChunkingConfig()
+    documents: DocumentsConfig = DocumentsConfig()
     embedding: EmbeddingConfig = EmbeddingConfig()
     retrieval: RetrievalConfig = RetrievalConfig()
     llm: LLMConfig = LLMConfig()

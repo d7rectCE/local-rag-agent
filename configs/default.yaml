@@ -3,7 +3,7 @@
 # RAG_CONFIG to another YAML file.
 
 corpus:
-  include_ext: [".py", ".ipynb"]      # .pdf (Э4) and .png (Э5) come later
+  include_ext: [".py", ".ipynb", ".pdf", ".docx", ".txt", ".md", ".log"]   # .doc needs LibreOffice; .png — Э5
   # Glob patterns. A pattern without "/" matches any path component
   # (directory or file name); a pattern with "/" matches the relative path.
   exclude:
@@ -32,6 +32,16 @@ chunking:
   output_max_chars: 2000              # notebook outputs are truncated, keeping the tail
   context_header: true                # prepend file path / title / section / enclosing class to the embedded text
   notebook_context: true              # notebook title and heading path in every cell's header
+  text_max_chars: 1500                # prose chunks of PDF / DOCX / TXT, cut at paragraph boundaries
+  docx: structured                    # structured (headings, tables, revisions, comments) | plain (H10 baseline)
+
+documents:                            # PDF via Docling (ТЗ S1)
+  models_dir: "~/.cache/docling/models"   # docling-tools models download layout tableformer easyocr --easyocr-lang ru --easyocr-lang en
+  device: auto                        # auto | cpu | cuda
+  ocr: auto                           # auto: OCR only when pages have no text layer | always | never
+  ocr_langs: ["ru", "en"]
+  min_text_chars: 30                  # fewer extractable characters on a page = scanned page
+  table_mode: accurate                # TableFormer: accurate | fast
 
 embedding:
   model: BAAI/bge-m3

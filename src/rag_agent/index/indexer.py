@@ -26,7 +26,7 @@ from rag_agent.index.vector_store import VectorStore
 from rag_agent.ingest import CorpusFile, SkippedFile, iter_corpus, parse_file
 from rag_agent.schema import ParsedFile
 
-SCHEMA_VERSION = 2  # 2: AST chunks, symbols/calls tables, uses_var edges
+SCHEMA_VERSION = 3  # 2: AST chunks, symbols/calls, uses_var; 3: PDF / DOCX / TXT parsers
 
 
 def _now() -> str:
@@ -46,6 +46,7 @@ def index_signature(settings: Settings) -> str:
         "schema": SCHEMA_VERSION,
         "embedding": {"model": emb.model, "pooling": emb.pooling, "max_length": emb.max_length},
         "chunking": settings.chunking.model_dump(),
+        "documents": settings.documents.model_dump(),
     }
     return hashlib.sha1(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:10]
 
@@ -209,7 +210,7 @@ def run_indexing(
                 progress.changed += 1
             t0 = time.perf_counter()
             try:
-                parsed = parse_file(cf, settings.chunking)
+                parsed = parse_file(cf, settings.chunking, settings.documents)
             except Exception as exc:  # a broken file must not stop the run
                 index.store.delete_files([cf.rel_path])
                 index.catalog.mark_error(cf.rel_path, file_type, cf.size, cf.mtime, digest, f"{type(exc).__name__}: {exc}")

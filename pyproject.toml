@@ -23,10 +23,13 @@ dependencies = [
     "pyyaml",
     "typer",
     "streamlit",
+    "python-docx",
+    "charset-normalizer",
+    "docling",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "nbclient", "ipykernel", "scikit-learn", "matplotlib", "pandas"]
+dev = ["pytest", "nbclient", "ipykernel", "scikit-learn", "matplotlib", "pandas", "reportlab", "pycocotools", "datasets"]
 
 [project.scripts]
 rag = "rag_agent.cli:app"

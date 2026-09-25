@@ -123,10 +123,13 @@ class Engine:
         return self._index
 
     def corpus_prefs(self, root: str | Path) -> dict:
+        """Per-folder choices of the user; defaults from the config otherwise. Only
+        explicit choices are remembered, so new default file types reach old folders."""
         entry = self.registry.get(Path(root).expanduser().resolve()) or {}
+        explicit = entry.get("explicit", {})
         return {
-            "include_ext": entry.get("include_ext") or self.settings.corpus.include_ext,
-            "exclude": entry.get("exclude") if entry.get("exclude") is not None else self.settings.corpus.exclude,
+            "include_ext": entry["include_ext"] if explicit.get("include_ext") else self.settings.corpus.include_ext,
+            "exclude": entry["exclude"] if explicit.get("exclude") else self.settings.corpus.exclude,
         }
 
     # --- indexing ---------------------------------------------------------
@@ -144,9 +147,14 @@ class Engine:
                 raise IndexingBusyError("indexing is already running")
             index = self.open_corpus(root)
             prefs = self.corpus_prefs(index.root)
+            explicit = dict((self.registry.get(index.root) or {}).get("explicit", {}))
+            if include_ext:
+                explicit["include_ext"] = True
+            if exclude is not None:
+                explicit["exclude"] = True
             include_ext = include_ext or prefs["include_ext"]
             exclude = prefs["exclude"] if exclude is None else exclude
-            self.registry.update(index.root, include_ext=include_ext, exclude=exclude)
+            self.registry.update(index.root, include_ext=include_ext, exclude=exclude, explicit=explicit)
             progress = IndexProgress(state="scanning", root=str(index.root))
             self.progress = progress
             self._cancel.clear()

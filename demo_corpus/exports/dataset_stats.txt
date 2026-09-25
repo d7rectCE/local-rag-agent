@@ -1,0 +1,5 @@
+dataset	n_samples	n_features	n_classes	task
+breast_cancer	569	30	2	classification
+wine	178	13	3	classification
+digits	1797	64	10	classification
+diabetes	442	10	-	regression

@@ -25,11 +25,14 @@ CLASS_NAMES = {
 
 
 class SourceRef(BaseModel):
-    """A reference span: a notebook cell, a line range of a file, or a whole file."""
+    """A reference span: a notebook cell, a line range, a page and/or a section of
+    a document, or a whole file. All given constraints must hold."""
 
     file: str
     cell: int | None = None
     lines: tuple[int, int] | None = None
+    page: int | None = None
+    section: str | None = None  # substring of the innermost heading of the node's section
 
     @property
     def file_type(self) -> str:
@@ -39,8 +42,15 @@ class SourceRef(BaseModel):
         if node.file_path != self.file:
             return False
         loc = node.location
-        if self.cell is not None:
-            return loc.cell == self.cell
+        if self.cell is not None and loc.cell != self.cell:
+            return False
+        if self.page is not None:
+            if loc.page is None or not (loc.page <= self.page <= (loc.page_end or loc.page)):
+                return False
+        if self.section is not None:
+            innermost = (loc.section or "").split(" > ")[-1]
+            if self.section.lower() not in innermost.lower():
+                return False
         if self.lines is not None:
             if loc.line_start is None or loc.cell is not None:
                 return False
@@ -49,11 +59,16 @@ class SourceRef(BaseModel):
         return True
 
     def label(self) -> str:
+        parts = [self.file]
         if self.cell is not None:
-            return f"{self.file}#cell{self.cell}"
+            parts.append(f"cell{self.cell}")
+        if self.page is not None:
+            parts.append(f"p{self.page}")
+        if self.section is not None:
+            parts.append(f"«{self.section}»")
         if self.lines is not None:
-            return f"{self.file}#L{self.lines[0]}-{self.lines[1]}"
-        return self.file
+            parts.append(f"L{self.lines[0]}-{self.lines[1]}")
+        return "#".join(parts)
 
 
 class EvalItem(BaseModel):

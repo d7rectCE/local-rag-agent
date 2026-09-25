@@ -28,3 +28,4 @@ evalsets/private/
 /runs/
 traces/
 *.log
+!demo_corpus/logs/*.log

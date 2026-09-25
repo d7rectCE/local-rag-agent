@@ -20,6 +20,7 @@ TYPE_LABELS = {
     ".png": "Изображения (этап 5)",
 }
 SUPPORTED_TYPES = [".py", ".ipynb"]
+ROUTE_LABELS = {"auto": "Авто", "corpus": "Мои файлы", "general": "Общие знания"}
 STATE_LABELS = {
     "idle": "ожидание",
     "scanning": "сканирование папки",
@@ -176,18 +177,39 @@ def sidebar(status: dict) -> None:
             st.error(st.session_state.pop("open_error"))
 
     st.divider()
-    st.subheader("Поиск")
+    st.subheader("Ответы")
+    st.segmented_control(
+        "Источник ответа", list(ROUTE_LABELS), default="auto", format_func=ROUTE_LABELS.get, key="route",
+        help="«Авто» сам решает, нужен ли поиск по файлам. «Мои файлы» всегда отвечает по файлам со ссылками. "
+        "«Общие знания» отвечает без поиска, как обычный ассистент.",
+    )
     st.slider("Фрагментов в контексте", 2, 12, status["retrieval"]["top_k"], key="top_k")
     st.selectbox("Режим", ["dense", "sparse", "hybrid"], index=["dense", "sparse", "hybrid"].index(status["retrieval"]["mode"]),
                  key="mode", help="sparse и hybrid работают только с BGE-M3")
 
 
+def answer_text(ans: dict) -> str:
+    """What the assistant said, as plain text for the dialogue history."""
+    return ans["answer"] + (f"\n\n{ans['general']}" if ans.get("general") else "")
+
+
 def render_answer(ans: dict) -> None:
+    if ans.get("notice"):
+        st.caption(f":material/info: {ans['notice']}")
+    if ans.get("standalone_question"):
+        st.caption(f":material/edit_note: Понял вопрос как: «{ans['standalone_question']}»")
     st.markdown(ans["answer"])
+    if ans.get("route") == "general":
+        st.caption(":material/school: Ответ из общих знаний модели, файлы не использовались.")
+        return
     if not ans["answerable"]:
         st.caption(":material/help: В найденных фрагментах ответа нет.")
     elif not ans["grounded"]:
         st.caption(":material/warning: Ответ без ссылок на источники, проверьте его вручную.")
+    if ans.get("general"):
+        with st.container(border=True):
+            st.caption(":material/school: Из общих знаний модели (не из ваших файлов)")
+            st.markdown(ans["general"])
     if ans["citations"]:
         st.markdown("  \n".join(f"**[{c['n']}]** `{c['file_path']}` — {c['location']}" for c in ans["citations"]))
     with st.expander(f"Найденные фрагменты ({len(ans['sources'])})"):
@@ -218,7 +240,10 @@ def main() -> None:
         sidebar(status)
 
     corpus = status.get("corpus")
-    st.title("Local RAG Agent")
+    title_col, clear_col = st.columns([5, 1], vertical_alignment="bottom")
+    title_col.title("Local RAG Agent")
+    if clear_col.button("Новый диалог", icon=":material/add_comment:", use_container_width=True):
+        st.session_state.messages = []
     if corpus:
         stats = corpus["stats"]
         st.caption(
@@ -234,7 +259,8 @@ def main() -> None:
     messages = st.session_state.setdefault("messages", [])
 
     if not corpus or not corpus["stats"]["n_files"]:
-        st.info("Выберите папку слева и нажмите «Индексировать». После индексации здесь можно задавать вопросы.")
+        st.info("Выберите папку слева и нажмите «Индексировать», чтобы задавать вопросы по своим файлам. "
+                "Общие вопросы можно задавать и без индексации.")
     for msg in messages:
         with st.chat_message(msg["role"]):
             if msg["role"] == "assistant":
@@ -242,15 +268,24 @@ def main() -> None:
             else:
                 st.markdown(msg["content"])
 
-    question = st.chat_input("Спросите про свои файлы…", disabled=not corpus)
+    question = st.chat_input("Спросите про свои файлы или задайте общий вопрос…")
     if question:
+        history = [
+            {"role": m["role"], "content": m["content"] if m["role"] == "user" else answer_text(m["answer"])}
+            for m in messages
+        ]
         messages.append({"role": "user", "content": question})
         with st.chat_message("user"):
             st.markdown(question)
         with st.chat_message("assistant"):
-            with st.spinner("Ищу и отвечаю…"):
-                ans, err = api("POST", "/ask", json={"question": question, "top_k": st.session_state.top_k,
-                                                     "mode": st.session_state.mode})
+            with st.spinner("Думаю…"):
+                ans, err = api("POST", "/ask", json={
+                    "question": question,
+                    "history": history,
+                    "top_k": st.session_state.top_k,
+                    "mode": st.session_state.mode,
+                    "route": st.session_state.get("route") or "auto",
+                })
             if err:
                 st.error(err)
                 messages.pop()

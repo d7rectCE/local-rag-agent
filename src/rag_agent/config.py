@@ -76,6 +76,14 @@ class TracingConfig(BaseModel):
     log_prompts: bool = True
 
 
+class EvaluationConfig(BaseModel):
+    judge_model: str = "qwen3.6:27b"
+    judge_think: bool = False
+    retrieval_k: int = 10
+    bootstrap: int = 1000
+    output_dir: str = "runs/eval"
+
+
 class ApiConfig(BaseModel):
     host: str = "127.0.0.1"
     port: int = 8765
@@ -90,6 +98,7 @@ class Settings(BaseModel):
     llm: LLMConfig = LLMConfig()
     generation: GenerationConfig = GenerationConfig()
     tracing: TracingConfig = TracingConfig()
+    evaluation: EvaluationConfig = EvaluationConfig()
     api: ApiConfig = ApiConfig()
 
     @property

@@ -84,6 +84,9 @@ class BaseLLM:
     def _chat(self, messages, json_schema, tools, temperature, max_tokens, think) -> LLMResponse:
         raise NotImplementedError
 
+    def unload(self) -> None:
+        """Release the model on the server, if the provider supports it."""
+
     def close(self) -> None:
         self._http.close()
 
@@ -107,7 +110,14 @@ class OllamaLLM(BaseLLM):
             body["tools"] = tools
         r = self._http.post(f"{self.cfg.base_url.rstrip('/')}/api/chat", json=body)
         if r.status_code >= 400:
-            raise LLMError(f"{self.name}: HTTP {r.status_code}: {r.text[:500]}")
+            hint = ""
+            if "kernel image is invalid" in r.text or "llama-server process has terminated" in r.text:
+                hint = (
+                    " — похоже, Ollama запустила модель на встроенной видеокарте (например, когда дискретная занята"
+                    " другой моделью). Ограничьте Ollama дискретной картой: HIP_VISIBLE_DEVICES=0 (AMD) или"
+                    " CUDA_VISIBLE_DEVICES=0 (NVIDIA), затем перезапустите Ollama."
+                )
+            raise LLMError(f"{self.name}: HTTP {r.status_code}: {r.text[:500]}{hint}")
         data = r.json()
         msg = data.get("message", {})
         return LLMResponse(
@@ -116,6 +126,13 @@ class OllamaLLM(BaseLLM):
             tool_calls=msg.get("tool_calls") or [],
             usage={"prompt_tokens": data.get("prompt_eval_count", 0), "completion_tokens": data.get("eval_count", 0)},
         )
+
+    def unload(self) -> None:
+        """Free the model's GPU memory now instead of after Ollama's keep-alive timeout."""
+        try:
+            self._http.post(f"{self.cfg.base_url.rstrip('/')}/api/generate", json={"model": self.cfg.model, "keep_alive": 0})
+        except httpx.HTTPError:
+            pass
 
     def is_available(self) -> bool:
         try:

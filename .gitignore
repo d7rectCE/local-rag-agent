@@ -20,6 +20,7 @@ venv/
 .vscode/
 .claude/
 configs/local.yaml
+evalsets/private/
 
 # Indexes, caches, traces, runs — derived from (possibly private) data
 .rag_data/

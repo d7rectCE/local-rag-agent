@@ -31,7 +31,8 @@ def test_index_and_ask(engine: Engine, corpus: Path):
     assert ans.answerable and ans.grounded
     assert ans.citations[0].n == 1
     assert ans.sources[0].cited
-    assert [s.name for s in ans.trace] == ["retrieve", "generate"]
+    assert [s.name for s in ans.trace] == ["route", "retrieve", "generate"]
+    assert ans.route == "corpus" and ans.standalone_question is None
     prompt = engine.llm.calls[-1][1]["content"]
     assert '<source id="1"' in prompt and "Вопрос:" in prompt
 
@@ -75,7 +76,9 @@ def test_refusal_when_model_says_unanswerable(settings, fake_embedder, corpus: P
 def test_api_roundtrip(settings, fake_embedder, corpus: Path):
     eng = Engine(settings, embedder=fake_embedder, llm=FakeLLM(settings))
     with TestClient(create_app(eng)) as client:
-        assert client.post("/ask", json={"question": "x"}).status_code == 404  # nothing indexed yet
+        # nothing indexed yet: general answer in auto mode, 404 when the user's files are required
+        assert client.post("/ask", json={"question": "x"}).json()["route"] == "general"
+        assert client.post("/ask", json={"question": "x", "route": "corpus"}).status_code == 404
         r = client.post("/index", json={"root": str(corpus)})
         assert r.status_code == 202
         eng._thread.join(timeout=30)
@@ -86,3 +89,50 @@ def test_api_roundtrip(settings, fake_embedder, corpus: Path):
         view = client.get("/file", params={"path": "pkg/metrics.py"}).json()
         assert view[0]["node_type"] == "file"
         assert client.post("/index", json={"root": str(corpus / "missing")}).status_code == 404
+
+
+def test_general_route_answers_without_retrieval(settings, fake_embedder, corpus: Path):
+    llm = FakeLLM(settings, route={"route": "general", "standalone_question": "Что такое ROC-AUC?"},
+                  general="ROC-AUC — площадь под ROC-кривой.")
+    eng = Engine(settings, embedder=fake_embedder, llm=llm)
+    eng.index_folder(corpus)
+    ans = eng.ask("Что такое ROC-AUC?")
+    assert ans.route == "general" and ans.answer.startswith("ROC-AUC")
+    assert not ans.sources and not ans.citations and ans.grounded is None
+    assert llm.kinds == ["route", "general"]
+    eng.close()
+
+
+def test_forced_route_skips_router_without_history(engine: Engine, corpus: Path):
+    engine.index_folder(corpus)
+    engine.ask("Что такое F1?", route="general")
+    engine.ask("learning rate", route="corpus")
+    assert engine.llm.kinds == ["general", "answer"]
+
+
+def test_follow_up_is_rewritten_with_history(settings, fake_embedder, corpus: Path):
+    llm = FakeLLM(settings, route={"route": "corpus", "standalone_question": "Где реализована функция compute_f1?"})
+    eng = Engine(settings, embedder=fake_embedder, llm=llm)
+    eng.index_folder(corpus)
+    history = [{"role": "user", "content": "Есть ли у меня функция compute_f1?"},
+               {"role": "assistant", "content": "Да [1]."}]
+    ans = eng.ask("А где она?", history=history)
+    assert ans.standalone_question == "Где реализована функция compute_f1?"
+    assert ans.sources[0].file_path == "pkg/metrics.py"  # retrieval used the rewritten question
+    assert "Есть ли у меня функция compute_f1?" in llm.calls[0][-1]["content"]  # router saw the history
+    eng.close()
+
+
+def test_router_failure_falls_back_to_corpus(settings, fake_embedder, corpus: Path):
+    eng = Engine(settings, embedder=fake_embedder, llm=FakeLLM(settings, route="not json"))
+    eng.index_folder(corpus)
+    ans = eng.ask("learning rate")
+    assert ans.route == "corpus" and ans.trace[0].detail["fallback"] is True
+    eng.close()
+
+
+def test_without_index_general_answer_with_notice(settings, fake_embedder):
+    eng = Engine(settings, embedder=fake_embedder, llm=FakeLLM(settings))
+    ans = eng.ask("Какой learning rate я использовал?")
+    assert ans.route == "general" and ans.notice and "не проиндексирована" in ans.notice
+    eng.close()

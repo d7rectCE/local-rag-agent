@@ -10,11 +10,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from rag_agent.config import REPO_ROOT, Settings, load_settings
-from rag_agent.generation import Answer, TraceStep, generate_answer
+from rag_agent.generation import Answer, TraceStep, generate_answer, generate_general
 from rag_agent.index.embedder import Embedder
 from rag_agent.index.indexer import CorpusIndex, IndexProgress, corpus_key, run_indexing
 from rag_agent.llm import BaseLLM, make_llm
-from rag_agent.retrieval import Mode, search
+from rag_agent.retrieval import Hit, Mode, search
+from rag_agent.router import RouteChoice, route_question, trim_history
 from rag_agent.tracing import NULL_TRACER, Tracer
 
 log = logging.getLogger(__name__)
@@ -177,28 +178,85 @@ class Engine:
         return self._thread is not None and self._thread.is_alive()
 
     # --- question answering -------------------------------------------------
-    def ask(self, question: str, top_k: int | None = None, mode: Mode | None = None) -> Answer:
+    def search(self, question: str, top_k: int | None = None, mode: Mode | None = None) -> list[Hit]:
+        return search(
+            self.index,
+            self.embedder,
+            question,
+            top_k or self.settings.retrieval.top_k,
+            mode or self.settings.retrieval.mode,
+        )
+
+    def ask(
+        self,
+        question: str,
+        history: list[dict] | None = None,
+        top_k: int | None = None,
+        mode: Mode | None = None,
+        route: RouteChoice = "auto",
+    ) -> Answer:
+        """Route the question, then answer it from the user's files (with citations)
+        or from general knowledge. ``history`` is the previous chat turns
+        (``{"role": "user"|"assistant", "content": ...}``) for follow-up questions."""
         question = question.strip()
         if not question:
             raise ValueError("empty question")
-        index = self.index
-        top_k = top_k or self.settings.retrieval.top_k
-        mode = mode or self.settings.retrieval.mode
         t0 = time.perf_counter()
-        hits = search(index, self.embedder, question, top_k, mode)
-        t1 = time.perf_counter()
-        answer = generate_answer(question, hits, self.llm, self.settings.generation.max_source_chars)
-        retrieval_step = TraceStep(
-            name="retrieve",
-            duration_s=round(t1 - t0, 3),
-            detail={"mode": mode, "top_k": top_k, "hits": [[h.node.id, round(h.score, 4)] for h in hits]},
-        )
-        answer.trace.insert(0, retrieval_step)
+        turns = trim_history(history)
+        steps: list[TraceStep] = []
+
+        index = None
+        try:
+            index = self.index
+        except NoCorpusError:
+            if route == "corpus":
+                raise
+
+        standalone = question
+        chosen = route
+        if route == "auto" or turns:  # the router also rewrites follow-ups into standalone questions
+            decision = route_question(question, turns, self.llm)
+            standalone = decision.standalone_question
+            if route == "auto":
+                chosen = decision.route
+            steps.append(
+                TraceStep(
+                    name="route",
+                    duration_s=round(decision.latency_s, 3),
+                    detail={"route": decision.route, "standalone_question": standalone, "fallback": decision.fallback},
+                )
+            )
+
+        notice = None
+        if chosen == "corpus" and index is None:
+            chosen, notice = "general", "Папка ещё не проиндексирована, поэтому ответ дан из общих знаний модели."
+
+        if chosen == "general":
+            answer = generate_general(question, turns, self.llm)
+        else:
+            top_k = top_k or self.settings.retrieval.top_k
+            mode = mode or self.settings.retrieval.mode
+            t1 = time.perf_counter()
+            hits = search(index, self.embedder, standalone, top_k, mode)
+            steps.append(
+                TraceStep(
+                    name="retrieve",
+                    duration_s=round(time.perf_counter() - t1, 3),
+                    detail={"mode": mode, "top_k": top_k, "hits": [[h.node.id, round(h.score, 4)] for h in hits]},
+                )
+            )
+            answer = generate_answer(standalone, hits, self.llm, self.settings.generation.max_source_chars)
+            answer.question = question
+
+        answer.standalone_question = standalone if standalone != question else None
+        answer.notice = notice
+        answer.trace[:0] = steps
         answer.latency_s = round(time.perf_counter() - t0, 3)
         self.tracer.log(
             "ask",
-            corpus=str(index.root),
+            corpus=str(index.root) if index is not None else None,
             question=question if self.tracer.log_prompts else None,
+            route=answer.route,
             answerable=answer.answerable,
             grounded=answer.grounded,
             citations=[c.node_id for c in answer.citations],

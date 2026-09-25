@@ -1,0 +1,139 @@
+"""Evaluation-set format (ТЗ 5.1, S9) and chunking-independent source matching."""
+
+from __future__ import annotations
+
+from collections import Counter
+from pathlib import Path
+from typing import Literal
+
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from rag_agent.schema import Node
+
+QuestionClass = Literal["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "G"]
+
+CLASS_NAMES = {
+    "Q1": "фактологический",
+    "Q2": "навигационный по коду",
+    "Q3": "агрегатный",
+    "Q4": "визуальный",
+    "Q5": "многошаговый",
+    "Q6": "неотвечаемый",
+    "G": "общий (без файлов)",
+}
+
+
+class SourceRef(BaseModel):
+    """A reference span: a notebook cell, a line range of a file, or a whole file."""
+
+    file: str
+    cell: int | None = None
+    lines: tuple[int, int] | None = None
+
+    @property
+    def file_type(self) -> str:
+        return Path(self.file).suffix.lstrip(".").lower()
+
+    def matches(self, node: Node) -> bool:
+        if node.file_path != self.file:
+            return False
+        loc = node.location
+        if self.cell is not None:
+            return loc.cell == self.cell
+        if self.lines is not None:
+            if loc.line_start is None or loc.cell is not None:
+                return False
+            end = loc.line_end if loc.line_end is not None else loc.line_start
+            return loc.line_start <= self.lines[1] and end >= self.lines[0]
+        return True
+
+    def label(self) -> str:
+        if self.cell is not None:
+            return f"{self.file}#cell{self.cell}"
+        if self.lines is not None:
+            return f"{self.file}#L{self.lines[0]}-{self.lines[1]}"
+        return self.file
+
+
+class EvalItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str
+    cls: QuestionClass = Field(alias="class")
+    question: str
+    history: list[dict] = Field(default_factory=list)
+    standalone: str | None = None
+    answer: str | None = None
+    must_include: list[str] = Field(default_factory=list)
+    sources: list[SourceRef] = Field(default_factory=list)
+    notes: str | None = None
+
+    @property
+    def expected_route(self) -> str:
+        return "general" if self.cls == "G" else "corpus"
+
+    @property
+    def expects_refusal(self) -> bool:
+        return self.cls == "Q6"
+
+    @property
+    def retrieval_query(self) -> str:
+        return self.standalone or self.question
+
+    @property
+    def file_types(self) -> list[str]:
+        return sorted({s.file_type for s in self.sources})
+
+
+class EvalSet(BaseModel):
+    version: int = 1
+    name: str
+    corpus: str | None = None
+    items: list[EvalItem]
+    path: Path | None = None
+
+    @model_validator(mode="after")
+    def _unique_ids(self) -> "EvalSet":
+        dup = [k for k, v in Counter(i.id for i in self.items).items() if v > 1]
+        if dup:
+            raise ValueError(f"duplicate item ids: {dup}")
+        return self
+
+    def corpus_root(self) -> Path | None:
+        if not self.corpus:
+            return None
+        root = Path(self.corpus)
+        if not root.is_absolute() and self.path is not None:
+            root = self.path.parent / root
+        return root.resolve()
+
+
+def load_evalset(path: str | Path) -> EvalSet:
+    path = Path(path)
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    es = EvalSet.model_validate(data)
+    es.path = path.resolve()
+    return es
+
+
+def validate_evalset(es: EvalSet, catalog) -> list[str]:
+    """Consistency checks against an indexed corpus: referenced files, cells and
+    line ranges must exist; classes must carry the right kind of annotation."""
+    problems: list[str] = []
+    cache: dict[str, list[Node]] = {}
+    for item in es.items:
+        if item.cls in ("Q6", "G") and item.sources:
+            problems.append(f"{item.id}: class {item.cls} must not have sources")
+        if item.cls not in ("Q6", "G") and not item.sources:
+            problems.append(f"{item.id}: class {item.cls} needs at least one source")
+        if item.cls != "Q6" and not item.answer:
+            problems.append(f"{item.id}: reference answer is missing")
+        for ref in item.sources:
+            nodes = cache.setdefault(ref.file, catalog.file_nodes(ref.file))
+            if not nodes:
+                problems.append(f"{item.id}: {ref.file} is not in the index")
+                continue
+            if not any(ref.matches(n) for n in nodes if n.node_type != "file"):
+                problems.append(f"{item.id}: {ref.label()} matches no indexed fragment")
+    return problems

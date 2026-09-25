@@ -61,6 +61,13 @@ tracing:
   enabled: true
   log_prompts: true                   # traces stay local, inside storage.data_dir
 
+evaluation:
+  judge_model: qwen3.6:27b            # same provider as llm; ideally a different family than the generator
+  judge_think: false
+  retrieval_k: 10                     # depth for Recall@k / MRR / nDCG@10
+  bootstrap: 1000                     # resamples for confidence intervals
+  output_dir: runs/eval               # relative to the repo; not committed
+
 api:
   host: 127.0.0.1
   port: 8765

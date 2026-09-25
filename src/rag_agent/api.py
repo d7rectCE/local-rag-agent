@@ -26,10 +26,17 @@ class OpenRequest(BaseModel):
     root: str
 
 
+class ChatTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
 class AskRequest(BaseModel):
     question: str
+    history: list[ChatTurn] = []
     top_k: int | None = None
     mode: Literal["dense", "sparse", "hybrid"] | None = None
+    route: Literal["auto", "corpus", "general"] = "auto"
 
 
 def create_app(engine: Engine | None = None) -> FastAPI:
@@ -109,7 +116,13 @@ def create_app(engine: Engine | None = None) -> FastAPI:
     @app.post("/ask")
     def ask(req: AskRequest) -> Answer:
         try:
-            return eng().ask(req.question, top_k=req.top_k, mode=req.mode)
+            return eng().ask(
+                req.question,
+                history=[t.model_dump() for t in req.history],
+                top_k=req.top_k,
+                mode=req.mode,
+                route=req.route,
+            )
         except NoCorpusError as exc:
             raise HTTPException(404, "Сначала проиндексируйте папку") from exc
         except ValueError as exc:

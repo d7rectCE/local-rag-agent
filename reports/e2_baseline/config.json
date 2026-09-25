@@ -1,0 +1,29 @@
+{
+  "evalset": {
+    "name": "demo_v1",
+    "version": 1,
+    "items": 50
+  },
+  "corpus": "demo_corpus",
+  "index_signature": "3317518496",
+  "embedder": "BAAI/bge-m3",
+  "chunking": {
+    "python": "lines",
+    "lines_per_chunk": 60,
+    "overlap_lines": 10,
+    "max_chunk_chars": 6000,
+    "output_max_chars": 2000,
+    "context_header": true
+  },
+  "retrieval": {
+    "mode": "dense",
+    "top_k": 6,
+    "eval_k": 10
+  },
+  "route": "auto",
+  "llm": "ollama:qwen3.5:9b",
+  "judge": "qwen3.6:27b",
+  "git": "3f1734f+dirty",
+  "date": "2026-09-25T19:02:29",
+  "name": "e2-baseline"
+}

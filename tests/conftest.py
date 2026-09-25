@@ -98,14 +98,36 @@ class FakeEmbedder:
 
 
 class FakeLLM(BaseLLM):
-    def __init__(self, settings: Settings, reply: dict | str | None = None):
+    """Answers by request kind: router (schema with "route"), grounded answer
+    (schema with "answerable") or a free-text general answer."""
+
+    def __init__(self, settings: Settings, reply: dict | str | None = None, route: dict | str | None = None,
+                 general: str = "Общий ответ."):
         super().__init__(settings.llm)
-        self.reply = reply if reply is not None else {"answerable": True, "answer": "Learning rate был 0.05 [1]."}
+        self.reply = reply if reply is not None else {"answerable": True, "answer": "Learning rate был 0.05 [1].", "general": ""}
+        self.route = route  # None -> corpus with the question unchanged
+        self.general = general
         self.calls: list[list[dict]] = []
+        self.kinds: list[str] = []
 
     def _chat(self, messages, json_schema, tools, temperature, max_tokens, think) -> LLMResponse:
         self.calls.append(messages)
-        content = self.reply if isinstance(self.reply, str) else json.dumps(self.reply, ensure_ascii=False)
+        props = (json_schema or {}).get("properties", {})
+        if "route" in props:
+            self.kinds.append("route")
+            question = messages[-1]["content"].split("Последний вопрос: ", 1)[-1]
+            reply = self.route if self.route is not None else {"route": "corpus", "standalone_question": question}
+        elif "answerable" in props:
+            self.kinds.append("answer")
+            reply = self.reply
+        elif "correctness" in props:
+            self.kinds.append("judge")
+            reply = {"correctness": "correct", "faithful": True, "supported_citations": [1], "relevant": True,
+                     "rationale": "ok"}
+        else:
+            self.kinds.append("general")
+            reply = self.general
+        content = reply if isinstance(reply, str) else json.dumps(reply, ensure_ascii=False)
         return LLMResponse(content=content, usage={"prompt_tokens": 10, "completion_tokens": 5})
 
     def is_available(self) -> bool:

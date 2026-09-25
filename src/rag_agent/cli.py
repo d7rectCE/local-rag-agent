@@ -63,21 +63,26 @@ def ask(
     root: Optional[Path] = typer.Option(None, help="Corpus folder (default: last used)"),
     top_k: Optional[int] = typer.Option(None, "--top-k"),
     mode: Optional[str] = typer.Option(None, help="dense | sparse | hybrid"),
+    route: str = typer.Option("auto", help="auto | corpus (my files) | general (general knowledge)"),
     as_json: bool = typer.Option(False, "--json", help="Print the full answer object"),
 ) -> None:
-    """Ask a question about the indexed folder."""
+    """Ask a question: about the indexed folder or a general one (routed automatically)."""
     engine = _engine()
     if root:
         engine.open_corpus(root)
-    ans = engine.ask(question, top_k=top_k, mode=mode)
+    ans = engine.ask(question, top_k=top_k, mode=mode, route=route)
     if as_json:
         typer.echo(ans.model_dump_json(indent=2))
     else:
+        if ans.notice:
+            typer.echo(f"({ans.notice})\n")
         typer.echo(ans.answer)
+        if ans.general:
+            typer.echo(f"\nИз общих знаний:\n{ans.general}")
         typer.echo("")
         for c in ans.citations:
             typer.echo(f"[{c.n}] {c.file_path} — {c.location}")
-        typer.echo(f"\n({ans.latency_s:.1f}s, answerable={ans.answerable}, grounded={ans.grounded})")
+        typer.echo(f"\n({ans.latency_s:.1f}s, route={ans.route}, answerable={ans.answerable}, grounded={ans.grounded})")
     engine.close()
 
 
@@ -99,6 +104,119 @@ def serve(host: Optional[str] = None, port: Optional[int] = None) -> None:
     settings = load_settings()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     uvicorn.run(create_app(), host=host or settings.api.host, port=port or settings.api.port)
+
+
+DEFAULT_EVALSET = REPO_ROOT / "evalsets" / "demo_v1.yaml"
+
+
+@app.command("eval")
+def eval_cmd(
+    evalset: Path = typer.Argument(DEFAULT_EVALSET, help="Evaluation set (YAML)"),
+    root: Optional[Path] = typer.Option(None, help="Corpus folder (default: the one named in the eval set)"),
+    name: str = typer.Option("", help="Run name for the output folder"),
+    judge: bool = typer.Option(True, "--judge/--no-judge", help="Score answers with the LLM judge"),
+    retrieval_only: bool = typer.Option(False, help="Only retrieval metrics, no generation"),
+    mode: Optional[str] = typer.Option(None, help="dense | sparse | hybrid"),
+    top_k: Optional[int] = typer.Option(None, "--top-k"),
+    route: str = typer.Option("auto", help="auto | corpus | general"),
+    limit: Optional[int] = typer.Option(None, help="Evaluate only the first N questions"),
+) -> None:
+    """Evaluate on a reference question set; writes results and a Markdown report."""
+    from datetime import datetime
+
+    from rag_agent.engine import Engine
+    from rag_agent.evaluation.dataset import load_evalset, validate_evalset
+    from rag_agent.evaluation.report import render_report
+    from rag_agent.evaluation.runner import run_config, run_eval, run_judge, summarize
+    from rag_agent.llm import make_llm
+
+    settings = load_settings()
+    ev = settings.evaluation
+    es = load_evalset(evalset)
+    corpus = root or es.corpus_root()
+    if corpus is None:
+        raise typer.BadParameter("the eval set names no corpus; pass --root")
+    engine = Engine(settings)
+    progress = engine.index_folder(corpus)  # incremental: makes sure the index matches the files
+    if progress.state != "done":
+        raise typer.Exit(1)
+    problems = validate_evalset(es, engine.index.catalog)
+    if problems:
+        typer.echo("Eval set does not match the index:\n  " + "\n  ".join(problems))
+        raise typer.Exit(1)
+
+    mode = mode or settings.retrieval.mode
+    top_k = top_k or settings.retrieval.top_k
+    judge_name = None if retrieval_only or not judge else ev.judge_model
+
+    def show(r) -> None:
+        parts = [f"{r.id:6s}"]
+        if r.retrieval:
+            parts.append(f"R@5={r.retrieval['recall@5']:.2f}")
+        if r.route:
+            parts.append(f"route={r.route}{'' if r.route_ok else '(!)'}")
+        if r.refused:
+            parts.append("refused")
+        if r.must_include_ok is not None:
+            parts.append(f"must={'ok' if r.must_include_ok else 'FAIL'}")
+        if r.latency_s is not None:
+            parts.append(f"{r.latency_s:.1f}s")
+        if r.error:
+            parts.append(f"ERROR {r.error}")
+        typer.echo("  ".join(parts))
+
+    results = run_eval(
+        engine, es, retrieval_k=ev.retrieval_k, top_k=top_k, mode=mode, route=route,
+        generate=not retrieval_only, limit=limit, on_item=show,
+    )
+    if judge_name:
+        typer.echo(f"Judging with {judge_name}…")
+        # generator and judge never share GPU memory: a model that does not fit may be put on another device
+        engine.llm.unload()
+        judge_llm = make_llm(settings.llm.model_copy(update={"model": judge_name, "think": ev.judge_think}), engine.tracer)
+        run_judge(results, es, judge_llm, on_item=lambda r: typer.echo(f"{r.id:6s}  {r.judge.correctness}"))
+        judge_llm.unload()
+        judge_llm.close()
+
+    summary = summarize(results, es, n_boot=ev.bootstrap)
+    config = run_config(engine, es, top_k=top_k, mode=mode, route=route, judge=judge_name, retrieval_k=ev.retrieval_k)
+    config["name"] = name or None
+    run_name = "-".join(p for p in (datetime.now().strftime("%Y%m%d-%H%M%S"), name or es.name, mode) if p)
+    out_dir = REPO_ROOT / ev.output_dir / run_name
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "config.json").write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    with (out_dir / "results.jsonl").open("w", encoding="utf-8") as f:
+        for r in results:
+            f.write(r.model_dump_json() + "\n")
+    (out_dir / "report.md").write_text(render_report(summary, results, es, config), encoding="utf-8")
+    engine.close()
+
+    ret = summary["retrieval"]
+    typer.echo(
+        f"\nRecall@5 {ret['recall@5']['mean']:.3f}  MRR {ret['mrr']['mean']:.3f}  nDCG@10 {ret['ndcg@10']['mean']:.3f}"
+    )
+    if "judge" in summary:
+        typer.echo(f"Correctness (judge) {summary['judge']['correctness']['mean']:.3f}")
+    typer.echo(f"Report: {out_dir / 'report.md'}")
+
+
+@app.command("eval-validate")
+def eval_validate(evalset: Path = typer.Argument(DEFAULT_EVALSET), root: Optional[Path] = None) -> None:
+    """Check that every reference in the eval set points to an indexed fragment."""
+    from rag_agent.engine import Engine
+    from rag_agent.evaluation.dataset import load_evalset, validate_evalset
+
+    es = load_evalset(evalset)
+    engine = Engine()
+    engine.index_folder(root or es.corpus_root())
+    problems = validate_evalset(es, engine.index.catalog)
+    engine.close()
+    counts = {c: sum(1 for i in es.items if i.cls == c) for c in ("Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "G")}
+    typer.echo(f"{es.name}: {len(es.items)} questions {counts}")
+    typer.echo("OK" if not problems else "Problems:\n  " + "\n  ".join(problems))
+    if problems:
+        raise typer.Exit(1)
 
 
 def _ui_command(port: int) -> list[str]:

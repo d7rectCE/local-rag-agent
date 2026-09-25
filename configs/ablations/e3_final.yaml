@@ -1,0 +1,10 @@
+# Э3, итог: сквозная оценка (ответы + LLM-судья) базовой конфигурации Э1 и итоговой конфигурации Э3.
+name: e3-final-end-to-end
+evalset: ../../evalsets/demo_v2.yaml
+retrieval_only: false
+judge: true
+runs:
+  - name: "Э1: строки + заголовки, dense"
+    overrides: {chunking: {python: lines, context_header: true, notebook_context: false}, retrieval: {mode: dense, rerank: false, symbols: false}}
+  - name: "Э3: AST + заголовки + контекст ноутбука, dense + реранкер + имена"
+    overrides: {chunking: {python: ast, context_header: true, notebook_context: true}, retrieval: {mode: dense, rerank: true, symbols: true}}

@@ -33,12 +33,14 @@ class StorageConfig(BaseModel):
 
 
 class ChunkingConfig(BaseModel):
-    python: Literal["lines", "ast"] = "lines"
+    python: Literal["lines", "ast"] = "ast"
     lines_per_chunk: int = 60
     overlap_lines: int = 10
+    ast_max_chars: int = 1800  # AST chunk budget in non-whitespace characters
     max_chunk_chars: int = 6000
     output_max_chars: int = 2000
     context_header: bool = True
+    notebook_context: bool = True  # notebook title and heading path in every cell's header
 
 
 class EmbeddingConfig(BaseModel):
@@ -48,11 +50,20 @@ class EmbeddingConfig(BaseModel):
     batch_size: int = 16
     max_length: int = 1024
     pooling: Literal["cls", "mean"] = "cls"
+    # load models only from the local Hugging Face cache: no network calls at runtime (NFR1);
+    # a missing model raises an error with the download command
+    local_files_only: bool = True
 
 
 class RetrievalConfig(BaseModel):
     mode: Literal["dense", "sparse", "hybrid"] = "dense"
     top_k: int = 6
+    symbols: bool = True  # exact-name channel: definitions and call sites of identifiers in the query
+    rerank: bool = True
+    rerank_model: str = "BAAI/bge-reranker-v2-m3"
+    rerank_pool: int = 40  # first-stage candidates passed to the cross-encoder
+    rerank_max_length: int = 512
+    rerank_batch_size: int = 16
 
 
 class LLMConfig(BaseModel):

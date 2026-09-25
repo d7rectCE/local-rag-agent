@@ -14,7 +14,8 @@ from rag_agent.generation import Answer, TraceStep, generate_answer, generate_ge
 from rag_agent.index.embedder import Embedder
 from rag_agent.index.indexer import CorpusIndex, IndexProgress, corpus_key, run_indexing
 from rag_agent.llm import BaseLLM, make_llm
-from rag_agent.retrieval import Hit, Mode, search
+from rag_agent.index.reranker import Reranker
+from rag_agent.retrieval import Hit, Mode, corpus_mentions, search
 from rag_agent.router import RouteChoice, route_question, trim_history
 from rag_agent.tracing import NULL_TRACER, Tracer
 
@@ -70,13 +71,20 @@ class CorpusRegistry:
 
 
 class Engine:
-    def __init__(self, settings: Settings | None = None, embedder: Embedder | None = None, llm: BaseLLM | None = None):
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        embedder: Embedder | None = None,
+        llm: BaseLLM | None = None,
+        reranker: Reranker | None = None,
+    ):
         self.settings = settings or load_settings()
         data_dir = self.settings.data_dir
         tr = self.settings.tracing
         self.tracer = Tracer(data_dir / "traces", tr.log_prompts) if tr.enabled else NULL_TRACER
         self.embedder = embedder or Embedder(self.settings.embedding)
         self.llm = llm or make_llm(self.settings.llm, self.tracer)
+        self._reranker = reranker
         self.registry = CorpusRegistry(data_dir / "corpora.json")
         self.progress = IndexProgress()
         self._index: CorpusIndex | None = None
@@ -178,13 +186,34 @@ class Engine:
         return self._thread is not None and self._thread.is_alive()
 
     # --- question answering -------------------------------------------------
-    def search(self, question: str, top_k: int | None = None, mode: Mode | None = None) -> list[Hit]:
+    @property
+    def reranker(self) -> Reranker:
+        if self._reranker is None:
+            emb = self.settings.embedding
+            self._reranker = Reranker(self.settings.retrieval, device=emb.device, fp16=emb.fp16,
+                                      local_files_only=emb.local_files_only)
+        return self._reranker
+
+    def search(
+        self,
+        question: str,
+        top_k: int | None = None,
+        mode: Mode | None = None,
+        rerank: bool | None = None,
+        symbols: bool | None = None,
+    ) -> list[Hit]:
+        cfg = self.settings.retrieval
+        use_rerank = cfg.rerank if rerank is None else rerank
         return search(
             self.index,
             self.embedder,
             question,
-            top_k or self.settings.retrieval.top_k,
-            mode or self.settings.retrieval.mode,
+            top_k or cfg.top_k,
+            mode or cfg.mode,
+            reranker=self.reranker if use_rerank else None,
+            rerank_pool=cfg.rerank_pool,
+            symbols=cfg.symbols if symbols is None else symbols,
+            with_header=self.settings.chunking.context_header,
         )
 
     def ask(
@@ -194,6 +223,8 @@ class Engine:
         top_k: int | None = None,
         mode: Mode | None = None,
         route: RouteChoice = "auto",
+        rerank: bool | None = None,
+        symbols: bool | None = None,
     ) -> Answer:
         """Route the question, then answer it from the user's files (with citations)
         or from general knowledge. ``history`` is the previous chat turns
@@ -217,15 +248,15 @@ class Engine:
         if route == "auto" or turns:  # the router also rewrites follow-ups into standalone questions
             decision = route_question(question, turns, self.llm)
             standalone = decision.standalone_question
+            detail = {"route": decision.route, "standalone_question": standalone, "fallback": decision.fallback}
             if route == "auto":
                 chosen = decision.route
-            steps.append(
-                TraceStep(
-                    name="route",
-                    duration_s=round(decision.latency_s, 3),
-                    detail={"route": decision.route, "standalone_question": standalone, "fallback": decision.fallback},
-                )
-            )
+                # corpus signal: a question that names a function, class or file of the corpus is about the files
+                mentions = corpus_mentions(index, standalone) if index is not None and chosen == "general" else []
+                if mentions:
+                    chosen = "corpus"
+                    detail.update(override="corpus", corpus_mentions=mentions)
+            steps.append(TraceStep(name="route", duration_s=round(decision.latency_s, 3), detail=detail))
 
         notice = None
         if chosen == "corpus" and index is None:
@@ -237,12 +268,19 @@ class Engine:
             top_k = top_k or self.settings.retrieval.top_k
             mode = mode or self.settings.retrieval.mode
             t1 = time.perf_counter()
-            hits = search(index, self.embedder, standalone, top_k, mode)
+            hits = self.search(standalone, top_k, mode, rerank=rerank, symbols=symbols)
+            cfg = self.settings.retrieval
             steps.append(
                 TraceStep(
                     name="retrieve",
                     duration_s=round(time.perf_counter() - t1, 3),
-                    detail={"mode": mode, "top_k": top_k, "hits": [[h.node.id, round(h.score, 4)] for h in hits]},
+                    detail={
+                        "mode": mode,
+                        "top_k": top_k,
+                        "rerank": cfg.rerank if rerank is None else rerank,
+                        "symbols": cfg.symbols if symbols is None else symbols,
+                        "hits": [[h.node.id, round(h.score, 4)] for h in hits],
+                    },
                 )
             )
             answer = generate_answer(standalone, hits, self.llm, self.settings.generation.max_source_chars)
@@ -264,6 +302,11 @@ class Engine:
             latency_s=answer.latency_s,
         )
         return answer
+
+    def lookup_symbol(self, name: str) -> dict:
+        """Definitions and call sites of a name from the static index (no LLM, ТЗ S2)."""
+        catalog = self.index.catalog
+        return {"name": name, "definitions": catalog.find_symbols(name), "calls": catalog.find_calls(name)}
 
     # --- introspection ------------------------------------------------------
     def file_view(self, rel_path: str) -> list[dict]:

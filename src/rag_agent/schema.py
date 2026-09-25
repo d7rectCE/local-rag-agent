@@ -89,25 +89,46 @@ class Node(BaseModel):
         return f"{self.file_path} ({loc})" if loc else self.file_path
 
     def embedding_text(self, with_header: bool = True) -> str:
-        parts = []
-        if with_header:
-            header = f"File: {self.file_path}"
-            if self.title:
-                header += f" | {self.title}"
-            section = self.metadata.get("section")
-            if section:
-                header += f" | {section}"
-            parts.append(header)
-        if self.context:
-            parts.append(self.context)
-        parts.append(self.text)
-        return "\n".join(p for p in parts if p)
+        """Text for the embedder and the reranker. The header (path, title, section)
+        and the context (enclosing class, producing code) are the "context header"
+        of ТЗ S2; ``with_header=False`` embeds the bare fragment (H1 ablation)."""
+        if not with_header:
+            return self.text
+        header = f"File: {self.file_path}"
+        if self.title:
+            header += f" | {self.title}"
+        section = self.metadata.get("section")
+        if section:
+            header += f" | {section}"
+        return "\n".join(p for p in (header, self.context, self.text) if p)
 
 
 class Edge(BaseModel):
     src: str
     dst: str
     type: EdgeType
+    label: str | None = None  # e.g. variable names for uses_var
+
+
+class Symbol(BaseModel):
+    """A definition found by static analysis (function, method, class)."""
+
+    name: str
+    qualname: str
+    kind: str  # function | method | class
+    signature: str = ""
+    doc: str = ""
+    line_start: int
+    line_end: int
+    cell: int | None = None  # notebook cell (1-based); lines are then relative to the cell
+
+
+class CallSite(BaseModel):
+    name: str  # called name: last attribute of the callee expression
+    full_name: str  # callee expression as written, e.g. "np.random.default_rng"
+    caller: str | None = None  # qualname of the enclosing definition
+    line: int
+    cell: int | None = None
 
 
 class ParsedFile(BaseModel):
@@ -115,4 +136,6 @@ class ParsedFile(BaseModel):
     file_type: FileType
     nodes: list[Node] = Field(default_factory=list)
     edges: list[Edge] = Field(default_factory=list)
+    symbols: list[Symbol] = Field(default_factory=list)
+    calls: list[CallSite] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)

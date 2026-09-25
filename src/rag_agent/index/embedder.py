@@ -9,6 +9,7 @@ dense-only.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,7 +26,7 @@ class Encoded:
     sparse: list[dict[int, float]] | None  # token id -> weight
 
 
-def _find_sparse_head(model_name: str) -> Path | None:
+def _find_sparse_head(model_name: str, local_files_only: bool) -> Path | None:
     local = Path(model_name)
     if local.is_dir():
         path = local / "sparse_linear.pt"
@@ -33,9 +34,37 @@ def _find_sparse_head(model_name: str) -> Path | None:
     try:
         from huggingface_hub import hf_hub_download
 
-        return Path(hf_hub_download(model_name, "sparse_linear.pt"))
-    except Exception:  # file absent for non-M3 models, or offline
+        return Path(hf_hub_download(model_name, "sparse_linear.pt", local_files_only=local_files_only))
+    except Exception:  # file absent for non-M3 models, or not in the local cache
         return None
+
+
+def enforce_hf_offline() -> None:
+    """Hugging Face offline mode for this process. ``local_files_only`` alone is not
+    enough: for ``.bin`` checkpoints transformers starts a background thread that
+    queries the Hub for a safetensors conversion and may download it."""
+    import sys
+
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    constants = sys.modules.get("huggingface_hub.constants")
+    if constants is not None:  # already imported: the flag was read at import time
+        constants.HF_HUB_OFFLINE = True
+
+
+def load_pretrained(loader, model_name: str, local_files_only: bool, **kwargs):
+    """``from_pretrained`` with a clear message when the model is not in the local cache."""
+    if local_files_only:
+        enforce_hf_offline()
+    try:
+        return loader.from_pretrained(model_name, local_files_only=local_files_only, **kwargs)
+    except OSError as exc:
+        if not local_files_only:
+            raise
+        raise RuntimeError(
+            f"model {model_name!r} is not in the local Hugging Face cache; download it first: "
+            f'hf download {model_name} --exclude "onnx/*"'
+        ) from exc
 
 
 class Embedder:
@@ -54,6 +83,8 @@ class Embedder:
     def load(self) -> None:
         if self._model is not None:
             return
+        if self.cfg.local_files_only:
+            enforce_hf_offline()  # before transformers is imported
         import torch
         from transformers import AutoModel, AutoTokenizer
 
@@ -62,13 +93,14 @@ class Embedder:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.float16 if self.cfg.fp16 and device != "cpu" else torch.float32
         log.info("loading embedder %s on %s (%s)", self.cfg.model, device, dtype)
-        self._tok = AutoTokenizer.from_pretrained(self.cfg.model)
-        model = AutoModel.from_pretrained(self.cfg.model, dtype=dtype)
+        offline = self.cfg.local_files_only
+        self._tok = load_pretrained(AutoTokenizer, self.cfg.model, offline)
+        model = load_pretrained(AutoModel, self.cfg.model, offline, dtype=dtype)
         self._model = model.to(device).eval()
         self.device = device
         self._special_ids = set(self._tok.all_special_ids)
 
-        head = _find_sparse_head(self.cfg.model)
+        head = _find_sparse_head(self.cfg.model, offline)
         if head is not None:
             linear = torch.nn.Linear(model.config.hidden_size, 1)
             linear.load_state_dict(torch.load(head, map_location="cpu", weights_only=True))

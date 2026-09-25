@@ -1,23 +1,33 @@
-"""Parser for .ipynb files: every cell is a node, outputs are separate nodes
-linked to the producing cell with a ``produces`` edge (ТЗ S3, text part).
+"""Parser for .ipynb files: the notebook as a graph of cells (ТЗ S3).
 
-Images inside outputs are only counted here; extracting them into the image
-pipeline is Э5.
+* every cell is a node; outputs are separate nodes linked to the producing cell
+  with a ``produces`` edge and indexed together with the tail of that code;
+* ``uses_var`` edges link the cell that last defined a variable (in notebook
+  order) to the cells that read it — a static lower bound of the data flow, as
+  in the syntactic stage of CRABS (ТЗ [15]);
+* with ``chunking.notebook_context`` every cell carries the notebook title and
+  its heading path ("Title > Section > Subsection") in the header;
+* symbols and call sites of code cells feed the exact-name index.
+
+Images inside outputs are only counted here; the image pipeline is Э5.
 """
 
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 
 import nbformat
 
 from rag_agent.config import ChunkingConfig
+from rag_agent.ingest.code_analysis import analyze, strip_magics
 from rag_agent.ingest.python_parser import line_windows
 from rag_agent.ingest.text_utils import read_text, strip_ansi, truncate_keep_tail
 from rag_agent.ingest.walker import CorpusFile
 from rag_agent.schema import Edge, EdgeType, FileType, Location, Node, NodeType, ParsedFile
 
 _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$", re.MULTILINE)
+_HEADING_LEVEL_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$", re.MULTILINE)
 _TAG_RE = re.compile(r"<[^>]+>")
 _CODE_CONTEXT_LINES = 15
 
@@ -61,6 +71,22 @@ def _first_heading(markdown: str) -> str | None:
     return m.group(1).strip() if m else None
 
 
+class _Outline:
+    """Heading path of the current position in a notebook."""
+
+    def __init__(self) -> None:
+        self.stack: dict[int, str] = {}
+
+    def update(self, markdown: str) -> None:
+        for hashes, text in _HEADING_LEVEL_RE.findall(markdown):
+            level = len(hashes)
+            self.stack = {lvl: t for lvl, t in self.stack.items() if lvl < level}
+            self.stack[level] = text.strip()
+
+    def path(self) -> str | None:
+        return " > ".join(self.stack[lvl] for lvl in sorted(self.stack)) or None
+
+
 def parse_notebook(cf: CorpusFile, cfg: ChunkingConfig) -> ParsedFile:
     raw, _ = read_text(cf.abs_path)
     nb = nbformat.reads(raw, as_version=4)
@@ -83,7 +109,10 @@ def parse_notebook(cf: CorpusFile, cfg: ChunkingConfig) -> ParsedFile:
     result.nodes.append(file_node)
 
     section: str | None = None
+    outline = _Outline()
     exec_counts: list[int] = []
+    last_definer: dict[str, str] = {}  # variable -> node id of the cell that last defined it
+    flows: dict[tuple[str, str], set[str]] = defaultdict(set)
     for idx, cell in enumerate(nb.cells, start=1):
         ctype = cell.get("cell_type")
         src = _source(cell)
@@ -91,8 +120,10 @@ def parse_notebook(cf: CorpusFile, cfg: ChunkingConfig) -> ParsedFile:
 
         if ctype in ("markdown", "raw"):
             heading = _first_heading(src) if ctype == "markdown" else None
-            if heading:
-                section = heading
+            if ctype == "markdown":
+                outline.update(src)
+            if heading or (cfg.notebook_context and ctype == "markdown"):
+                section = outline.path() if cfg.notebook_context else heading
             if not src.strip():
                 continue
             node_type = NodeType.MARKDOWN_CELL
@@ -113,6 +144,22 @@ def parse_notebook(cf: CorpusFile, cfg: ChunkingConfig) -> ParsedFile:
 
         cell_id = f"{rel}#cell{idx}"
         lines = src.split("\n")
+        if ctype == "code" and src.strip():
+            head_id = cell_id if len(src) <= cfg.max_chunk_chars else f"{cell_id}.p1"
+            try:
+                analysis = analyze(strip_magics(src), cell=idx)
+            except SyntaxError as exc:
+                result.warnings.append(f"cell {idx}: SyntaxError at line {exc.lineno}: {exc.msg}")
+            else:
+                result.symbols.extend(analysis.symbols)
+                result.calls.extend(analysis.calls)
+                for name in analysis.uses:
+                    if name in last_definer and last_definer[name] != head_id:
+                        flows[(last_definer[name], head_id)].add(name)
+                for name in analysis.defines:
+                    last_definer[name] = head_id
+                if analysis.defines:
+                    extra["defines"] = sorted(analysis.defines)[:30]
         if src.strip():
             windows = [(0, len(lines))]
             if len(src) > cfg.max_chunk_chars:
@@ -166,8 +213,11 @@ def parse_notebook(cf: CorpusFile, cfg: ChunkingConfig) -> ParsedFile:
             result.edges.append(Edge(src=producer, dst=out_id, type=EdgeType.PRODUCES))
         result.edges.append(Edge(src=file_node.id, dst=out_id, type=EdgeType.CONTAINS))
 
+    for (src_id, dst_id), names in flows.items():
+        result.edges.append(Edge(src=src_id, dst=dst_id, type=EdgeType.USES_VAR, label=", ".join(sorted(names))))
+
     file_node.metadata["out_of_order"] = exec_counts != sorted(exec_counts)
     title = next((n.metadata.get("section") for n in result.nodes if n.metadata.get("section")), None)
     if title:
-        file_node.text = title
+        file_node.text = title.split(" > ")[0]
     return result

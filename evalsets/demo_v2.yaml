@@ -1,0 +1,562 @@
+# Эталонный набор вопросов для публичного демо-корпуса (ТЗ 5.1, S9), версия 2 (Э3):
+# вопросы v1 без изменений + 16 вопросов по длинным модулям (trainer, evaluation, preprocessing,
+# hparam_search) и ноутбуку 08_numpy_mlp — для проверки H1 (AST-чанкинг) и H2.
+#
+# Формат одного вопроса:
+#   id            уникальный идентификатор
+#   class         Q1 фактологический | Q2 навигационный по коду | Q3 агрегатный | Q4 визуальный
+#                 Q5 многошаговый | Q6 неотвечаемый (ожидается отказ) | G общий вопрос без файлов
+#   question      вопрос пользователя
+#   history       (необязательно) предыдущие реплики для уточняющих вопросов
+#   standalone    (необязательно) самостоятельная формулировка вопроса с историей — для оценки поиска
+#   answer        эталонный ответ (для LLM-судьи); для Q6 не задаётся
+#   must_include  регулярные выражения (без учёта регистра), которые обязаны встретиться в ответе
+#   sources       эталонные источники: {file, cell} для ноутбуков (ячейки с 1) или {file, lines: [начало, конец]}
+#                 для .py. Найденный фрагмент релевантен, если он из того же файла и той же ячейки или его
+#                 строки пересекаются с диапазоном — поэтому разметка не зависит от способа чанкинга.
+#
+# Пропорции классов Q1–Q6 — как в ТЗ (25/15/15/15/15/15 %), плюс класс G для проверки маршрутизатора.
+
+version: 2
+name: demo_v2
+corpus: ../demo_corpus
+
+items:
+  # ---------------------------------------------------------------- Q1: фактологические
+  - id: q1-01
+    class: Q1
+    question: Какой learning rate использовался в эксперименте с аугментациями?
+    answer: learning_rate_init = 3e-3 (0.003) для MLP в 04_digits_augmentation; одинаковый для вариантов с аугментацией и без.
+    must_include: ['3e-3|0[.,]003']
+    sources:
+      - {file: experiments/04_digits_augmentation.ipynb, cell: 5}
+
+  - id: q1-02
+    class: Q1
+    question: Какой ROC-AUC получила логистическая регрессия на валидации?
+    answer: ROC-AUC = 0.998 на валидации (accuracy 0.9912, F1 0.9906), ноутбук 02_logreg_baseline.
+    must_include: ['0[.,]998']
+    sources:
+      - {file: experiments/02_logreg_baseline.ipynb, cell: 6}
+
+  - id: q1-03
+    class: Q1
+    question: Сколько объектов в train, val и test у датасета digits?
+    answer: train 1077, val 360, test 360.
+    must_include: ['1077', '360']
+    sources:
+      - {file: experiments/04_digits_augmentation.ipynb, cell: 3}
+
+  - id: q1-04
+    class: Q1
+    question: Какой learning rate выбран для финальной модели HistGradientBoosting и какой у неё ROC-AUC на тесте?
+    answer: learning_rate = 0.3; на тесте ROC-AUC 0.9904 (accuracy 0.9298, F1 0.9246).
+    must_include: ['0[.,]3\b', '0[.,]9904']
+    sources:
+      - {file: experiments/03_gradient_boosting.ipynb, cell: 8}
+
+  - id: q1-05
+    class: Q1
+    question: What adjusted Rand index did KMeans with k=3 reach on the wine dataset?
+    answer: ARI = 0.8975 against the true cultivar labels.
+    must_include: ['0[.,]8975']
+    sources:
+      - {file: experiments/05_wine_clustering.ipynb, cell: 6}
+
+  - id: q1-06
+    class: Q1
+    question: What was the test RMSE of the final ridge regression model?
+    answer: Test RMSE = 53.438 (R² = 0.426) with the best alpha = 0.01.
+    must_include: ['53[.,]438']
+    sources:
+      - {file: experiments/06_diabetes_regression.ipynb, cell: 6}
+
+  - id: q1-07
+    class: Q1
+    question: Сколько доброкачественных и злокачественных опухолей в датасете breast cancer?
+    answer: 357 доброкачественных (target = 1) и 212 злокачественных (target = 0).
+    must_include: ['357', '212']
+    sources:
+      - {file: experiments/01_eda_breast_cancer.ipynb, cell: 5}
+      - {file: experiments/01_eda_breast_cancer.ipynb, cell: 4}
+
+  - id: q1-08
+    class: Q1
+    question: Какой признак сильнее всего коррелирует с таргетом в breast cancer?
+    answer: worst concave points, корреляция −0.7936 (отрицательная).
+    must_include: ['worst concave points']
+    sources:
+      - {file: experiments/01_eda_breast_cancer.ipynb, cell: 7}
+
+  - id: q1-09
+    class: Q1
+    question: Какие значения по умолчанию у аргументов --lr и --max-iter в скрипте обучения?
+    answer: --lr по умолчанию 0.1, --max-iter по умолчанию 200 (scripts/train.py, parse_args).
+    must_include: ['0[.,]1\b', '200']
+    sources:
+      - {file: scripts/train.py, lines: [25, 34]}
+
+  - id: q1-10
+    class: Q1
+    question: Какой доверительный интервал для F1 получился у логистической регрессии?
+    answer: 95% бутстреп-интервал для macro F1 — [0.970, 1.000].
+    must_include: ['0[.,]97']
+    sources:
+      - {file: experiments/02_logreg_baseline.ipynb, cell: 7}
+
+  - id: q1-11
+    class: Q1
+    history:
+      - {role: user, content: 'Какие эксперименты у меня есть на датасете digits?'}
+      - {role: assistant, content: 'На digits есть эксперимент 04_digits_augmentation: MLP с аугментацией сдвигами и без неё.'}
+    question: А какая там получилась accuracy с аугментацией?
+    standalone: Какая accuracy получилась у MLP с аугментацией в эксперименте на digits?
+    answer: С аугментацией accuracy 0.9778 на валидации (без аугментации 0.9722).
+    must_include: ['0[.,]9778']
+    sources:
+      - {file: experiments/04_digits_augmentation.ipynb, cell: 7}
+      - {file: experiments/04_digits_augmentation.ipynb, cell: 8}
+
+  - id: q1-12
+    class: Q1
+    question: С каким seed разбивается датасет diabetes и используется ли стратификация?
+    answer: seed=7, stratify=False (без стратификации), 06_diabetes_regression.
+    must_include: ['\b7\b']
+    sources:
+      - {file: experiments/06_diabetes_regression.ipynb, cell: 3}
+
+  # ---------------------------------------------------------------- Q2: навигационные по коду
+  - id: q2-01
+    class: Q2
+    question: Где реализована функция подсчёта F1?
+    answer: В ml_toolkit/metrics.py — функция calc_metrics (F1 через sklearn f1_score, macro по умолчанию); устаревшая ручная реализация f1_manual — в scripts/legacy_metrics.py.
+    must_include: ['calc_metrics']
+    sources:
+      - {file: ml_toolkit/metrics.py, lines: [13, 27]}
+      - {file: scripts/legacy_metrics.py, lines: [19, 26]}
+
+  - id: q2-02
+    class: Q2
+    question: Где вызывается calc_metrics?
+    answer: В scripts/train.py (функция main) и в ноутбуках 02_logreg_baseline (ячейка 6), 03_gradient_boosting (ячейки 5 и 8), 04_digits_augmentation (ячейки 6 и 7), 07_scratch (ячейка 3).
+    must_include: ['train\.py']
+    sources:
+      - {file: scripts/train.py, lines: [53, 53]}
+      - {file: experiments/02_logreg_baseline.ipynb, cell: 6}
+      - {file: experiments/03_gradient_boosting.ipynb, cell: 5}
+      - {file: experiments/03_gradient_boosting.ipynb, cell: 8}
+      - {file: experiments/04_digits_augmentation.ipynb, cell: 6}
+      - {file: experiments/04_digits_augmentation.ipynb, cell: 7}
+      - {file: experiments/07_scratch.ipynb, cell: 3}
+
+  - id: q2-03
+    class: Q2
+    question: В каком модуле реализована аугментация сдвигами и как она устроена?
+    answer: ml_toolkit/features.py — augment_digits добавляет к выборке копии изображений 8x8, сдвинутые shift_image на 1 пиксель в 4 направлениях (DEFAULT_SHIFTS), выборка растёт в 5 раз.
+    must_include: ['augment_digits', 'features\.py']
+    sources:
+      - {file: ml_toolkit/features.py, lines: [33, 41]}
+      - {file: ml_toolkit/features.py, lines: [21, 30]}
+
+  - id: q2-04
+    class: Q2
+    question: Where is the model factory defined and which model names does it support?
+    answer: build_model in ml_toolkit/models.py; supports logreg, random_forest, hist_gb, mlp, ridge.
+    must_include: ['build_model', 'hist_gb']
+    sources:
+      - {file: ml_toolkit/models.py, lines: [12, 24]}
+
+  - id: q2-05
+    class: Q2
+    question: Где задаётся разбиение на train/val/test и в каких пропорциях?
+    answer: ml_toolkit/data.py, функция make_split — стратифицированное разбиение 60/20/20 (val_size=0.2, test_size=0.2), seed=42 по умолчанию.
+    must_include: ['make_split']
+    sources:
+      - {file: ml_toolkit/data.py, lines: [44, 55]}
+
+  - id: q2-06
+    class: Q2
+    question: Какая функция рисует матрицу ошибок и где она используется?
+    answer: plot_confusion из ml_toolkit/viz.py; используется в ноутбуке 04_digits_augmentation (ячейка 9).
+    must_include: ['plot_confusion']
+    sources:
+      - {file: ml_toolkit/viz.py, lines: [18, 22]}
+      - {file: experiments/04_digits_augmentation.ipynb, cell: 9}
+
+  # ---------------------------------------------------------------- Q3: агрегатные и сравнительные
+  - id: q3-01
+    class: Q3
+    question: В каком ноутбуке лучший ROC-AUC на breast cancer?
+    answer: В 02_logreg_baseline — логистическая регрессия, ROC-AUC 0.998 на валидации; у HistGradientBoosting лучший на валидации 0.9928 (03_gradient_boosting).
+    must_include: ['02_logreg|логистическ|logistic']
+    sources:
+      - {file: experiments/02_logreg_baseline.ipynb, cell: 6}
+      - {file: experiments/03_gradient_boosting.ipynb, cell: 5}
+
+  - id: q3-02
+    class: Q3
+    question: Сколько ноутбуков используют датасет breast_cancer?
+    answer: Три — 01_eda_breast_cancer, 02_logreg_baseline, 03_gradient_boosting.
+    must_include: ['\b3\b|три']
+    sources:
+      - {file: experiments/01_eda_breast_cancer.ipynb, cell: 3}
+      - {file: experiments/02_logreg_baseline.ipynb, cell: 3}
+      - {file: experiments/03_gradient_boosting.ipynb, cell: 3}
+
+  - id: q3-03
+    class: Q3
+    question: Какие датасеты используются в экспериментах?
+    answer: breast_cancer, digits, wine и diabetes (встроенные датасеты scikit-learn).
+    must_include: ['breast', 'digits', 'wine', 'diabetes']
+    sources:
+      - {file: ml_toolkit/data.py, lines: [11, 16]}
+      - {file: experiments/01_eda_breast_cancer.ipynb, cell: 3}
+      - {file: experiments/04_digits_augmentation.ipynb, cell: 3}
+      - {file: experiments/05_wine_clustering.ipynb, cell: 3}
+      - {file: experiments/06_diabetes_regression.ipynb, cell: 3}
+
+  - id: q3-04
+    class: Q3
+    question: Сравни accuracy MLP с аугментацией и без неё.
+    answer: С аугментацией 0.9778, без — 0.9722 на валидации; аугментация немного помогла.
+    must_include: ['0[.,]9778', '0[.,]9722']
+    sources:
+      - {file: experiments/04_digits_augmentation.ipynb, cell: 8}
+      - {file: experiments/04_digits_augmentation.ipynb, cell: 6}
+      - {file: experiments/04_digits_augmentation.ipynb, cell: 7}
+
+  - id: q3-05
+    class: Q3
+    question: In the gradient boosting learning-rate sweep, which learning rate gave the best validation ROC-AUC and which the worst?
+    answer: Best 0.3 (ROC-AUC 0.9928), worst 0.01 (ROC-AUC 0.9892).
+    must_include: ['0[.,]3\b', '0[.,]01']
+    sources:
+      - {file: experiments/03_gradient_boosting.ipynb, cell: 5}
+
+  - id: q3-06
+    class: Q3
+    question: Какое alpha оказалось лучшим для Ridge и какой RMSE на валидации был при alpha=100?
+    answer: Лучшее alpha = 0.01 (RMSE 53.549 на валидации); при alpha=100 RMSE 55.851.
+    must_include: ['0[.,]01', '55[.,]851']
+    sources:
+      - {file: experiments/06_diabetes_regression.ipynb, cell: 5}
+      - {file: experiments/06_diabetes_regression.ipynb, cell: 6}
+
+  # ---------------------------------------------------------------- Q4: визуальные
+  - id: q4-01
+    class: Q4
+    question: Найди график ROC-кривой логистической регрессии.
+    answer: Ноутбук 02_logreg_baseline, ячейка 8 — plot_roc для logreg C=1.0 на валидации.
+    must_include: ['02_logreg']
+    sources:
+      - {file: experiments/02_logreg_baseline.ipynb, cell: 8}
+
+  - id: q4-02
+    class: Q4
+    question: Где есть матрица ошибок для распознавания цифр?
+    answer: 04_digits_augmentation, ячейка 9 — confusion matrix модели с аугментацией на валидации.
+    must_include: ['04_digits']
+    sources:
+      - {file: experiments/04_digits_augmentation.ipynb, cell: 9}
+
+  - id: q4-03
+    class: Q4
+    question: Покажи график зависимости ROC-AUC от learning rate.
+    answer: 03_gradient_boosting, ячейка 6 — plot_param_curve по результатам перебора learning rate.
+    must_include: ['03_gradient']
+    sources:
+      - {file: experiments/03_gradient_boosting.ipynb, cell: 6}
+
+  - id: q4-04
+    class: Q4
+    question: Is there a scatter plot of the wine clusters? What does it show?
+    answer: Yes, 05_wine_clustering cell 7 — KMeans (k=3) cluster labels on a 2-D PCA projection of the standardised wine features.
+    must_include: ['PCA']
+    sources:
+      - {file: experiments/05_wine_clustering.ipynb, cell: 7}
+
+  - id: q4-05
+    class: Q4
+    question: Где гистограмма распределения worst concave points по классам?
+    answer: 01_eda_breast_cancer, ячейка 8 — гистограммы для malignant и benign.
+    must_include: ['01_eda']
+    sources:
+      - {file: experiments/01_eda_breast_cancer.ipynb, cell: 8}
+
+  - id: q4-06
+    class: Q4
+    question: Какая точка отмечена красным на графике подбора learning rate?
+    answer: Лучший по ROC-AUC на валидации learning_rate = 0.3 (plot_param_curve отмечает максимум красным с подписью best learning_rate=0.3).
+    must_include: ['0[.,]3\b']
+    sources:
+      - {file: experiments/03_gradient_boosting.ipynb, cell: 6}
+      - {file: ml_toolkit/viz.py, lines: [25, 35]}
+    notes: Полностью отвечается только по изображению (Э5); сейчас — косвенно через код и таблицу.
+
+  # ---------------------------------------------------------------- Q5: многошаговые
+  - id: q5-01
+    class: Q5
+    question: Сравни, как подбираются гиперпараметры в 03_gradient_boosting и 06_diabetes_regression.
+    answer: В обоих перебирается один гиперпараметр по сетке на валидации, затем финальная модель один раз оценивается на тесте. В 03 — learning_rate из [0.01, 0.03, 0.05, 0.1, 0.3] по ROC-AUC (затем F1), лучший 0.3; в 06 — alpha Ridge из [0.01 … 100] по RMSE, лучший 0.01.
+    sources:
+      - {file: experiments/03_gradient_boosting.ipynb, cell: 5}
+      - {file: experiments/03_gradient_boosting.ipynb, cell: 8}
+      - {file: experiments/06_diabetes_regression.ipynb, cell: 5}
+      - {file: experiments/06_diabetes_regression.ipynb, cell: 6}
+
+  - id: q5-02
+    class: Q5
+    question: Использует ли скрипт train.py ту же функцию метрик, что и ноутбуки, и куда он записывает результаты?
+    answer: Да, calc_metrics (accuracy, F1 macro, ROC-AUC на валидации); результаты дописываются функцией log_run в JSONL-журнал runs/runs.jsonl и печатаются.
+    must_include: ['calc_metrics', 'runs']
+    sources:
+      - {file: scripts/train.py, lines: [47, 56]}
+      - {file: ml_toolkit/utils.py, lines: [18, 24]}
+
+  - id: q5-03
+    class: Q5
+    question: Чем f1_manual отличается от F1 в calc_metrics?
+    answer: f1_manual — ручной бинарный F1 для одного положительного класса без sklearn (устарел); calc_metrics считает F1 через sklearn f1_score с усреднением macro по умолчанию и работает для многоклассовых задач.
+    must_include: ['macro']
+    sources:
+      - {file: scripts/legacy_metrics.py, lines: [19, 26]}
+      - {file: ml_toolkit/metrics.py, lines: [13, 27]}
+
+  - id: q5-04
+    class: Q5
+    question: Почему в черновике упала ячейка с f1_manual и как это исправить?
+    answer: NameError — f1_manual не импортирована в ноутбук; она лежит в scripts/legacy_metrics.py, нужно импортировать её оттуда или использовать calc_metrics.
+    must_include: ['NameError|не импорт|not defined|не определ']
+    sources:
+      - {file: experiments/07_scratch.ipynb, cell: 4}
+      - {file: experiments/07_scratch.ipynb, cell: 5}
+
+  - id: q5-05
+    class: Q5
+    question: How does the digits augmentation change the training set size, and which function implements the shifts?
+    answer: 1077 → 5385 samples (original plus 4 one-pixel shifts, ×5); augment_digits in ml_toolkit/features.py, using shift_image and DEFAULT_SHIFTS.
+    must_include: ['5385', 'augment_digits|shift_image']
+    sources:
+      - {file: experiments/04_digits_augmentation.ipynb, cell: 7}
+      - {file: ml_toolkit/features.py, lines: [9, 9]}
+      - {file: ml_toolkit/features.py, lines: [33, 41]}
+
+  - id: q5-06
+    class: Q5
+    question: Лучше ли бустинг, чем логистическая регрессия на breast cancer, если сравнивать на валидации?
+    answer: Нет. Логистическая регрессия — ROC-AUC 0.998 и F1 0.9906 на валидации; лучший HistGradientBoosting (lr=0.3) — ROC-AUC 0.9928 и F1 0.9627.
+    must_include: ['0[.,]998']
+    sources:
+      - {file: experiments/02_logreg_baseline.ipynb, cell: 6}
+      - {file: experiments/03_gradient_boosting.ipynb, cell: 5}
+
+  # ---------------------------------------------------------------- Q6: неотвечаемые
+  - id: q6-01
+    class: Q6
+    question: На какой видеокарте обучались модели?
+
+  - id: q6-02
+    class: Q6
+    question: Какой batch size использовался при обучении ResNet?
+
+  - id: q6-03
+    class: Q6
+    question: What dropout rate was used in the transformer experiments?
+
+  - id: q6-04
+    class: Q6
+    question: Какой F1 получил градиентный бустинг на датасете wine?
+    notes: На wine есть только кластеризация.
+
+  - id: q6-05
+    class: Q6
+    question: Сколько эпох обучалась модель на датасете diabetes?
+    notes: Там Ridge-регрессия, эпох нет.
+
+  - id: q6-06
+    class: Q6
+    question: Какой ROC-AUC у случайного леса на breast cancer?
+    notes: random_forest есть в фабрике моделей, но нигде не запускался.
+
+  # ---------------------------------------------------------------- G: общие вопросы (маршрутизатор)
+  - id: g-01
+    class: G
+    question: Что такое ROC-AUC и как его интерпретировать?
+    answer: Площадь под ROC-кривой (TPR против FPR по всем порогам); вероятность, что случайный положительный объект получит больший скор, чем отрицательный; 0.5 — случайное угадывание, 1 — идеальное ранжирование.
+
+  - id: g-02
+    class: G
+    question: Чем L1-регуляризация отличается от L2?
+    answer: L1 штрафует сумму модулей весов и зануляет часть весов (отбор признаков); L2 штрафует сумму квадратов и равномерно уменьшает веса, устойчивее при коррелированных признаках.
+
+  - id: g-03
+    class: G
+    question: Напиши функцию на Python, которая считает скользящее среднее списка с окном k.
+    answer: Корректная функция, возвращающая средние по окнам длины k (например, через накопленные суммы или срезы), с разумной обработкой k больше длины списка.
+
+  - id: g-04
+    class: G
+    question: Привет! Что ты умеешь?
+    answer: Приветствие и описание возможностей — ответы на вопросы по файлам пользователя со ссылками на источники и на общие вопросы.
+
+  - id: g-05
+    class: G
+    question: Explain the difference between precision and recall.
+    answer: Precision = TP / (TP + FP) — share of predicted positives that are correct; recall = TP / (TP + FN) — share of actual positives that are found; trade-off via the decision threshold.
+
+  - id: g-06
+    class: G
+    question: Как в общих чертах работает градиентный бустинг?
+    answer: Ансамбль слабых моделей (обычно деревьев), которые обучаются последовательно; каждая следующая аппроксимирует антиградиент функции потерь (для MSE — остатки) предыдущего ансамбля, вклад масштабируется learning rate.
+
+  - id: g-07
+    class: G
+    question: Переведи на английский «матрица ошибок».
+    answer: confusion matrix.
+
+  - id: g-08
+    class: G
+    question: Что такое стратифицированное разбиение выборки?
+    answer: Разбиение, при котором доли классов в каждой части (train/val/test) такие же, как во всей выборке.
+
+  # ================================================================ v2: длинные модули и 08_numpy_mlp
+  # ---------------------------------------------------------------- Q1
+  - id: q1-13
+    class: Q1
+    question: Какой patience по умолчанию у EarlyStopping и что считается улучшением метрики?
+    answer: patience = 5 по умолчанию; улучшение — рост метрики больше чем на min_delta = 1e-4 (ml_toolkit/trainer.py, EarlyStopping).
+    must_include: ['\b5\b']
+    sources:
+      - {file: ml_toolkit/trainer.py, lines: [139, 158]}
+
+  - id: q1-14
+    class: Q1
+    question: Как считается learning rate в cosine_lr после прогрева?
+    answer: lr = min_lr + 0.5 * (base_lr - min_lr) * (1 + cos(pi * t)), где t — доля эпох после прогрева; первые warmup_epochs = 3 эпохи LR растёт линейно; min_lr = 1e-5.
+    must_include: ['cos']
+    sources:
+      - {file: ml_toolkit/trainer.py, lines: [53, 63]}
+
+  - id: q1-15
+    class: Q1
+    question: Сколько бинов по умолчанию использует expected_calibration_error и как они строятся?
+    answer: 15 бинов равной ширины по уверенности (максимальной вероятности); ECE — средневзвешенное |accuracy − confidence| по бинам.
+    must_include: ['15']
+    sources:
+      - {file: ml_toolkit/evaluation.py, lines: [70, 91]}
+
+  - id: q1-16
+    class: Q1
+    question: Какие квантили по умолчанию использует OutlierClipper?
+    answer: Нижний 0.01 и верхний 0.99 (1% и 99%), считаются на train по каждому признаку.
+    must_include: ['0[.,]01|1\s?%', '0[.,]99|99\s?%']
+    sources:
+      - {file: ml_toolkit/preprocessing.py, lines: [11, 30]}
+
+  - id: q1-17
+    class: Q1
+    question: На какой эпохе остановилось обучение numpy-MLP и какая лучшая accuracy на валидации?
+    answer: Остановка на эпохе 37 (ранняя остановка), лучшая эпоха 27, лучшая val accuracy 0.9639.
+    must_include: ['37', '0[.,]9639']
+    sources:
+      - {file: experiments/08_numpy_mlp.ipynb, cell: 5}
+
+  - id: q1-18
+    class: Q1
+    question: What is the search range for max_leaf_nodes in the random hyperparameter search?
+    answer: Integer from 8 to 64 inclusive (SEARCH_SPACE in scripts/hparam_search.py).
+    must_include: ['\b8\b', '64']
+    sources:
+      - {file: scripts/hparam_search.py, lines: [27, 33]}
+
+  # ---------------------------------------------------------------- Q2
+  - id: q2-07
+    class: Q2
+    question: Где реализован цикл обучения с ранней остановкой?
+    answer: Метод Trainer.fit в ml_toolkit/trainer.py (использует EarlyStopping и расписания из SCHEDULES).
+    must_include: ['Trainer', 'trainer\.py']
+    sources:
+      - {file: ml_toolkit/trainer.py, lines: [242, 270]}
+
+  - id: q2-08
+    class: Q2
+    question: Где вызывается cross_validate_model?
+    answer: В ml_toolkit/evaluation.py — в compare_models и learning_curve_table; в scripts/hparam_search.py — в random_search.
+    must_include: ['compare_models|learning_curve_table|random_search']
+    sources:
+      - {file: ml_toolkit/evaluation.py, lines: [47, 47]}
+      - {file: ml_toolkit/evaluation.py, lines: [129, 129]}
+      - {file: scripts/hparam_search.py, lines: [60, 60]}
+
+  - id: q2-09
+    class: Q2
+    question: Where is the backward pass of the numpy MLP implemented?
+    answer: NumpyMLP.backward in ml_toolkit/trainer.py — gradients of cross-entropy w.r.t. W1, b1, W2, b2 with L2 on weights.
+    must_include: ['backward']
+    sources:
+      - {file: ml_toolkit/trainer.py, lines: [93, 104]}
+
+  - id: q2-10
+    class: Q2
+    question: Какая функция сохраняет чекпоинты модели и в каком формате?
+    answer: save_checkpoint в ml_toolkit/trainer.py — веса в .npz (np.savez), метаданные в JSON с тем же именем.
+    must_include: ['save_checkpoint', 'npz']
+    sources:
+      - {file: ml_toolkit/trainer.py, lines: [175, 181]}
+
+  - id: q2-11
+    class: Q2
+    question: Где задаётся пространство поиска гиперпараметров и какие параметры в нём есть?
+    answer: SEARCH_SPACE в scripts/hparam_search.py — learning_rate (log-uniform 0.01–0.3), max_leaf_nodes (8–64), min_samples_leaf (5–50), l2_regularization (log-uniform 1e-3–10), max_iter (100/200/300).
+    must_include: ['SEARCH_SPACE|hparam_search']
+    sources:
+      - {file: scripts/hparam_search.py, lines: [27, 33]}
+
+  # ---------------------------------------------------------------- Q3
+  - id: q3-07
+    class: Q3
+    question: Какое расписание learning rate дало лучшую accuracy на валидации в сравнении расписаний для numpy-MLP?
+    answer: constant — 0.9639 (лучшая эпоха 25); cosine — 0.9583; step — 0.9500.
+    must_include: ['constant']
+    sources:
+      - {file: experiments/08_numpy_mlp.ipynb, cell: 8}
+
+  # ---------------------------------------------------------------- Q5
+  - id: q5-07
+    class: Q5
+    question: Как в hparam_search оценивается каждая конфигурация и какой препроцессинг применяется?
+    answer: Каждая конфигурация оценивается cross_validate_model — стратифицированная 5-fold кросс-валидация (shuffle, seed) по roc_auc по умолчанию; препроцессинг — build_tabular_pipeline с настройками по умолчанию, то есть ColumnDropper, OutlierClipper и StandardScaler.
+    must_include: ['cross_validate_model|кросс-валидац|cross-validat']
+    sources:
+      - {file: scripts/hparam_search.py, lines: [53, 62]}
+      - {file: ml_toolkit/evaluation.py, lines: [28, 40]}
+      - {file: ml_toolkit/preprocessing.py, lines: [105, 121]}
+
+  - id: q5-08
+    class: Q5
+    question: Чем обучение в 08_numpy_mlp отличается от 04_digits_augmentation?
+    answer: 08 — собственный MLP на numpy (Trainer) с lr 0.005, косинусным расписанием, SGD с моментом и ранней остановкой (patience 10), без аугментации; 04 — sklearn MLPClassifier с learning_rate_init 3e-3 и аугментацией сдвигами. Разбиение digits одинаковое (seed=0).
+    sources:
+      - {file: experiments/08_numpy_mlp.ipynb, cell: 5}
+      - {file: experiments/04_digits_augmentation.ipynb, cell: 5}
+      - {file: experiments/04_digits_augmentation.ipynb, cell: 7}
+
+  - id: q5-09
+    class: Q5
+    question: Which weights does Trainer.fit keep after early stopping — the last epoch or the best one?
+    answer: The best ones — parameters of the epoch with the best validation accuracy are copied during training and restored into the model after the loop.
+    must_include: ['best']
+    sources:
+      - {file: ml_toolkit/trainer.py, lines: [242, 270]}
+      - {file: ml_toolkit/trainer.py, lines: [196, 200]}
+
+  # ---------------------------------------------------------------- Q6
+  - id: q6-07
+    class: Q6
+    question: С какими beta используется оптимизатор Adam в Trainer?
+    notes: В Trainer — SGD с моментом, Adam нет.
+
+  - id: q6-08
+    class: Q6
+    question: Сколько итераций random search было запущено и какой лучший скор получился?
+    notes: Скрипт hparam_search есть, но результатов его запуска в архиве нет.

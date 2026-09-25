@@ -47,11 +47,35 @@ CREATE TABLE IF NOT EXISTS edges (
     src TEXT NOT NULL,
     dst TEXT NOT NULL,
     type TEXT NOT NULL,
-    file_path TEXT NOT NULL
+    file_path TEXT NOT NULL,
+    label TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_edges_src ON edges(src);
 CREATE INDEX IF NOT EXISTS idx_edges_dst ON edges(dst);
 CREATE INDEX IF NOT EXISTS idx_edges_file ON edges(file_path);
+CREATE TABLE IF NOT EXISTS symbols (
+    name TEXT NOT NULL,
+    qualname TEXT,
+    kind TEXT,
+    signature TEXT,
+    doc TEXT,
+    file_path TEXT NOT NULL,
+    line_start INTEGER,
+    line_end INTEGER,
+    cell INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file_path);
+CREATE TABLE IF NOT EXISTS calls (
+    name TEXT NOT NULL,
+    full_name TEXT,
+    caller TEXT,
+    file_path TEXT NOT NULL,
+    line INTEGER,
+    cell INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_calls_name ON calls(name COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_calls_file ON calls(file_path);
 """
 
 _NODE_COLS = "id, file_path, file_type, node_type, parent_id, title, text, context, location, metadata, embed"
@@ -120,8 +144,20 @@ class Catalog:
                 ],
             )
             self._conn.executemany(
-                "INSERT INTO edges(src, dst, type, file_path) VALUES (?,?,?,?)",
-                [(e.src, e.dst, e.type.value, parsed.file_path) for e in edges],
+                "INSERT INTO edges(src, dst, type, file_path, label) VALUES (?,?,?,?,?)",
+                [(e.src, e.dst, e.type.value, parsed.file_path, e.label) for e in edges],
+            )
+            self._conn.executemany(
+                "INSERT INTO symbols(name, qualname, kind, signature, doc, file_path, line_start, line_end, cell)"
+                " VALUES (?,?,?,?,?,?,?,?,?)",
+                [
+                    (s.name, s.qualname, s.kind, s.signature, s.doc, parsed.file_path, s.line_start, s.line_end, s.cell)
+                    for s in parsed.symbols
+                ],
+            )
+            self._conn.executemany(
+                "INSERT INTO calls(name, full_name, caller, file_path, line, cell) VALUES (?,?,?,?,?,?)",
+                [(c.name, c.full_name, c.caller, parsed.file_path, c.line, c.cell) for c in parsed.calls],
             )
             self._conn.execute(
                 "INSERT OR REPLACE INTO files(path, file_type, size, mtime, content_hash, status, error, warnings, n_nodes, indexed_at)"
@@ -148,14 +184,13 @@ class Catalog:
                 self._conn.execute("DELETE FROM files WHERE path=?", (p,))
 
     def _delete_file_rows(self, path: str) -> None:
-        self._conn.execute("DELETE FROM nodes WHERE file_path=?", (path,))
-        self._conn.execute("DELETE FROM edges WHERE file_path=?", (path,))
+        for table in ("nodes", "edges", "symbols", "calls"):
+            self._conn.execute(f"DELETE FROM {table} WHERE file_path=?", (path,))
 
     def clear(self) -> None:
         with self._lock, self._conn:
-            self._conn.execute("DELETE FROM nodes")
-            self._conn.execute("DELETE FROM edges")
-            self._conn.execute("DELETE FROM files")
+            for table in ("nodes", "edges", "symbols", "calls", "files"):
+                self._conn.execute(f"DELETE FROM {table}")
 
     # --- nodes & edges ----------------------------------------------------
     def get_nodes(self, ids: list[str]) -> dict[str, Node]:
@@ -180,8 +215,53 @@ class Catalog:
 
     def edges_of(self, node_id: str) -> list[Edge]:
         with self._lock:
-            rows = self._conn.execute("SELECT src, dst, type FROM edges WHERE src=? OR dst=?", (node_id, node_id)).fetchall()
-        return [Edge(src=r["src"], dst=r["dst"], type=r["type"]) for r in rows]
+            rows = self._conn.execute(
+                "SELECT src, dst, type, label FROM edges WHERE src=? OR dst=?", (node_id, node_id)
+            ).fetchall()
+        return [Edge(src=r["src"], dst=r["dst"], type=r["type"], label=r["label"]) for r in rows]
+
+    # --- exact-name index (ТЗ S2, S5) ---------------------------------------
+    def file_stems(self) -> set[str]:
+        """Lower-cased file names without extension, e.g. ``02_logreg_baseline``."""
+        with self._lock:
+            rows = self._conn.execute("SELECT path FROM files").fetchall()
+        return {Path(r["path"]).stem.lower() for r in rows}
+
+    def find_symbols(self, name: str) -> list[dict]:
+        """Definitions whose name matches exactly (case-insensitive)."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM symbols WHERE name = ? COLLATE NOCASE ORDER BY file_path, cell, line_start", (name,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def find_calls(self, name: str) -> list[dict]:
+        """Call sites of a name (last attribute of the callee), case-insensitive."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM calls WHERE name = ? COLLATE NOCASE ORDER BY file_path, cell, line", (name,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def nodes_at(self, file_path: str, line: int | None = None, cell: int | None = None,
+                 line_end: int | None = None) -> list[Node]:
+        """Content nodes of a file that cover a line range (``.py``) or a cell (lines relative to the cell)."""
+        out = []
+        for node in self.file_nodes(file_path):
+            if node.node_type == "file":
+                continue
+            loc = node.location
+            if cell is not None:
+                if loc.cell != cell or node.node_type == "cell_output":
+                    continue
+                if line is not None and loc.line_start is not None:
+                    if not (loc.line_start <= (line_end or line) and (loc.line_end or loc.line_start) >= line):
+                        continue
+                out.append(node)
+            elif line is not None and loc.line_start is not None and loc.cell is None:
+                if loc.line_start <= (line_end or line) and (loc.line_end or loc.line_start) >= line:
+                    out.append(node)
+        return out
 
     # --- reporting --------------------------------------------------------
     def stats(self) -> dict:

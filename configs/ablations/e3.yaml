@@ -1,0 +1,35 @@
+# Э3: абляции поиска на demo_v2 (ТЗ 5.3). Меняется по одному компоненту.
+#   H1 — AST-чанкинг против окон по строкам, с контекстными заголовками и без (runs 1–4);
+#   граф ноутбука — заголовок и путь разделов в каждой ячейке (run 5);
+#   H2 — плотный → + разреженный и RRF → + реранкер (runs 5–8);
+#   точный поиск имён (runs 9–10).
+# Запуск: rag ablate configs/ablations/e3.yaml
+name: e3-retrieval
+evalset: ../../evalsets/demo_v2.yaml
+retrieval_only: true
+runs:
+  - name: "1. строки + заголовки (Э1)"
+    overrides: {chunking: {python: lines, context_header: true, notebook_context: false}, retrieval: {mode: dense, rerank: false, symbols: false}}
+  - name: "2. строки без заголовков"
+    overrides: {chunking: {python: lines, context_header: false, notebook_context: false}, retrieval: {mode: dense, rerank: false, symbols: false}}
+  - name: "3. AST + заголовки"
+    overrides: {chunking: {python: ast, context_header: true, notebook_context: false}, retrieval: {mode: dense, rerank: false, symbols: false}}
+  - name: "3a. AST (лимит 1000) + заголовки"
+    overrides: {chunking: {python: ast, ast_max_chars: 1000, context_header: true, notebook_context: false}, retrieval: {mode: dense, rerank: false, symbols: false}}
+    note: чувствительность к размеру фрагмента
+  - name: "4. AST без заголовков"
+    overrides: {chunking: {python: ast, context_header: false, notebook_context: false}, retrieval: {mode: dense, rerank: false, symbols: false}}
+  - name: "5. AST + заголовки + контекст ноутбука"
+    overrides: {chunking: {python: ast, context_header: true, notebook_context: true}, retrieval: {mode: dense, rerank: false, symbols: false}}
+  - name: "6. (5) + hybrid RRF"
+    overrides: {chunking: {python: ast, context_header: true, notebook_context: true}, retrieval: {mode: hybrid, rerank: false, symbols: false}}
+  - name: "7. (5) + реранкер"
+    overrides: {chunking: {python: ast, context_header: true, notebook_context: true}, retrieval: {mode: dense, rerank: true, symbols: false}}
+  - name: "8. (5) + hybrid + реранкер"
+    overrides: {chunking: {python: ast, context_header: true, notebook_context: true}, retrieval: {mode: hybrid, rerank: true, symbols: false}}
+  - name: "9. (5) + точный поиск имён"
+    overrides: {chunking: {python: ast, context_header: true, notebook_context: true}, retrieval: {mode: dense, rerank: false, symbols: true}}
+  - name: "10. (5) + имена + реранкер"
+    overrides: {chunking: {python: ast, context_header: true, notebook_context: true}, retrieval: {mode: dense, rerank: true, symbols: true}}
+  - name: "11. (5) + hybrid + имена + реранкер"
+    overrides: {chunking: {python: ast, context_header: true, notebook_context: true}, retrieval: {mode: hybrid, rerank: true, symbols: true}}

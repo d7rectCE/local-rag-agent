@@ -1,0 +1,9 @@
+# Э3, итог + сигнал корпуса для маршрутизатора: вопрос, где названа функция, класс или файл
+# корпуса, всегда идёт в поиск по файлам. Сравнивается с запуском 2 из e3_final.yaml.
+name: e3-final-router-signal
+evalset: ../../evalsets/demo_v2.yaml
+retrieval_only: false
+judge: true
+runs:
+  - name: "Э3 + сигнал корпуса в маршрутизаторе"
+    overrides: {chunking: {python: ast, context_header: true, notebook_context: true}, retrieval: {mode: dense, rerank: true, symbols: true}}

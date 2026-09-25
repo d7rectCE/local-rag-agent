@@ -40,8 +40,12 @@ def render_report(summary: dict, results: list[ItemResult], es: EvalSet, config:
         f"- Набор: `{es.name}` v{es.version}, вопросов {summary['n_items']} (ошибок выполнения {summary['n_errors']})",
         f"- Корпус: `{config['corpus']}`, индекс `{config['index_signature']}`",
         f"- Эмбеддер: `{config['embedder']}`; чанкинг .py: `{config['chunking']['python']}`",
-        f"- Поиск: `{config['retrieval']['mode']}`, фрагментов в контексте {config['retrieval']['top_k']}, "
-        f"метрики поиска по top-{config['retrieval']['eval_k']}",
+        f"- Поиск: `{config['retrieval']['mode']}`"
+        f"{', реранкер' if config['retrieval'].get('rerank') else ''}"
+        f"{', точный поиск имён' if config['retrieval'].get('symbols') else ''}; "
+        f"фрагментов в контексте {config['retrieval']['top_k']}, метрики поиска по top-{config['retrieval']['eval_k']}",
+        f"- Заголовки фрагментов: {'да' if config['chunking'].get('context_header', True) else 'нет'}; "
+        f"контекст ноутбука: {'да' if config['chunking'].get('notebook_context') else 'нет'}",
         f"- LLM: `{config['llm']}`; маршрут: `{config['route']}`; судья: `{config.get('judge') or 'не запускался'}`",
         f"- Git: `{config.get('git')}`; дата: {config['date']}",
         "",
@@ -53,6 +57,9 @@ def render_report(summary: dict, results: list[ItemResult], es: EvalSet, config:
         "|---|---|",
     ]
     out += [f"| {METRIC_LABELS[m]} | {_ci(v)} |" for m, v in summary["retrieval"].items()]
+    lat = summary.get("retrieval_latency") or {}
+    if lat.get("p50") is not None:
+        out.append(f"| Латентность поиска p50 / p95, с | {lat['p50']:.3f} / {lat['p95']:.3f} |")
     out += ["", "| Класс | n | Recall@5 | MRR@10 | nDCG@10 |", "|---|---|---|---|---|"]
     for c, v in summary["retrieval_by_class"].items():
         out.append(f"| {c} {CLASS_NAMES[c]} | {v['n']} | {_f(v['recall@5'])} | {_f(v['mrr'])} | {_f(v['ndcg@10'])} |")

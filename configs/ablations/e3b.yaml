@@ -1,0 +1,15 @@
+# Э3, уточнение: точный поиск имён применяется после реранкера (RRF переранжированного списка
+# и списка определений/вызовов). Референс — лучшая конфигурация без имён из e3.yaml.
+name: e3b-symbols-after-rerank
+evalset: ../../evalsets/demo_v2.yaml
+retrieval_only: true
+runs:
+  - name: "7. AST + заголовки + контекст ноутбука + реранкер"
+    overrides: {chunking: {python: ast, context_header: true, notebook_context: true}, retrieval: {mode: dense, rerank: true, symbols: false}}
+  - name: "12. (7) + имена после реранкера"
+    overrides: {chunking: {python: ast, context_header: true, notebook_context: true}, retrieval: {mode: dense, rerank: true, symbols: true}}
+  - name: "13. (7) hybrid + имена после реранкера"
+    overrides: {chunking: {python: ast, context_header: true, notebook_context: true}, retrieval: {mode: hybrid, rerank: true, symbols: true}}
+  - name: "14. строки + заголовки + контекст ноутбука + реранкер + имена"
+    overrides: {chunking: {python: lines, context_header: true, notebook_context: true}, retrieval: {mode: dense, rerank: true, symbols: true}}
+    note: H1 в полной конфигурации

@@ -24,12 +24,14 @@ storage:
   qdrant_url: null                    # null = embedded local Qdrant; or http://localhost:6333
 
 chunking:
-  python: lines                       # lines (baseline) | ast (Э3)
+  python: ast                         # ast (Э3, default) | lines (Э1 baseline); see reports/e3_ablations.md
   lines_per_chunk: 60
   overlap_lines: 10
+  ast_max_chars: 1800                 # AST chunk budget, non-whitespace characters (cAST)
   max_chunk_chars: 6000
   output_max_chars: 2000              # notebook outputs are truncated, keeping the tail
-  context_header: true                # prepend file path / title / section to the embedded text
+  context_header: true                # prepend file path / title / section / enclosing class to the embedded text
+  notebook_context: true              # notebook title and heading path in every cell's header
 
 embedding:
   model: BAAI/bge-m3
@@ -38,10 +40,17 @@ embedding:
   batch_size: 16
   max_length: 1024
   pooling: cls                        # cls | mean
+  local_files_only: true              # never download at runtime: models come from the local HF cache
 
 retrieval:
   mode: dense                         # dense | sparse | hybrid (sparse needs BGE-M3)
   top_k: 6
+  symbols: true                       # exact-name channel for identifiers in the question (RRF after reranking)
+  rerank: true                        # cross-encoder over the first-stage candidates
+  rerank_model: BAAI/bge-reranker-v2-m3
+  rerank_pool: 40
+  rerank_max_length: 512
+  rerank_batch_size: 16
 
 llm:
   provider: ollama                    # ollama | openai (any OpenAI-compatible endpoint)

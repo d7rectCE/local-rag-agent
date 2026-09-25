@@ -76,6 +76,19 @@ def mean_ci(values: Sequence[float | None], n_boot: int = 1000) -> dict:
     return {"mean": float(np.mean(vals)), "n": len(vals), "ci": bootstrap_ci(vals, n_boot=n_boot)}
 
 
+def paired_bootstrap(a: Sequence[float], b: Sequence[float], n_boot: int = 2000, alpha: float = 0.05, seed: int = 0) -> dict:
+    """Paired comparison of two configurations on the same questions: mean of
+    (a - b), its percentile CI and the one-sided p-value of "a is not better than b"
+    (share of resamples with mean difference <= 0)."""
+    d = np.asarray(a, dtype=float) - np.asarray(b, dtype=float)
+    if len(d) < 2:
+        return {"diff": float(d.mean()) if len(d) else None, "ci": None, "p": None, "n": len(d)}
+    rng = np.random.default_rng(seed)
+    means = np.array([d[rng.integers(0, len(d), len(d))].mean() for _ in range(n_boot)])
+    lo, hi = np.quantile(means, [alpha / 2, 1 - alpha / 2])
+    return {"diff": float(d.mean()), "ci": (float(lo), float(hi)), "p": float((means <= 0).mean()), "n": len(d)}
+
+
 def precision_recall(predicted: Sequence[bool], actual: Sequence[bool]) -> dict:
     tp = sum(p and a for p, a in zip(predicted, actual))
     fp = sum(p and not a for p, a in zip(predicted, actual))

@@ -37,6 +37,8 @@ class AskRequest(BaseModel):
     top_k: int | None = None
     mode: Literal["dense", "sparse", "hybrid"] | None = None
     route: Literal["auto", "corpus", "general"] = "auto"
+    rerank: bool | None = None
+    symbols: bool | None = None
 
 
 def create_app(engine: Engine | None = None) -> FastAPI:
@@ -113,6 +115,13 @@ def create_app(engine: Engine | None = None) -> FastAPI:
         except NoCorpusError as exc:
             raise HTTPException(404, str(exc)) from exc
 
+    @app.get("/symbols")
+    def symbols(name: str) -> dict:
+        try:
+            return eng().lookup_symbol(name)
+        except NoCorpusError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
     @app.post("/ask")
     def ask(req: AskRequest) -> Answer:
         try:
@@ -122,6 +131,8 @@ def create_app(engine: Engine | None = None) -> FastAPI:
                 top_k=req.top_k,
                 mode=req.mode,
                 route=req.route,
+                rerank=req.rerank,
+                symbols=req.symbols,
             )
         except NoCorpusError as exc:
             raise HTTPException(404, "Сначала проиндексируйте папку") from exc

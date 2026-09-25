@@ -5,6 +5,7 @@ separate pass so the generator and judge models are not swapped per question."""
 from __future__ import annotations
 
 import subprocess
+import time
 from collections import Counter, defaultdict
 from datetime import datetime
 from typing import Callable
@@ -40,6 +41,7 @@ class ItemResult(BaseModel):
     retrieved: list[str] = Field(default_factory=list)
     ref_ranks: list[int | None] = Field(default_factory=list)  # first rank of each reference span
     retrieval: dict[str, float] | None = None
+    retrieval_latency_s: float | None = None
     # end-to-end answer
     route: str | None = None
     route_ok: bool | None = None
@@ -81,7 +83,7 @@ def run_config(engine: Engine, es: EvalSet, *, top_k: int, mode: str, route: str
         "index_signature": idx.signature,
         "embedder": s.embedding.model,
         "chunking": s.chunking.model_dump(),
-        "retrieval": {"mode": mode, "top_k": top_k, "eval_k": retrieval_k},
+        "retrieval": {**s.retrieval.model_dump(), "mode": mode, "top_k": top_k, "eval_k": retrieval_k},
         "route": route,
         "llm": engine.llm.name,
         "judge": judge,
@@ -96,7 +98,9 @@ def evaluate_item(engine: Engine, item: EvalItem, *, retrieval_k: int, top_k: in
     )
     try:
         if item.expected_route == "corpus":
+            t0 = time.perf_counter()
             hits = engine.search(item.retrieval_query, retrieval_k, mode)
+            r.retrieval_latency_s = round(time.perf_counter() - t0, 4)
             nodes = [h.node for h in hits]
             r.retrieved = [n.id for n in nodes]
             if item.sources:
@@ -191,6 +195,7 @@ def summarize(results: list[ItemResult], es: EvalSet, n_boot: int = 1000) -> dic
     for r in with_src:
         for ref, rank in zip(items[r.id].sources, r.ref_ranks):
             spans[ref.file_type].append(rank)
+    summary["retrieval_latency"] = percentiles([r.retrieval_latency_s for r in with_src])
     summary["retrieval_by_file_type"] = {
         ft: {"spans": len(ranks), **{f"recall@{k}": sum(1 for x in ranks if x is not None and x <= k) / len(ranks) for k in KS}}
         for ft, ranks in sorted(spans.items())

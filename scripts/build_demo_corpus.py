@@ -379,6 +379,631 @@ FILES["scripts/legacy_metrics.py"] = dedent('''
         print(f1_manual([1, 0, 1, 1, 0], [1, 0, 0, 1, 1]))
 ''')
 
+# Longer modules (Э3): functions and classes that fixed line windows cut in the middle.
+
+FILES["ml_toolkit/trainer.py"] = dedent(r'''
+    """Обучение простого MLP на numpy: расписания learning rate, SGD с моментом,
+    ранняя остановка и чекпоинты.
+
+    Используется в experiments/08_numpy_mlp.ipynb как «ручная» альтернатива
+    sklearn.neural_network.MLPClassifier из 04_digits_augmentation.
+    """
+
+    from __future__ import annotations
+
+    import json
+    import math
+    from dataclasses import dataclass, field
+    from pathlib import Path
+
+    import numpy as np
+
+    # ------------------------------------------------------------------ activations and loss
+
+
+    def relu(x: np.ndarray) -> np.ndarray:
+        return np.maximum(x, 0.0)
+
+
+    def relu_grad(x: np.ndarray) -> np.ndarray:
+        return (x > 0).astype(x.dtype)
+
+
+    def softmax(z: np.ndarray) -> np.ndarray:
+        """Численно устойчивый softmax по строкам (вычитается максимум строки)."""
+        z = z - z.max(axis=1, keepdims=True)
+        e = np.exp(z)
+        return e / e.sum(axis=1, keepdims=True)
+
+
+    def cross_entropy(probs: np.ndarray, y: np.ndarray) -> float:
+        """Средняя кросс-энтропия; y — целочисленные метки классов."""
+        eps = 1e-12
+        return float(-np.log(probs[np.arange(len(y)), y] + eps).mean())
+
+
+    # ------------------------------------------------------------------ learning-rate schedules
+
+
+    def constant_lr(base_lr: float, epoch: int, total_epochs: int) -> float:
+        return base_lr
+
+
+    def step_lr(base_lr: float, epoch: int, total_epochs: int, step_size: int = 10, gamma: float = 0.5) -> float:
+        """Ступенчатое затухание: LR умножается на gamma каждые step_size эпох."""
+        return base_lr * gamma ** (epoch // step_size)
+
+
+    def cosine_lr(base_lr: float, epoch: int, total_epochs: int, min_lr: float = 1e-5, warmup_epochs: int = 3) -> float:
+        """Косинусное затухание с линейным прогревом.
+
+        Первые warmup_epochs эпох LR растёт линейно до base_lr, затем
+        lr = min_lr + 0.5 * (base_lr - min_lr) * (1 + cos(pi * t)),
+        где t — доля пройденных эпох после прогрева.
+        """
+        if epoch < warmup_epochs:
+            return base_lr * (epoch + 1) / warmup_epochs
+        t = (epoch - warmup_epochs) / max(1, total_epochs - warmup_epochs)
+        return min_lr + 0.5 * (base_lr - min_lr) * (1 + math.cos(math.pi * t))
+
+
+    SCHEDULES = {"constant": constant_lr, "step": step_lr, "cosine": cosine_lr}
+
+    # ------------------------------------------------------------------ model
+
+
+    class NumpyMLP:
+        """Перцептрон с одним скрытым слоем: Linear -> ReLU -> Linear -> softmax.
+
+        Веса инициализируются по He (нормальное распределение с дисперсией 2 / fan_in),
+        смещения — нулями.
+        """
+
+        def __init__(self, n_in: int, n_hidden: int, n_out: int, seed: int = 0):
+            rng = np.random.default_rng(seed)
+            self.W1 = rng.normal(0.0, math.sqrt(2.0 / n_in), (n_in, n_hidden))
+            self.b1 = np.zeros(n_hidden)
+            self.W2 = rng.normal(0.0, math.sqrt(2.0 / n_hidden), (n_hidden, n_out))
+            self.b2 = np.zeros(n_out)
+            self._cache = None
+
+        def forward(self, X: np.ndarray) -> np.ndarray:
+            h_pre = X @ self.W1 + self.b1
+            h = relu(h_pre)
+            probs = softmax(h @ self.W2 + self.b2)
+            self._cache = (X, h_pre, h, probs)
+            return probs
+
+        def backward(self, y: np.ndarray, weight_decay: float = 0.0) -> dict[str, np.ndarray]:
+            """Градиенты кросс-энтропии по параметрам для последнего forward; L2 добавляется к весам, не к смещениям."""
+            X, h_pre, h, probs = self._cache
+            n = len(y)
+            d_logits = probs.copy()
+            d_logits[np.arange(n), y] -= 1.0
+            d_logits /= n
+            grads = {"W2": h.T @ d_logits + weight_decay * self.W2, "b2": d_logits.sum(axis=0)}
+            d_h = (d_logits @ self.W2.T) * relu_grad(h_pre)
+            grads["W1"] = X.T @ d_h + weight_decay * self.W1
+            grads["b1"] = d_h.sum(axis=0)
+            return grads
+
+        def params(self) -> dict[str, np.ndarray]:
+            return {"W1": self.W1, "b1": self.b1, "W2": self.W2, "b2": self.b2}
+
+        def set_params(self, params: dict[str, np.ndarray]) -> None:
+            for name, value in params.items():
+                setattr(self, name, value.copy())
+
+        def predict_proba(self, X: np.ndarray) -> np.ndarray:
+            return self.forward(X)
+
+        def predict(self, X: np.ndarray) -> np.ndarray:
+            return self.forward(X).argmax(axis=1)
+
+
+    # ------------------------------------------------------------------ optimiser
+
+
+    class SGDMomentum:
+        """SGD с моментом (heavy ball): v = momentum * v - lr * g; p = p + v."""
+
+        def __init__(self, params: dict[str, np.ndarray], momentum: float = 0.9):
+            self.momentum = momentum
+            self.velocity = {k: np.zeros_like(v) for k, v in params.items()}
+
+        def step(self, params: dict[str, np.ndarray], grads: dict[str, np.ndarray], lr: float) -> None:
+            for k in params:
+                self.velocity[k] = self.momentum * self.velocity[k] - lr * grads[k]
+                params[k] += self.velocity[k]  # in place: the arrays belong to the model
+
+
+    # ------------------------------------------------------------------ early stopping and history
+
+
+    @dataclass
+    class EarlyStopping:
+        """Останавливает обучение, если метрика на валидации не улучшалась patience эпох подряд.
+
+        Улучшением считается рост больше чем на min_delta. По умолчанию patience = 5.
+        """
+
+        patience: int = 5
+        min_delta: float = 1e-4
+        best: float = -math.inf
+        best_epoch: int = -1
+        bad_epochs: int = 0
+
+        def update(self, value: float, epoch: int) -> bool:
+            """Учесть метрику эпохи; вернуть True, если пора остановиться."""
+            if value > self.best + self.min_delta:
+                self.best, self.best_epoch, self.bad_epochs = value, epoch, 0
+                return False
+            self.bad_epochs += 1
+            return self.bad_epochs >= self.patience
+
+
+    @dataclass
+    class History:
+        train_loss: list = field(default_factory=list)
+        val_loss: list = field(default_factory=list)
+        val_accuracy: list = field(default_factory=list)
+        lr: list = field(default_factory=list)
+
+        def best_epoch(self) -> int:
+            return int(np.argmax(self.val_accuracy))
+
+
+    # ------------------------------------------------------------------ checkpoints
+
+
+    def save_checkpoint(model: NumpyMLP, path: str | Path, **meta) -> Path:
+        """Сохранить веса в .npz, а метаданные (эпоха, метрика) — в JSON рядом с тем же именем."""
+        path = Path(path).with_suffix(".npz")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        np.savez(path, **model.params())
+        path.with_suffix(".json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        return path
+
+
+    def load_checkpoint(model: NumpyMLP, path: str | Path) -> dict:
+        """Загрузить веса из .npz в модель и вернуть метаданные из JSON (если есть)."""
+        path = Path(path).with_suffix(".npz")
+        data = np.load(path)
+        model.set_params({k: data[k] for k in ("W1", "b1", "W2", "b2")})
+        meta_path = path.with_suffix(".json")
+        return json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+
+
+    # ------------------------------------------------------------------ training loop
+
+
+    class Trainer:
+        """Обучение NumpyMLP мини-батчами с расписанием LR, weight decay и ранней остановкой.
+
+        После обучения в модель возвращаются веса лучшей по val accuracy эпохи.
+        """
+
+        def __init__(
+            self,
+            model: NumpyMLP,
+            lr: float = 0.05,
+            epochs: int = 60,
+            batch_size: int = 32,
+            schedule: str = "cosine",
+            momentum: float = 0.9,
+            weight_decay: float = 1e-4,
+            patience: int = 8,
+            seed: int = 0,
+            checkpoint_path: str | None = None,
+            verbose: bool = False,
+        ):
+            if schedule not in SCHEDULES:
+                raise ValueError(f"unknown schedule {schedule!r}, expected one of {sorted(SCHEDULES)}")
+            self.model = model
+            self.lr = lr
+            self.epochs = epochs
+            self.batch_size = batch_size
+            self.schedule = schedule
+            self.momentum = momentum
+            self.weight_decay = weight_decay
+            self.patience = patience
+            self.seed = seed
+            self.checkpoint_path = checkpoint_path
+            self.verbose = verbose
+            self.stopped_epoch: int | None = None
+
+        def _run_epoch(self, X: np.ndarray, y: np.ndarray, opt: SGDMomentum, lr: float, rng) -> float:
+            order = rng.permutation(len(X))
+            losses = []
+            for start in range(0, len(order), self.batch_size):
+                idx = order[start : start + self.batch_size]
+                probs = self.model.forward(X[idx])
+                losses.append(cross_entropy(probs, y[idx]))
+                grads = self.model.backward(y[idx], self.weight_decay)
+                opt.step(self.model.params(), grads, lr)
+            return float(np.mean(losses))
+
+        def fit(self, X_train: np.ndarray, y_train: np.ndarray, X_val: np.ndarray, y_val: np.ndarray) -> History:
+            rng = np.random.default_rng(self.seed)
+            schedule = SCHEDULES[self.schedule]
+            opt = SGDMomentum(self.model.params(), self.momentum)
+            stopper = EarlyStopping(patience=self.patience)
+            history = History()
+            best_params = None
+            for epoch in range(self.epochs):
+                lr = schedule(self.lr, epoch, self.epochs)
+                train_loss = self._run_epoch(X_train, y_train, opt, lr, rng)
+                val_probs = self.model.predict_proba(X_val)
+                val_acc = float((val_probs.argmax(axis=1) == y_val).mean())
+                history.train_loss.append(train_loss)
+                history.val_loss.append(cross_entropy(val_probs, y_val))
+                history.val_accuracy.append(val_acc)
+                history.lr.append(lr)
+                stop = stopper.update(val_acc, epoch)
+                if stopper.best_epoch == epoch:
+                    best_params = {k: v.copy() for k, v in self.model.params().items()}
+                    if self.checkpoint_path:
+                        save_checkpoint(self.model, self.checkpoint_path, epoch=epoch, val_accuracy=val_acc)
+                if self.verbose and (epoch % 10 == 0 or stop):
+                    print(f"epoch {epoch:3d}  lr={lr:.4f}  train_loss={train_loss:.4f}  val_acc={val_acc:.4f}")
+                if stop:
+                    break
+            self.stopped_epoch = epoch
+            if best_params is not None:
+                self.model.set_params(best_params)
+            return history
+''')
+
+FILES["ml_toolkit/evaluation.py"] = dedent(r'''
+    """Оценка моделей: кросс-валидация, подбор порога, калибровка, сравнение моделей."""
+
+    from __future__ import annotations
+
+    import numpy as np
+    import pandas as pd
+    from sklearn.base import clone
+    from sklearn.metrics import f1_score, precision_recall_fscore_support, roc_auc_score
+    from sklearn.model_selection import StratifiedKFold
+
+    SCORINGS = ("roc_auc", "f1", "accuracy")
+
+
+    def _score(model, X, y, scoring: str) -> float:
+        if scoring == "roc_auc":
+            proba = model.predict_proba(X)
+            if proba.shape[1] == 2:
+                return float(roc_auc_score(y, proba[:, 1]))
+            return float(roc_auc_score(y, proba, multi_class="ovr"))
+        pred = model.predict(X)
+        if scoring == "f1":
+            return float(f1_score(y, pred, average="macro"))
+        if scoring == "accuracy":
+            return float((pred == y).mean())
+        raise ValueError(f"unknown scoring {scoring!r}, expected one of {SCORINGS}")
+
+
+    def cross_validate_model(model, X, y, n_splits: int = 5, seed: int = 42, scoring: str = "roc_auc") -> dict:
+        """Стратифицированная k-fold кросс-валидация (по умолчанию 5 фолдов, shuffle, seed=42).
+
+        Модель клонируется на каждом фолде. Возвращает среднее, стандартное отклонение
+        (ddof=1) и значения по фолдам.
+        """
+        skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+        scores = []
+        for train_idx, val_idx in skf.split(X, y):
+            fitted = clone(model).fit(X[train_idx], y[train_idx])
+            scores.append(_score(fitted, X[val_idx], y[val_idx], scoring))
+        scores = np.asarray(scores)
+        return {"mean": float(scores.mean()), "std": float(scores.std(ddof=1)), "folds": scores.round(4).tolist()}
+
+
+    def compare_models(models: dict, X, y, n_splits: int = 5, seed: int = 42, scoring: str = "roc_auc") -> pd.DataFrame:
+        """Кросс-валидация нескольких моделей на одинаковых фолдах; таблица отсортирована по среднему скору."""
+        rows = []
+        for name, model in models.items():
+            res = cross_validate_model(model, X, y, n_splits=n_splits, seed=seed, scoring=scoring)
+            rows.append({"model": name, "mean": res["mean"], "std": res["std"]})
+        return pd.DataFrame(rows).sort_values("mean", ascending=False).reset_index(drop=True).round(4)
+
+
+    def threshold_search(y_true, y_score, metric: str = "f1", grid=None) -> tuple[float, float]:
+        """Подбор порога бинарного классификатора, максимизирующего F1 (или accuracy).
+
+        По умолчанию перебираются 99 порогов от 0.01 до 0.99 с шагом 0.01.
+        Возвращает (лучший порог, значение метрики).
+        """
+        y_true = np.asarray(y_true)
+        y_score = np.asarray(y_score)
+        grid = np.linspace(0.01, 0.99, 99) if grid is None else np.asarray(grid)
+        best_t, best_v = 0.5, -1.0
+        for t in grid:
+            pred = (y_score >= t).astype(int)
+            value = f1_score(y_true, pred) if metric == "f1" else float((pred == y_true).mean())
+            if value > best_v:
+                best_t, best_v = float(t), float(value)
+        return best_t, best_v
+
+
+    def expected_calibration_error(y_true, y_prob, n_bins: int = 15) -> float:
+        """Expected Calibration Error.
+
+        Объекты раскладываются по n_bins бинам равной ширины по уверенности (максимальной
+        вероятности); ECE — средневзвешенное по доле объектов в бине |accuracy - confidence|.
+        Для бинарной задачи y_prob может быть вектором вероятностей положительного класса.
+        """
+        y_true = np.asarray(y_true)
+        y_prob = np.asarray(y_prob)
+        if y_prob.ndim == 2:
+            conf, pred = y_prob.max(axis=1), y_prob.argmax(axis=1)
+        else:
+            pred = (y_prob >= 0.5).astype(int)
+            conf = np.where(pred == 1, y_prob, 1.0 - y_prob)
+        correct = (pred == y_true).astype(float)
+        edges = np.linspace(0.0, 1.0, n_bins + 1)
+        ece = 0.0
+        for lo, hi in zip(edges[:-1], edges[1:]):
+            mask = (conf > lo) & (conf <= hi)
+            if mask.any():
+                ece += mask.mean() * abs(correct[mask].mean() - conf[mask].mean())
+        return float(ece)
+
+
+    def classification_report_df(y_true, y_pred, labels=None) -> pd.DataFrame:
+        """Precision / recall / F1 / support по классам в виде DataFrame."""
+        p, r, f, s = precision_recall_fscore_support(y_true, y_pred, labels=labels, zero_division=0)
+        index = labels if labels is not None else np.unique(np.concatenate([np.asarray(y_true), np.asarray(y_pred)]))
+        return pd.DataFrame({"precision": p, "recall": r, "f1": f, "support": s}, index=index).round(4)
+
+
+    def bootstrap_compare(y_true, pred_a, pred_b, metric, n_boot: int = 2000, seed: int = 0) -> tuple[float, float]:
+        """Парный бутстреп разницы метрики двух моделей на одной выборке.
+
+        Возвращает (наблюдаемая разница metric(a) - metric(b), одностороннее p-значение
+        гипотезы «a не лучше b» — доля бутстреп-выборок, где разница <= 0).
+        """
+        y_true, pred_a, pred_b = map(np.asarray, (y_true, pred_a, pred_b))
+        rng = np.random.default_rng(seed)
+        observed = metric(y_true, pred_a) - metric(y_true, pred_b)
+        n = len(y_true)
+        worse = 0
+        for _ in range(n_boot):
+            idx = rng.integers(0, n, n)
+            if metric(y_true[idx], pred_a[idx]) - metric(y_true[idx], pred_b[idx]) <= 0:
+                worse += 1
+        return float(observed), worse / n_boot
+
+
+    def learning_curve_table(model, X, y, fractions=(0.1, 0.25, 0.5, 1.0), n_splits: int = 5, seed: int = 42,
+                             scoring: str = "roc_auc") -> pd.DataFrame:
+        """Качество на кросс-валидации при обучении на доле train (стратифицированная подвыборка)."""
+        rng = np.random.default_rng(seed)
+        rows = []
+        for frac in fractions:
+            idx = np.concatenate([
+                rng.choice(np.flatnonzero(y == c), max(2, int(frac * np.sum(y == c))), replace=False)
+                for c in np.unique(y)
+            ])
+            res = cross_validate_model(model, X[idx], y[idx], n_splits=n_splits, seed=seed, scoring=scoring)
+            rows.append({"fraction": frac, "n": len(idx), "mean": res["mean"], "std": res["std"]})
+        return pd.DataFrame(rows).round(4)
+''')
+
+FILES["ml_toolkit/preprocessing.py"] = dedent(r'''
+    """Трансформеры признаков в стиле scikit-learn и сборка табличного пайплайна."""
+
+    from __future__ import annotations
+
+    import numpy as np
+    from sklearn.base import BaseEstimator, TransformerMixin
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import PolynomialFeatures, StandardScaler
+
+
+    class OutlierClipper(BaseEstimator, TransformerMixin):
+        """Обрезает каждый признак по квантилям, посчитанным на train.
+
+        По умолчанию нижний квантиль 0.01 и верхний 0.99 (то есть 1% и 99%).
+        """
+
+        def __init__(self, lower: float = 0.01, upper: float = 0.99):
+            self.lower = lower
+            self.upper = upper
+
+        def fit(self, X, y=None):
+            if not 0.0 <= self.lower < self.upper <= 1.0:
+                raise ValueError("expected 0 <= lower < upper <= 1")
+            X = np.asarray(X, dtype=float)
+            self.lo_ = np.quantile(X, self.lower, axis=0)
+            self.hi_ = np.quantile(X, self.upper, axis=0)
+            return self
+
+        def transform(self, X):
+            return np.clip(np.asarray(X, dtype=float), self.lo_, self.hi_)
+
+
+    class LogTransformer(BaseEstimator, TransformerMixin):
+        """log1p для признаков с тяжёлым хвостом.
+
+        Если на train встречаются отрицательные значения, признак сначала сдвигается на
+        -min (сдвиг shift_ запоминается и применяется к новым данным).
+        """
+
+        def __init__(self, columns=None):
+            self.columns = columns
+
+        def fit(self, X, y=None):
+            X = np.asarray(X, dtype=float)
+            cols = range(X.shape[1]) if self.columns is None else self.columns
+            self.columns_ = list(cols)
+            self.shift_ = np.maximum(0.0, -X[:, self.columns_].min(axis=0))
+            return self
+
+        def transform(self, X):
+            X = np.array(X, dtype=float, copy=True)
+            shifted = np.maximum(X[:, self.columns_] + self.shift_, 0.0)
+            X[:, self.columns_] = np.log1p(shifted)
+            return X
+
+
+    class FrequencyEncoder(BaseEstimator, TransformerMixin):
+        """Кодирует категориальный признак частотой категории в train.
+
+        Неизвестные на train категории получают unknown_value (по умолчанию 0.0).
+        Работает с одномерным массивом или с каждой колонкой двумерного.
+        """
+
+        def __init__(self, unknown_value: float = 0.0, normalize: bool = True):
+            self.unknown_value = unknown_value
+            self.normalize = normalize
+
+        def fit(self, X, y=None):
+            X = self._as_2d(X)
+            self.maps_ = []
+            for j in range(X.shape[1]):
+                values, counts = np.unique(X[:, j], return_counts=True)
+                freq = counts / counts.sum() if self.normalize else counts.astype(float)
+                self.maps_.append(dict(zip(values.tolist(), freq.tolist())))
+            return self
+
+        def transform(self, X):
+            X = self._as_2d(X)
+            out = np.empty(X.shape, dtype=float)
+            for j, mapping in enumerate(self.maps_):
+                out[:, j] = [mapping.get(v, self.unknown_value) for v in X[:, j].tolist()]
+            return out
+
+        @staticmethod
+        def _as_2d(X):
+            X = np.asarray(X, dtype=object)
+            return X.reshape(-1, 1) if X.ndim == 1 else X
+
+
+    class ColumnDropper(BaseEstimator, TransformerMixin):
+        """Удаляет колонки с почти нулевой дисперсией (меньше threshold на train)."""
+
+        def __init__(self, threshold: float = 1e-8):
+            self.threshold = threshold
+
+        def fit(self, X, y=None):
+            X = np.asarray(X, dtype=float)
+            self.keep_ = np.flatnonzero(X.var(axis=0) > self.threshold)
+            return self
+
+        def transform(self, X):
+            return np.asarray(X, dtype=float)[:, self.keep_]
+
+
+    def build_tabular_pipeline(clip: bool = True, log_columns=None, poly_degree: int = 1, drop_constant: bool = True) -> Pipeline:
+        """Пайплайн для числовых табличных данных.
+
+        Порядок шагов: ColumnDropper -> OutlierClipper -> LogTransformer -> PolynomialFeatures -> StandardScaler.
+        Шаги, выключенные аргументами, пропускаются.
+        """
+        steps = []
+        if drop_constant:
+            steps.append(("drop", ColumnDropper()))
+        if clip:
+            steps.append(("clip", OutlierClipper()))
+        if log_columns is not None:
+            steps.append(("log", LogTransformer(columns=log_columns)))
+        if poly_degree > 1:
+            steps.append(("poly", PolynomialFeatures(degree=poly_degree, include_bias=False)))
+        steps.append(("scale", StandardScaler()))
+        return Pipeline(steps)
+''')
+
+FILES["scripts/hparam_search.py"] = dedent(r'''
+    """Случайный поиск гиперпараметров HistGradientBoosting с кросс-валидацией.
+
+    Пример:
+        python scripts/hparam_search.py --dataset breast_cancer --n-iter 30 --seed 0
+    Результаты сохраняются в runs/hparam_search_<dataset>.csv.
+    """
+
+    from __future__ import annotations
+
+    import argparse
+    import math
+    import sys
+    from pathlib import Path
+
+    import numpy as np
+    import pandas as pd
+    from sklearn.pipeline import make_pipeline
+
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
+
+    from ml_toolkit.data import load_dataset  # noqa: E402
+    from ml_toolkit.evaluation import cross_validate_model  # noqa: E402
+    from ml_toolkit.models import build_model  # noqa: E402
+    from ml_toolkit.preprocessing import build_tabular_pipeline  # noqa: E402
+
+    # (distribution, arguments): log_uniform(low, high), int(low, high) inclusive, choice(options)
+    SEARCH_SPACE = {
+        "learning_rate": ("log_uniform", 0.01, 0.3),
+        "max_leaf_nodes": ("int", 8, 64),
+        "min_samples_leaf": ("int", 5, 50),
+        "l2_regularization": ("log_uniform", 1e-3, 10.0),
+        "max_iter": ("choice", [100, 200, 300]),
+    }
+
+
+    def sample_params(space: dict, rng: np.random.Generator) -> dict:
+        params = {}
+        for name, (kind, *args) in space.items():
+            if kind == "log_uniform":
+                low, high = args
+                params[name] = float(math.exp(rng.uniform(math.log(low), math.log(high))))
+            elif kind == "int":
+                low, high = args
+                params[name] = int(rng.integers(low, high + 1))
+            elif kind == "choice":
+                (options,) = args
+                params[name] = options[int(rng.integers(len(options)))]
+            else:
+                raise ValueError(f"unknown distribution {kind!r} for {name}")
+        return params
+
+
+    def random_search(X, y, n_iter: int = 20, seed: int = 0, n_splits: int = 5, scoring: str = "roc_auc") -> pd.DataFrame:
+        """n_iter случайных конфигураций из SEARCH_SPACE, каждая оценивается k-fold кросс-валидацией."""
+        rng = np.random.default_rng(seed)
+        rows = []
+        for i in range(n_iter):
+            params = sample_params(SEARCH_SPACE, rng)
+            model = make_pipeline(build_tabular_pipeline(), build_model("hist_gb", random_state=seed, **params))
+            res = cross_validate_model(model, X, y, n_splits=n_splits, seed=seed, scoring=scoring)
+            rows.append({"trial": i, **params, "cv_mean": res["mean"], "cv_std": res["std"]})
+        return pd.DataFrame(rows).sort_values("cv_mean", ascending=False).reset_index(drop=True)
+
+
+    def parse_args(argv=None) -> argparse.Namespace:
+        p = argparse.ArgumentParser(description="Random search for HistGradientBoosting")
+        p.add_argument("--dataset", default="breast_cancer")
+        p.add_argument("--n-iter", type=int, default=20)
+        p.add_argument("--n-splits", type=int, default=5)
+        p.add_argument("--scoring", default="roc_auc", choices=["roc_auc", "f1", "accuracy"])
+        p.add_argument("--seed", type=int, default=0)
+        p.add_argument("--out", default=None, help="CSV path (default: runs/hparam_search_<dataset>.csv)")
+        return p.parse_args(argv)
+
+
+    def main(argv=None) -> pd.DataFrame:
+        args = parse_args(argv)
+        X, y, _ = load_dataset(args.dataset)
+        table = random_search(X, y, n_iter=args.n_iter, seed=args.seed, n_splits=args.n_splits, scoring=args.scoring)
+        out = Path(args.out or f"runs/hparam_search_{args.dataset}.csv")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        table.to_csv(out, index=False)
+        print(table.head(5).round(4).to_string(index=False))
+        print(f"saved {len(table)} trials to {out}")
+        return table
+
+
+    if __name__ == "__main__":
+        main()
+''')
+
 # --------------------------------------------------------------------------
 # Notebooks: list of ("md" | "code", source)
 # --------------------------------------------------------------------------
@@ -587,6 +1212,65 @@ NOTEBOOKS["experiments/07_scratch.ipynb"] = [
     ("md", "Не забыть: `f1_manual` лежит в `scripts/legacy_metrics.py`, в ноутбук не импортирован."),
 ]
 
+NOTEBOOKS["experiments/08_numpy_mlp.ipynb"] = [
+    ("md", "# MLP на numpy: косинусное расписание и ранняя остановка\n\nРучная реализация из `ml_toolkit.trainer` "
+           "на тех же данных digits и том же разбиении (seed=0), что и `04_digits_augmentation`."),
+    ("code", SETUP + dedent("""
+        from ml_toolkit.data import make_split
+        from ml_toolkit.features import make_preprocessor
+        from ml_toolkit.metrics import calc_metrics
+        from ml_toolkit.trainer import NumpyMLP, Trainer
+    """)),
+    ("code", dedent("""
+        split = make_split("digits", seed=0)
+        pre = make_preprocessor().fit(split.X_train)
+        X_tr, X_va, X_te = (pre.transform(x) for x in (split.X_train, split.X_val, split.X_test))
+        print(X_tr.shape, X_va.shape, X_te.shape)
+    """)),
+    ("md", "## Обучение\n\nlr = 0.005, до 80 эпох, батч 64, косинусное расписание с прогревом, SGD с моментом 0.9, "
+           "weight decay 1e-3, ранняя остановка с patience = 10 по accuracy на валидации."),
+    ("code", dedent("""
+        model = NumpyMLP(n_in=64, n_hidden=128, n_out=10, seed=0)
+        trainer = Trainer(model, lr=0.005, epochs=80, batch_size=64, schedule="cosine", momentum=0.9,
+                          weight_decay=1e-3, patience=10, seed=0, verbose=True)
+        history = trainer.fit(X_tr, split.y_train, X_va, split.y_val)
+        print(f"stopped at epoch {trainer.stopped_epoch}, best epoch {history.best_epoch()}, "
+              f"best val accuracy {max(history.val_accuracy):.4f}")
+    """)),
+    ("code", dedent("""
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9, 3))
+        ax1.plot(history.train_loss, label="train")
+        ax1.plot(history.val_loss, label="val")
+        ax1.set_title("cross-entropy")
+        ax1.legend()
+        ax2.plot(history.val_accuracy, color="tab:green")
+        ax2.set_title("val accuracy")
+        ax3 = ax2.twinx()
+        ax3.plot(history.lr, color="tab:gray", ls="--")
+        ax3.set_ylabel("lr")
+        plt.tight_layout()
+        plt.show()
+    """)),
+    ("md", "## Сравнение расписаний learning rate\n\nОдинаковые гиперпараметры, до 40 эпох."),
+    ("code", dedent("""
+        rows = []
+        for schedule in ["constant", "step", "cosine"]:
+            m = NumpyMLP(64, 128, 10, seed=0)
+            t = Trainer(m, lr=0.005, epochs=40, batch_size=64, weight_decay=1e-3, schedule=schedule, patience=10, seed=0)
+            h = t.fit(X_tr, split.y_train, X_va, split.y_val)
+            rows.append({"schedule": schedule, "best_val_acc": max(h.val_accuracy), "best_epoch": h.best_epoch(),
+                         "stopped_epoch": t.stopped_epoch})
+        schedule_table = pd.DataFrame(rows).round(4)
+        schedule_table
+    """)),
+    ("md", "## Тест"),
+    ("code", dedent("""
+        test_metrics = calc_metrics(split.y_test, model.predict(X_te), model.predict_proba(X_te))
+        print("TEST:", {k: round(v, 4) for k, v in test_metrics.items()})
+    """)),
+    ("md", "Ручной MLP сопоставим с `MLPClassifier` из `04_digits_augmentation`; лучшее расписание — в таблице выше."),
+]
+
 SCRATCH_EXEC_COUNTS = {0: 1, 1: 4, 2: 2}  # code cell index -> execution count (run out of order)
 
 
@@ -594,10 +1278,18 @@ def build_notebook(cells: list[tuple[str, str]]) -> nbformat.NotebookNode:
     nb = new_notebook()
     nb.metadata["kernelspec"] = {"name": "python3", "display_name": "Python 3", "language": "python"}
     nb.metadata["language_info"] = {"name": "python"}
-    for kind, src in cells:
+    for i, (kind, src) in enumerate(cells, start=1):
         src = src.rstrip("\n")
-        nb.cells.append(new_markdown_cell(src) if kind == "md" else new_code_cell(src))
+        cell = new_markdown_cell(src) if kind == "md" else new_code_cell(src)
+        cell.id = f"cell-{i:02d}"  # stable ids: rebuilding the corpus must not produce spurious diffs
+        nb.cells.append(cell)
     return nb
+
+
+def strip_volatile_metadata(nb: nbformat.NotebookNode) -> None:
+    """Drop execution timestamps so that only real output changes show up in git."""
+    for cell in nb.cells:
+        cell.metadata.pop("execution", None)
 
 
 def use_current_interpreter_for_kernel() -> None:
@@ -644,7 +1336,9 @@ def main() -> None:
                     if "execution_count" in out:
                         out["execution_count"] = count
         nb.metadata.pop("widgets", None)
-        nbformat.write(nb, str(path))
+        strip_volatile_metadata(nb)
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            nbformat.write(nb, f)
 
     (OUT / "README.md").write_text(dedent("""
         # Demo corpus

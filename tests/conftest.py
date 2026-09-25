@@ -70,6 +70,9 @@ def settings(tmp_path: Path) -> Settings:
     s.corpus.exclude = ["__pycache__", "Аккаунты"]
     s.chunking.lines_per_chunk = 6
     s.chunking.overlap_lines = 2
+    # no real models in tests: the reranker is injected explicitly where needed
+    s.retrieval.rerank = False
+    s.retrieval.symbols = False
     return s
 
 

@@ -186,6 +186,10 @@ def sidebar(status: dict) -> None:
     st.slider("Фрагментов в контексте", 2, 12, status["retrieval"]["top_k"], key="top_k")
     st.selectbox("Режим", ["dense", "sparse", "hybrid"], index=["dense", "sparse", "hybrid"].index(status["retrieval"]["mode"]),
                  key="mode", help="sparse и hybrid работают только с BGE-M3")
+    st.toggle("Реранкер", value=status["retrieval"]["rerank"], key="rerank",
+              help="Кросс-энкодер переупорядочивает кандидатов первой стадии: точнее, но медленнее")
+    st.toggle("Точный поиск имён", value=status["retrieval"]["symbols"], key="symbols",
+              help="Для имён функций и классов из вопроса добавляет их определения и места вызова")
 
 
 def answer_text(ans: dict) -> str:
@@ -285,6 +289,8 @@ def main() -> None:
                     "top_k": st.session_state.top_k,
                     "mode": st.session_state.mode,
                     "route": st.session_state.get("route") or "auto",
+                    "rerank": st.session_state.rerank,
+                    "symbols": st.session_state.symbols,
                 })
             if err:
                 st.error(err)

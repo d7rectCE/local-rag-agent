@@ -26,7 +26,7 @@ from rag_agent.index.vector_store import VectorStore
 from rag_agent.ingest import CorpusFile, SkippedFile, iter_corpus, parse_file
 from rag_agent.schema import ParsedFile
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # 2: AST chunks, symbols/calls tables, uses_var edges
 
 
 def _now() -> str:

@@ -87,6 +87,27 @@ def ask(
 
 
 @app.command()
+def symbols(name: str, root: Optional[Path] = typer.Option(None, help="Corpus folder (default: last used)")) -> None:
+    """Where a function or class is defined and where it is called (static index, no LLM)."""
+    engine = _engine()
+    if root:
+        engine.open_corpus(root)
+    found = engine.lookup_symbol(name)
+    engine.close()
+
+    def where(row: dict, line_key: str) -> str:
+        cell = f", ячейка {row['cell']}" if row.get("cell") else ""
+        return f"{row['file_path']}{cell}, строка {row[line_key]}"
+
+    typer.echo(f"Определения {name}:" if found["definitions"] else f"Определений {name} не найдено")
+    for d in found["definitions"]:
+        typer.echo(f"  {where(d, 'line_start')}: {d['signature']}" + (f" — {d['doc']}" if d["doc"] else ""))
+    typer.echo(f"Вызовы ({len(found['calls'])}):")
+    for c in found["calls"]:
+        typer.echo(f"  {where(c, 'line')}" + (f" в {c['caller']}" if c["caller"] else ""))
+
+
+@app.command()
 def status() -> None:
     """Show the active corpus, index statistics and models."""
     engine = _engine()
@@ -106,7 +127,7 @@ def serve(host: Optional[str] = None, port: Optional[int] = None) -> None:
     uvicorn.run(create_app(), host=host or settings.api.host, port=port or settings.api.port)
 
 
-DEFAULT_EVALSET = REPO_ROOT / "evalsets" / "demo_v1.yaml"
+DEFAULT_EVALSET = REPO_ROOT / "evalsets" / "demo_v2.yaml"
 
 
 @app.command("eval")
@@ -199,6 +220,16 @@ def eval_cmd(
     if "judge" in summary:
         typer.echo(f"Correctness (judge) {summary['judge']['correctness']['mean']:.3f}")
     typer.echo(f"Report: {out_dir / 'report.md'}")
+
+
+@app.command()
+def ablate(spec: Path = typer.Argument(..., help="Ablation spec (YAML)")) -> None:
+    """Run several configurations on one eval set and write a comparison table."""
+    from rag_agent.evaluation.ablation import load_spec, run_ablation
+
+    settings = load_settings()
+    rows, out_dir = run_ablation(load_spec(spec), settings, REPO_ROOT / "runs" / "ablations", log=typer.echo)
+    typer.echo(f"Report: {out_dir / 'ablation.md'}")
 
 
 @app.command("eval-validate")

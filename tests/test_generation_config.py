@@ -21,3 +21,21 @@ def test_env_overrides_nested_values(tmp_path):
                       local_path=None)
     assert s.llm.model == "qwen3.6:27b"
     assert s.retrieval.top_k == 9
+
+
+def test_missing_model_error_mentions_download(monkeypatch):
+    import pytest
+
+    from rag_agent.index.embedder import load_pretrained
+
+    monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+    monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
+
+    class Loader:
+        @staticmethod
+        def from_pretrained(name, local_files_only, **kwargs):
+            assert local_files_only is True
+            raise OSError("not in cache")
+
+    with pytest.raises(RuntimeError, match="hf download org/missing"):
+        load_pretrained(Loader, "org/missing", True)

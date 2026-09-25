@@ -49,7 +49,7 @@ def test_line_windows_cover_all_lines():
 
 def test_python_parser_chunks_and_outline(corpus: Path):
     cf = next(f for f in iter_corpus(corpus, [".py"], exclude=["__pycache__", "Аккаунты"]))
-    parsed = parse_file(cf, ChunkingConfig(lines_per_chunk=6, overlap_lines=2))
+    parsed = parse_file(cf, ChunkingConfig(python="lines", lines_per_chunk=6, overlap_lines=2))
     file_node = parsed.nodes[0]
     assert file_node.node_type == NodeType.FILE and not file_node.embed
     assert file_node.metadata["functions"] == ["compute_f1"]

@@ -136,3 +136,23 @@ def test_without_index_general_answer_with_notice(settings, fake_embedder):
     ans = eng.ask("Какой learning rate я использовал?")
     assert ans.route == "general" and ans.notice and "не проиндексирована" in ans.notice
     eng.close()
+
+
+def test_router_general_is_overridden_when_question_names_corpus_code(settings, fake_embedder, corpus: Path):
+    llm = FakeLLM(settings, route={"route": "general", "standalone_question": "What does compute_f1 return?"})
+    eng = Engine(settings, embedder=fake_embedder, llm=llm)
+    eng.index_folder(corpus)
+    ans = eng.ask("What does compute_f1 return?")
+    assert ans.route == "corpus"
+    assert ans.trace[0].detail["override"] == "corpus" and ans.trace[0].detail["corpus_mentions"] == ["compute_f1"]
+    # a file name counts as well; ordinary words do not
+    llm.route = {"route": "general", "standalone_question": "Explain metrics in exp_a"}
+    assert eng.ask("Explain metrics in exp_a").route == "corpus"
+    llm.route = {"route": "general", "standalone_question": "What is recall?"}
+    assert eng.ask("What is recall?").route == "general"
+    # ordinary words that happen to be method or file names do not count; a class name does
+    llm.route = {"route": "general", "standalone_question": "How do I fit a model with good metrics?"}
+    assert eng.ask("How do I fit a model with good metrics?").route == "general"
+    llm.route = {"route": "general", "standalone_question": "What does Trainer do?"}
+    assert eng.ask("What does Trainer do?").route == "corpus"
+    eng.close()

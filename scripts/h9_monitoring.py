@@ -1,0 +1,262 @@
+"""H9 bench (ТЗ ч.1: S12, Э9): calibrated monitoring with a correction for the number of
+series finds degradation with fewer false alarms than detectors with default thresholds.
+
+1. Canary questions are generated from the catalog of the demo corpus (no LLM).
+2. Every canary is answered by the retrieval component (dense top-5) and by the
+   reranker component (top-5 after re-ranking the dense top-10) in three states of the
+   system: normal; a weaker embedder (vectors truncated to the first 128 of 1024
+   dimensions, as if a small model replaced BGE-M3); files of a new domain added to the
+   index (source code of web libraries installed locally — no downloads).
+3. The monitoring fleet is "component x segment": 2 components x 7 segments = 14 series.
+   Each step every series answers one random canary of its segment; the state switches
+   at a known moment. Signals: 1 - reciprocal rank (continuous) and a top-5 miss (0/1).
+4. Detectors: Page-Hinkley and DDM with their default thresholds (current practice) vs
+   the same Page-Hinkley calibrated by driftfdr, without a correction and with a
+   correction for the number of series (BH within a window, LORD++ online).
+
+Fragment vectors are read from the built index; only canaries, distractors and the
+reranker run on the CPU (the GPU is busy). Nothing is downloaded.
+
+Needs driftfdr (pip install -e ".[monitoring]").
+
+    python scripts/h9_monitoring.py --out reports/e9
+"""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import json
+import site
+import sys
+import time
+from dataclasses import replace
+from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from rag_agent.config import load_settings  # noqa: E402
+from rag_agent.index.catalog import Catalog  # noqa: E402
+from rag_agent.index.embedder import Embedder  # noqa: E402
+from rag_agent.index.indexer import corpus_key, index_signature  # noqa: E402
+from rag_agent.index.reranker import Reranker  # noqa: E402
+from rag_agent.monitoring.canaries import build_canaries  # noqa: E402
+from rag_agent.schema import Node  # noqa: E402
+
+STATES = ("normal", "weak_embedder", "new_domain")
+WEAK_DIMS = 128
+POOL = 10
+TOP = 5
+
+
+# --------------------------------------------------------------------------- canary answers per state
+
+
+def distractor_texts(limit: int = 300, chars: int = 1200) -> list[str]:
+    """Source of locally installed web libraries: a domain the archive does not have."""
+    roots = [Path(p) for p in site.getsitepackages()]
+    texts = []
+    for pkg in ("starlette", "httpx", "fastapi", "uvicorn", "httpcore"):
+        for root in roots:
+            for f in sorted((root / pkg).rglob("*.py")) if (root / pkg).exists() else []:
+                src = f.read_text(encoding="utf-8", errors="replace")
+                try:
+                    tree = ast.parse(src)
+                except SyntaxError:
+                    continue
+                for node in ast.walk(tree):
+                    if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.AsyncFunctionDef)):
+                        seg = ast.get_source_segment(src, node) or ""
+                        if len(seg) > 200:
+                            texts.append(f"# {pkg}/{f.name}\n{seg[:chars]}")
+                if len(texts) >= limit:
+                    return texts[:limit]
+    return texts[:limit]
+
+
+def norm(x: np.ndarray) -> np.ndarray:
+    return x / np.clip(np.linalg.norm(x, axis=1, keepdims=True), 1e-9, None)
+
+
+def index_vectors(index_dir: Path, ids: list[str]) -> np.ndarray:
+    """Dense vectors of the fragments as the index stores them (computed on the GPU at indexing time);
+    a copy of the local Qdrant folder is opened, so a running process that holds the index is not disturbed."""
+    import shutil
+    import tempfile
+
+    from qdrant_client import QdrantClient
+
+    tmp = Path(tempfile.mkdtemp(prefix="rag-h9-"))
+    shutil.copytree(index_dir / "qdrant", tmp / "qdrant")
+    client = QdrantClient(path=str(tmp / "qdrant"))
+    vecs, offset = {}, None
+    while True:
+        points, offset = client.scroll("nodes", limit=256, offset=offset, with_vectors=["dense"],
+                                       with_payload=["node_id"])
+        for pt in points:
+            vecs[pt.payload["node_id"]] = np.asarray(pt.vector["dense"], dtype=np.float32)
+        if offset is None:
+            break
+    client.close()
+    shutil.rmtree(tmp, ignore_errors=True)
+    return np.stack([vecs[i] for i in ids])
+
+
+def answers(canaries, nodes: list[Node], texts: list[str], doc: np.ndarray, embedder, reranker, n_distractors: int,
+            log):
+    """rank of the first fragment answering each canary, per state and component (0 = not in the pool)."""
+    t0 = time.perf_counter()
+    q = np.asarray(embedder.encode([c.question for c in canaries]).dense, dtype=np.float32)
+    dis_texts = distractor_texts(n_distractors) if n_distractors else []
+    dis = np.asarray(embedder.encode(dis_texts).dense, dtype=np.float32) if dis_texts else None
+    log(f"embedded {len(canaries)} canaries, {0 if dis is None else len(dis)} distractors "
+        f"in {time.perf_counter() - t0:.0f} s")
+    out = {}
+    for state in STATES:
+        D, Q, pool_nodes = doc, q, list(nodes)
+        if state == "weak_embedder":
+            D, Q = norm(doc[:, :WEAK_DIMS]), norm(q[:, :WEAK_DIMS])
+        if state == "new_domain" and dis is not None:
+            D = np.concatenate([doc, dis])
+            pool_nodes = pool_nodes + [None] * len(dis)
+        sims = norm(Q) @ norm(D).T
+        top = np.argsort(-sims, axis=1)[:, :POOL]
+        dense_rank, rerank_rank = [], []
+        for i, c in enumerate(canaries):
+            cand = [pool_nodes[j] for j in top[i]]
+            hits = [n is not None and c.answered_by(n) for n in cand]
+            dense_rank.append(next((k + 1 for k, h in enumerate(hits) if h), 0))
+            cand_texts = [texts[j] if j < len(texts) else dis_texts[j - len(texts)] for j in top[i]]
+            scores = reranker.score(c.question, cand_texts)
+            order = np.argsort(-np.asarray(scores))
+            rerank_rank.append(next((k + 1 for k, j in enumerate(order) if hits[j]), 0))
+        out[state] = {"retrieval": np.array(dense_rank), "rerank": np.array(rerank_rank)}
+        log(f"  {state}: retrieval miss@{TOP} {np.mean([r == 0 or r > TOP for r in dense_rank]):.3f}, "
+            f"rerank miss@{TOP} {np.mean([r == 0 or r > TOP for r in rerank_rank]):.3f} ({time.perf_counter() - t0:.0f} s)")
+    return out
+
+
+# --------------------------------------------------------------------------- scenarios and detectors
+
+
+def signals(rank: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    value = np.where(rank > 0, 1.0 - 1.0 / np.maximum(rank, 1), 1.0)
+    error = ((rank == 0) | (rank > TOP)).astype(float)
+    return value, error
+
+
+def make_scenario(ans, canaries, streams, before: str, after: str | None, onset: int, n_steps: int, seed: int):
+    from driftfdr.streams import NO_CHANGE, Scenario, ScenarioConfig
+
+    rng = np.random.default_rng(seed)
+    idx = {seg: [i for i, c in enumerate(canaries) if c.segment == seg] for _, seg in streams}
+    values = np.empty((len(streams), n_steps))
+    errors = np.empty((len(streams), n_steps))
+    truth = np.empty((len(streams), n_steps))
+    for k, (comp, seg) in enumerate(streams):
+        pool = np.array(idx[seg])
+        draw = rng.choice(pool, size=n_steps)
+        for state, sl in ((before, slice(0, onset if after else n_steps)), (after, slice(onset, n_steps))):
+            if state is None:
+                continue
+            v, e = signals(ans[state][comp][draw[sl]])
+            values[k, sl], errors[k, sl] = v, e
+            truth[k, sl] = signals(ans[state][comp][pool])[1].mean()  # true error rate of the segment
+    change = np.full(len(streams), NO_CHANGE, dtype=np.int64)
+    if after:
+        change[:] = onset
+    sc = Scenario(config=ScenarioConfig(n_streams=len(streams), n_steps=n_steps), values=values, errors=errors,
+                  change_start=change.copy(), change_end=change.copy(),
+                  drift_kind=np.array(["abrupt" if after else "none"] * len(streams)),
+                  event=np.zeros(len(streams), dtype=np.int64) if after else np.full(len(streams), -1))
+    return replace(sc, truth=truth, tolerance=0.02)  # null = the error rate rose by at most 2 points
+
+
+def methods(n_ref: int, window: int):
+    from driftfdr import DDM, PageHinkley
+    from driftfdr.online_fdr import RawThreshold, make_procedure
+
+    ph = PageHinkley()
+    ddm = DDM()
+    return [
+        ("Page-Hinkley, порог по умолчанию", ph, lambda: RawThreshold(ph.default_threshold)),
+        ("DDM, порог по умолчанию", ddm, lambda: RawThreshold(ddm.default_threshold)),
+        ("PH, калибровка без поправки (α=0.05)", ph, lambda: make_procedure("uncorrected", 0.05)),
+        ("PH, калибровка + BH в окне (FDR 0.05)", ph, lambda: make_procedure("bh_window", 0.05)),
+        ("PH, калибровка + LORD++ (FDR 0.05)", ph, lambda: make_procedure("LORD++", 0.05)),
+    ]
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--corpus", default=str(ROOT / "demo_corpus"))
+    ap.add_argument("--out", default=str(ROOT / "reports" / "e9"))
+    ap.add_argument("--seeds", type=int, default=10)
+    ap.add_argument("--steps", type=int, default=3000)
+    ap.add_argument("--distractors", type=int, default=200)
+    ap.add_argument("--threads", type=int, default=6)
+    args = ap.parse_args()
+    import torch
+    from driftfdr import MonitorConfig, run_monitor, summarize
+
+    torch.set_num_threads(args.threads)
+    log = lambda m: print(m, flush=True)  # noqa: E731
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+
+    settings = load_settings()
+    corpus = Path(args.corpus).resolve()
+    index_dir = settings.data_dir / "indexes" / corpus_key(corpus) / index_signature(settings)
+    cat = Catalog(index_dir / "catalog.sqlite")
+    canaries = build_canaries(cat)
+    ids = [r["id"] for r in cat.query("SELECT id FROM nodes WHERE embed = 1 ORDER BY id")]
+    by_id = cat.get_nodes(ids)
+    nodes = [by_id[i] for i in ids]
+    texts = [n.embedding_text(settings.chunking.context_header) for n in nodes]
+    emb_cfg = settings.embedding.model_copy(update={"device": "cpu", "fp16": False, "max_length": 512})
+    embedder = Embedder(emb_cfg)
+    reranker = Reranker(settings.retrieval.model_copy(update={"rerank_max_length": 512}), device="cpu", fp16=False,
+                        local_files_only=True)
+    cache = out / "canary_ranks.json"
+    if cache.exists():
+        raw = json.loads(cache.read_text(encoding="utf-8"))
+        ans = {s: {c: np.array(v) for c, v in comps.items()} for s, comps in raw["ranks"].items()}
+        log(f"canary ranks loaded from {cache.name}")
+    else:
+        doc = index_vectors(index_dir, ids)
+        log(f"{len(ids)} fragment vectors read from the index")
+        ans = answers(canaries, nodes, texts, doc, embedder, reranker, args.distractors, log)
+        cache.write_text(json.dumps({"canaries": [c.id for c in canaries], "segments": [c.segment for c in canaries],
+                                     "ranks": {s: {c: v.tolist() for c, v in comps.items()} for s, comps in ans.items()}},
+                                    ensure_ascii=False), encoding="utf-8")
+
+    segments = sorted({c.segment for c in canaries})
+    streams = [(comp, seg) for comp in ("retrieval", "rerank") for seg in segments]
+    base = {f"{comp}|{seg}": float(np.mean(signals(ans["normal"][comp][[i for i, c in enumerate(canaries)
+                                                                         if c.segment == seg]])[1]))
+            for comp, seg in streams}
+    scenarios = [("без изменений", "normal", None), ("слабый эмбеддер", "normal", "weak_embedder"),
+                 ("файлы нового домена", "normal", "new_domain")]
+    config = MonitorConfig(n_ref=300, window=100, horizon=5)
+    rows = []
+    for name, before, after in scenarios:
+        for seed in range(args.seeds):
+            sc = make_scenario(ans, canaries, streams, before, after, onset=args.steps // 2, n_steps=args.steps, seed=seed)
+            caches: dict = {}
+            for mname, det, proc in methods(config.n_ref, config.window):
+                key = det.name
+                res = run_monitor(sc, det, proc(), config, seed=seed, cache=caches.setdefault(key, {}))
+                s = summarize(res, max_delay=1000)
+                rows.append({"scenario": name, "seed": seed, "method": mname, **{k: (None if isinstance(v, float) and
+                             not np.isfinite(v) else v) for k, v in s.items()}})
+            log(f"{name}, seed {seed}: done")
+    (out / "h9_runs.json").write_text(json.dumps({"rows": rows, "baseline_error": base, "streams": streams},
+                                                 ensure_ascii=False, indent=1), encoding="utf-8")
+    log(f"saved {len(rows)} runs to {out / 'h9_runs.json'}")
+
+
+if __name__ == "__main__":
+    main()

@@ -37,6 +37,8 @@ dev = ["pytest", "nbclient", "ipykernel", "scikit-learn", "matplotlib", "pandas"
 sql = ["sqlglot"]
 # better main-text extraction of web pages than the built-in BeautifulSoup fallback (Э16)
 web = ["trafilatura"]
+# calibrated drift detection with FDR control for the canary monitoring bench (Э9, scripts/h9_monitoring.py)
+monitoring = ["driftfdr @ git+https://github.com/d7rectCE/data-drift-fdr"]
 
 [project.scripts]
 rag = "rag_agent.cli:app"

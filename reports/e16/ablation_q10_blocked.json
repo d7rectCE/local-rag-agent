@@ -1,0 +1,710 @@
+[
+  {
+    "name": "без интернета",
+    "overrides": {
+      "web": {
+        "mode": "off"
+      }
+    },
+    "summary": {
+      "n_items": 13,
+      "n_errors": 0,
+      "retrieval": {
+        "recall@1": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "recall@3": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "recall@5": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "recall@10": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "hit@5": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "mrr": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "ndcg@10": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        }
+      },
+      "retrieval_by_class": {},
+      "retrieval_latency": {
+        "p50": null,
+        "p95": null
+      },
+      "retrieval_by_file_type": {},
+      "routing": {
+        "accuracy": {
+          "mean": 0.0,
+          "n": 13,
+          "ci": [
+            0.0,
+            0.0
+          ]
+        },
+        "confusion": {
+          "web->general": 13
+        }
+      },
+      "answers": {
+        "must_include": {
+          "mean": 0.15384615384615385,
+          "n": 13,
+          "ci": [
+            0.0,
+            0.38461538461538464
+          ]
+        },
+        "citation_precision_ref": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "grounded_rate": null
+      },
+      "judge": {
+        "correctness": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "correctness_general": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "faithfulness": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "relevance": {
+          "mean": 1.0,
+          "n": 13,
+          "ci": [
+            1.0,
+            1.0
+          ]
+        },
+        "citation_precision": null,
+        "n_judge_errors": 0
+      },
+      "judge_by_class": {
+        "Q10": {
+          "n": 13,
+          "correctness": 0.23076923076923078
+        }
+      },
+      "refusals": {
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "false_refusals": 0
+      },
+      "latency": {
+        "all": {
+          "p50": 3.58,
+          "p95": 8.195199999999998
+        },
+        "corpus": {
+          "p50": null,
+          "p95": null
+        },
+        "general": {
+          "p50": 3.58,
+          "p95": 8.195199999999998
+        },
+        "mean_tokens": 446.6923076923077
+      },
+      "sql": {
+        "used_q3": null,
+        "used_other": null,
+        "errors": 0,
+        "n_gold": 0,
+        "execution_accuracy": null,
+        "execution_accuracy_values": null
+      },
+      "uploads": {},
+      "web": {
+        "used_q10": 0.0,
+        "used_other": null,
+        "unsupported_share": null,
+        "latency_web": {
+          "p50": null,
+          "p95": null
+        }
+      },
+      "agent": {
+        "used": null,
+        "used_by_class": {
+          "Q10": 0.0
+        },
+        "mean_steps": null,
+        "stops": {},
+        "crag_refusals": 0,
+        "crag_refusals_q6": 0,
+        "wrong_rate": null,
+        "latency_direct": {
+          "p50": null,
+          "p95": null
+        },
+        "latency_agent": {
+          "p50": null,
+          "p95": null
+        },
+        "latency_q1": {
+          "p50": null,
+          "p95": null
+        }
+      },
+      "reasoning": {
+        "n": 13,
+        "reasoning_share": 0.0,
+        "reasoning_tokens": 0.0,
+        "generated_tokens": 280.53846153846155,
+        "correctness": 0.23076923076923078,
+        "must_include": 0.15384615384615385,
+        "latency": {
+          "p50": 3.58,
+          "p95": 8.195199999999998
+        },
+        "levels": {
+          "none": 13
+        },
+        "truncated_share": null,
+        "escalated": 0,
+        "latency_reasoning": {
+          "p50": null,
+          "p95": null
+        },
+        "by_class": {
+          "Q10": {
+            "n": 13,
+            "reasoning_share": 0.0,
+            "reasoning_tokens": 0.0,
+            "generated_tokens": 280.53846153846155,
+            "correctness": 0.23076923076923078,
+            "must_include": 0.15384615384615385,
+            "latency": {
+              "p50": 3.58,
+              "p95": 8.195199999999998
+            }
+          }
+        }
+      },
+      "index": {
+        "nodes": {
+          "cell_output": 31,
+          "class": 3,
+          "code_cell": 41,
+          "code_chunk": 16,
+          "comment": 1,
+          "figure": 2,
+          "file": 28,
+          "function": 6,
+          "log_chunk": 1,
+          "markdown_cell": 26,
+          "revision": 1,
+          "section": 16,
+          "summary": 1,
+          "table": 4
+        },
+        "vectors": 149
+      }
+    }
+  },
+  {
+    "name": "адаптивно (маршрутизатор + CRAG)",
+    "overrides": {
+      "web": {
+        "mode": "auto"
+      }
+    },
+    "summary": {
+      "n_items": 13,
+      "n_errors": 0,
+      "retrieval": {
+        "recall@1": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "recall@3": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "recall@5": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "recall@10": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "hit@5": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "mrr": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "ndcg@10": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        }
+      },
+      "retrieval_by_class": {},
+      "retrieval_latency": {
+        "p50": null,
+        "p95": null
+      },
+      "retrieval_by_file_type": {},
+      "routing": {
+        "accuracy": {
+          "mean": 1.0,
+          "n": 13,
+          "ci": [
+            1.0,
+            1.0
+          ]
+        },
+        "confusion": {
+          "web->web": 13
+        }
+      },
+      "answers": {
+        "must_include": {
+          "mean": 0.0,
+          "n": 13,
+          "ci": [
+            0.0,
+            0.0
+          ]
+        },
+        "citation_precision_ref": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "grounded_rate": null
+      },
+      "judge": {
+        "correctness": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "correctness_general": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "faithfulness": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "relevance": {
+          "mean": 0.6153846153846154,
+          "n": 13,
+          "ci": [
+            0.38269230769230783,
+            0.8461538461538461
+          ]
+        },
+        "citation_precision": null,
+        "n_judge_errors": 0
+      },
+      "judge_by_class": {
+        "Q10": {
+          "n": 13,
+          "correctness": 0.0
+        }
+      },
+      "refusals": {
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "false_refusals": 0
+      },
+      "latency": {
+        "all": {
+          "p50": 13.81,
+          "p95": 18.59179999999999
+        },
+        "corpus": {
+          "p50": null,
+          "p95": null
+        },
+        "general": {
+          "p50": null,
+          "p95": null
+        },
+        "mean_tokens": 69.3076923076923
+      },
+      "sql": {
+        "used_q3": null,
+        "used_other": null,
+        "errors": 0,
+        "n_gold": 0,
+        "execution_accuracy": null,
+        "execution_accuracy_values": null
+      },
+      "uploads": {},
+      "web": {
+        "used_q10": 1.0,
+        "used_other": null,
+        "unsupported_share": 0.0,
+        "latency_web": {
+          "p50": 13.81,
+          "p95": 18.59179999999999
+        }
+      },
+      "agent": {
+        "used": null,
+        "used_by_class": {
+          "Q10": 0.0
+        },
+        "mean_steps": null,
+        "stops": {},
+        "crag_refusals": 0,
+        "crag_refusals_q6": 0,
+        "wrong_rate": null,
+        "latency_direct": {
+          "p50": null,
+          "p95": null
+        },
+        "latency_agent": {
+          "p50": null,
+          "p95": null
+        },
+        "latency_q1": {
+          "p50": null,
+          "p95": null
+        }
+      },
+      "reasoning": {
+        "n": 13,
+        "reasoning_share": 0.0,
+        "reasoning_tokens": 0.0,
+        "generated_tokens": 12.23076923076923,
+        "correctness": 0.0,
+        "must_include": 0.0,
+        "latency": {
+          "p50": 13.81,
+          "p95": 18.59179999999999
+        },
+        "levels": {
+          "none": 13
+        },
+        "truncated_share": null,
+        "escalated": 0,
+        "latency_reasoning": {
+          "p50": null,
+          "p95": null
+        },
+        "by_class": {
+          "Q10": {
+            "n": 13,
+            "reasoning_share": 0.0,
+            "reasoning_tokens": 0.0,
+            "generated_tokens": 12.23076923076923,
+            "correctness": 0.0,
+            "must_include": 0.0,
+            "latency": {
+              "p50": 13.81,
+              "p95": 18.59179999999999
+            }
+          }
+        }
+      },
+      "index": {
+        "nodes": {
+          "cell_output": 31,
+          "class": 3,
+          "code_cell": 41,
+          "code_chunk": 16,
+          "comment": 1,
+          "figure": 2,
+          "file": 28,
+          "function": 6,
+          "log_chunk": 1,
+          "markdown_cell": 26,
+          "revision": 1,
+          "section": 16,
+          "summary": 1,
+          "table": 4
+        },
+        "vectors": 149
+      }
+    }
+  },
+  {
+    "name": "всегда искать",
+    "overrides": {
+      "web": {
+        "mode": "always"
+      }
+    },
+    "summary": {
+      "n_items": 13,
+      "n_errors": 0,
+      "retrieval": {
+        "recall@1": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "recall@3": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "recall@5": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "recall@10": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "hit@5": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "mrr": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "ndcg@10": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        }
+      },
+      "retrieval_by_class": {},
+      "retrieval_latency": {
+        "p50": null,
+        "p95": null
+      },
+      "retrieval_by_file_type": {},
+      "routing": {
+        "accuracy": {
+          "mean": 1.0,
+          "n": 13,
+          "ci": [
+            1.0,
+            1.0
+          ]
+        },
+        "confusion": {
+          "web->web": 13
+        }
+      },
+      "answers": {
+        "must_include": {
+          "mean": 0.0,
+          "n": 13,
+          "ci": [
+            0.0,
+            0.0
+          ]
+        },
+        "citation_precision_ref": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "grounded_rate": null
+      },
+      "judge": {
+        "correctness": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "correctness_general": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "faithfulness": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "relevance": {
+          "mean": 0.6153846153846154,
+          "n": 13,
+          "ci": [
+            0.38269230769230783,
+            0.8461538461538461
+          ]
+        },
+        "citation_precision": null,
+        "n_judge_errors": 0
+      },
+      "judge_by_class": {
+        "Q10": {
+          "n": 13,
+          "correctness": 0.0
+        }
+      },
+      "refusals": {
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "false_refusals": 0
+      },
+      "latency": {
+        "all": {
+          "p50": 10.063,
+          "p95": 14.367999999999995
+        },
+        "corpus": {
+          "p50": null,
+          "p95": null
+        },
+        "general": {
+          "p50": null,
+          "p95": null
+        },
+        "mean_tokens": 0.0
+      },
+      "sql": {
+        "used_q3": null,
+        "used_other": null,
+        "errors": 0,
+        "n_gold": 0,
+        "execution_accuracy": null,
+        "execution_accuracy_values": null
+      },
+      "uploads": {},
+      "web": {
+        "used_q10": 1.0,
+        "used_other": null,
+        "unsupported_share": null,
+        "latency_web": {
+          "p50": 10.063,
+          "p95": 14.367999999999995
+        }
+      },
+      "agent": {
+        "used": null,
+        "used_by_class": {
+          "Q10": 0.0
+        },
+        "mean_steps": null,
+        "stops": {},
+        "crag_refusals": 0,
+        "crag_refusals_q6": 0,
+        "wrong_rate": null,
+        "latency_direct": {
+          "p50": null,
+          "p95": null
+        },
+        "latency_agent": {
+          "p50": null,
+          "p95": null
+        },
+        "latency_q1": {
+          "p50": null,
+          "p95": null
+        }
+      },
+      "reasoning": {
+        "n": 13,
+        "reasoning_share": 0.0,
+        "reasoning_tokens": 0.0,
+        "generated_tokens": 0.0,
+        "correctness": 0.0,
+        "must_include": 0.0,
+        "latency": {
+          "p50": 10.063,
+          "p95": 14.367999999999995
+        },
+        "levels": {
+          "none": 13
+        },
+        "truncated_share": null,
+        "escalated": 0,
+        "latency_reasoning": {
+          "p50": null,
+          "p95": null
+        },
+        "by_class": {
+          "Q10": {
+            "n": 13,
+            "reasoning_share": 0.0,
+            "reasoning_tokens": 0.0,
+            "generated_tokens": 0.0,
+            "correctness": 0.0,
+            "must_include": 0.0,
+            "latency": {
+              "p50": 10.063,
+              "p95": 14.367999999999995
+            }
+          }
+        }
+      },
+      "index": {
+        "nodes": {
+          "cell_output": 31,
+          "class": 3,
+          "code_cell": 41,
+          "code_chunk": 16,
+          "comment": 1,
+          "figure": 2,
+          "file": 28,
+          "function": 6,
+          "log_chunk": 1,
+          "markdown_cell": 26,
+          "revision": 1,
+          "section": 16,
+          "summary": 1,
+          "table": 4
+        },
+        "vectors": 149
+      }
+    }
+  }
+]

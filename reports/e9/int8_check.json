@@ -1,0 +1,8 @@
+{
+ "canaries": 24,
+ "pool": 10,
+ "top1_agreement": 0.9166666666666666,
+ "spearman_mean": 0.8621212121212122,
+ "miss_at_5_agreement": 1.0,
+ "seconds": 2208
+}

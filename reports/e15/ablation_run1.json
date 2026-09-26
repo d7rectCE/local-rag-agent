@@ -1,0 +1,82 @@
+[
+  {
+    "name": "цикл исправления (до 5 неудачных запусков), ACI (по умолчанию)",
+    "overrides": {},
+    "summary": {
+      "n": 15,
+      "solved": {
+        "mean": 0.8,
+        "n": 15,
+        "ci": [
+          0.6,
+          1.0
+        ]
+      },
+      "mean_steps": 6.6,
+      "mean_failed_runs": 1.1333333333333333,
+      "broken_files_share": 0.0,
+      "tasks_with_broken_files": 0,
+      "errors": 1,
+      "latency": {
+        "p50": 22.4,
+        "p95": 75.11999999999998
+      }
+    }
+  },
+  {
+    "name": "H13: одна попытка",
+    "overrides": {
+      "code": {
+        "max_iterations": 1
+      }
+    },
+    "summary": {
+      "n": 15,
+      "solved": {
+        "mean": 0.6,
+        "n": 15,
+        "ci": [
+          0.3333333333333333,
+          0.8666666666666667
+        ]
+      },
+      "mean_steps": 2.2666666666666666,
+      "mean_failed_runs": 0.7333333333333333,
+      "broken_files_share": 0.0,
+      "tasks_with_broken_files": 0,
+      "errors": 0,
+      "latency": {
+        "p50": 6.2,
+        "p95": 16.349999999999998
+      }
+    }
+  },
+  {
+    "name": "H14: перезапись файлов вместо ACI",
+    "overrides": {
+      "code": {
+        "aci": false
+      }
+    },
+    "summary": {
+      "n": 15,
+      "solved": {
+        "mean": 0.8,
+        "n": 15,
+        "ci": [
+          0.6,
+          1.0
+        ]
+      },
+      "mean_steps": 6.533333333333333,
+      "mean_failed_runs": 1.3333333333333333,
+      "broken_files_share": 0.05,
+      "tasks_with_broken_files": 1,
+      "errors": 0,
+      "latency": {
+        "p50": 28.4,
+        "p95": 47.19
+      }
+    }
+  }
+]

@@ -66,13 +66,14 @@ def ask(
     route: str = typer.Option("auto", help="auto | corpus (my files) | general (general knowledge)"),
     reasoning: Optional[str] = typer.Option(None, help="off | on | auto (default: config)"),
     agent: Optional[str] = typer.Option(None, help="off | auto | always: the ReAct agent (default: config)"),
+    web: Optional[str] = typer.Option(None, help="off | auto | always: search the web (default: config)"),
     as_json: bool = typer.Option(False, "--json", help="Print the full answer object"),
 ) -> None:
     """Ask a question: about the indexed folder or a general one (routed automatically)."""
     engine = _engine()
     if root:
         engine.open_corpus(root)
-    ans = engine.ask(question, top_k=top_k, mode=mode, route=route, reasoning=reasoning, agent=agent)
+    ans = engine.ask(question, top_k=top_k, mode=mode, route=route, reasoning=reasoning, agent=agent, web=web)
     if as_json:
         typer.echo(ans.model_dump_json(indent=2))
     else:
@@ -273,6 +274,14 @@ def ablate(spec: Path = typer.Argument(..., help="Ablation spec (YAML)")) -> Non
     settings = load_settings()
     rows, out_dir = run_ablation(load_spec(spec), settings, REPO_ROOT / "runs" / "ablations", log=typer.echo)
     typer.echo(f"Report: {out_dir / 'ablation.md'}")
+
+
+@app.command()
+def searxng(action: str = typer.Argument("status", help="start | stop | status")) -> None:
+    """The local SearXNG metasearch container for the web gateway (bound to 127.0.0.1)."""
+    from rag_agent.web import searxng as run
+
+    typer.echo(run(action, load_settings()))
 
 
 @app.command()

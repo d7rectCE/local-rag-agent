@@ -245,6 +245,24 @@ def _sql_section(rows: list[dict], per_item: list[dict[str, ItemResult]]) -> lis
     return out
 
 
+def _web_section(rows: list[dict], per_item: list[dict[str, ItemResult]]) -> list[str]:
+    """H15: adaptive web access improves Q10 and does not hurt questions about the files."""
+    out = ["", "## Интернет (H15)", "",
+           "Точность — судья (без судьи — обязательные фрагменты) отдельно на Q10 и на остальных вопросах. "
+           "Неподтверждённые — доля предложений веб-ответов без ссылки или с числами, которых нет в цитируемых фрагментах.",
+           "", "| # | Конфигурация | Точность Q10 | Точность прочих | В интернет: Q10 / прочие | Неподтверждённые | p95 веб-ответа, с |",
+           "|---|---|---|---|---|---|---|"]
+    for k, (row, items) in enumerate(zip(rows, per_item), start=1):
+        w = row["summary"].get("web") or {}
+        q10 = [s for r in items.values() if r.cls == "Q10" and (s := _score(r)) is not None]
+        other = [s for r in items.values() if r.cls != "Q10" and (s := _score(r)) is not None]
+        out.append(f"| {k} | {row['run'].name} | {_fmt(sum(q10) / len(q10) if q10 else None)} "
+                   f"| {_fmt(sum(other) / len(other) if other else None)} | {_fmt(w.get('used_q10'), 2)} / "
+                   f"{_fmt(w.get('used_other'), 2)} | {_fmt(w.get('unsupported_share'), 2)} "
+                   f"| {_fmt((w.get('latency_web') or {}).get('p95'), 1)} |")
+    return out
+
+
 def _uploads_section(rows: list[dict]) -> list[str]:
     """H12: Self-Route vs the whole file vs retrieval only, per file size: accuracy and cost."""
     files = sorted({f for row in rows for f in row["summary"].get("uploads", {})})
@@ -340,6 +358,9 @@ def render_ablation(spec: AblationSpec, es: EvalSet, rows: list[dict], per_item:
         out += _reasoning_section(rows, per_item)
     if any((row["summary"].get("sql") or {}).get("used_q3") for row in rows):
         out += _sql_section(rows, per_item)
+    if any((row["summary"].get("web") or {}).get("used_q10") is not None
+           or (row["summary"].get("web") or {}).get("used_other") for row in rows):
+        out += _web_section(rows, per_item)
     if any(row["summary"].get("uploads") for row in rows):
         out += _uploads_section(rows)
     if any((row["summary"].get("agent") or {}).get("used") or (row["summary"].get("agent") or {}).get("crag_refusals")

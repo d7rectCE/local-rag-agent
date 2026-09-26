@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rag_agent.schema import Node
 
-QuestionClass = Literal["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "G"]
+QuestionClass = Literal["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q10", "G"]
 
 CLASS_NAMES = {
     "Q1": "фактологический",
@@ -23,6 +23,7 @@ CLASS_NAMES = {
     "Q6": "неотвечаемый",
     "Q7": "по загруженному файлу",
     "Q8": "требующий рассуждения",
+    "Q10": "внешняя информация",
     "G": "общий (без файлов)",
 }
 
@@ -95,11 +96,13 @@ class EvalItem(BaseModel):
     sql: str | None = None
     # Э13: the question is about this file (relative to the eval set), uploaded into the conversation
     upload: str | None = None
+    # Э16: the date the reference answer of a web question is true on (FreshQA-style)
+    as_of: str | None = None
     notes: str | None = None
 
     @property
     def expected_route(self) -> str:
-        return "general" if self.cls == "G" else "upload" if self.upload else "corpus"
+        return "general" if self.cls == "G" else "web" if self.cls == "Q10" else "upload" if self.upload else "corpus"
 
     @property
     def expects_refusal(self) -> bool:
@@ -151,9 +154,11 @@ def validate_evalset(es: EvalSet, catalog) -> list[str]:
     problems: list[str] = []
     cache: dict[str, list[Node]] = {}
     for item in es.items:
-        if item.cls in ("Q6", "G", "Q7") and item.sources:
+        if item.cls in ("Q6", "G", "Q7", "Q10") and item.sources:
             problems.append(f"{item.id}: class {item.cls} must not have sources")
-        if item.cls not in ("Q6", "G", "Q7") and not item.sources:
+        if item.cls == "Q10" and not item.as_of:
+            problems.append(f"{item.id}: class Q10 needs the as_of date of its reference answer")
+        if item.cls not in ("Q6", "G", "Q7", "Q10") and not item.sources:
             problems.append(f"{item.id}: class {item.cls} needs at least one source")
         if item.cls == "Q7" and not (item.upload and es.path and (es.path.parent / item.upload).exists()):
             problems.append(f"{item.id}: class Q7 needs an existing upload file")

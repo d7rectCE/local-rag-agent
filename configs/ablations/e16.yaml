@@ -1,0 +1,14 @@
+# Э16, H15 (ТЗ ч.2): адаптивный выход в интернет улучшает Q10 и не ухудшает вопросы по файлам.
+# Три режима на 13 вопросах Q10 (evalsets/web_v1.yaml, эталоны на 26.09.2026); проверка «не ухудшает» —
+# configs/ablations/e16_corpus.yaml на Q1–Q6 demo_v4.
+name: e16-web
+evalset: ../../evalsets/web_v1.yaml
+retrieval_only: false
+judge: true
+runs:
+  - name: "без интернета"
+    overrides: {web: {mode: "off"}}
+  - name: "адаптивно (маршрутизатор + CRAG)"
+    overrides: {web: {mode: auto}}
+  - name: "всегда искать"
+    overrides: {web: {mode: always}}

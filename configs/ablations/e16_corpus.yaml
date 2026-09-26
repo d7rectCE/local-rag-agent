@@ -1,0 +1,13 @@
+# Э16, H15, вторая половина: не ухудшает ли выход в интернет ответы по файлам (Q1–Q6 из demo_v4).
+name: e16-web-corpus
+evalset: ../../evalsets/demo_v4.yaml
+classes: [Q1, Q2, Q3, Q4, Q5, Q6]
+retrieval_only: false
+judge: true
+runs:
+  - name: "без интернета"
+    overrides: {web: {mode: "off"}}
+  - name: "адаптивно (маршрутизатор + CRAG)"
+    overrides: {web: {mode: auto}}
+  - name: "всегда искать"
+    overrides: {web: {mode: always}}

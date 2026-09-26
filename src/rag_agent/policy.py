@@ -149,6 +149,7 @@ class Policy:
             url = str(args.get("url", ""))
             if _norm_url(url) not in {_norm_url(u) for u in prov.known_urls}:
                 return Decision("deny", "rule 3", "адрес не из результатов поиска и не от пользователя")
+            return Decision("allow")  # a page from the results or from the user needs no confirmation (table 5)
         if tool in ALWAYS_CONFIRM:
             return Decision("confirm", "FR14", "изменение файлов или окружения только с подтверждения")
         if spec.effect != "none" and prov.tainted:

@@ -92,6 +92,8 @@ class Answer(BaseModel):
     reasoning_level: str = "none"  # none | light | deep: which budget was applied
     # policy layer (ТЗ ч.2 S20, FR17): actions the agent wanted that wait for the user's confirmation
     pending: list[dict] = Field(default_factory=list)
+    # web gateway (ТЗ ч.2 S19, FR16): disagreements between the user's files and the web, shown explicitly
+    conflicts: list[dict] = Field(default_factory=list)
 
 
 def _call(llm: BaseLLM, messages: list[dict], json_schema: dict | None, purpose: str, reasoning_budget: int | None):

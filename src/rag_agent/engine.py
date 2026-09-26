@@ -15,7 +15,7 @@ from rag_agent.code.agent import CodeAgent, CodeResult, catalog_metric_rows, new
 from rag_agent.code.sandbox import DockerSandbox
 from rag_agent.code.workspace import Workspace, WorkspaceError
 from rag_agent.config import REPO_ROOT, Settings, load_settings
-from rag_agent.policy import defang_markdown
+from rag_agent.policy import Policy, Provenance, defang_markdown
 from rag_agent.generation import Answer, TraceStep, generate_answer, generate_general
 from rag_agent.index.embedder import Embedder
 from rag_agent.index.indexer import CorpusIndex, IndexProgress, corpus_key, run_indexing
@@ -29,6 +29,7 @@ from rag_agent.structured.extract import update_catalog
 from rag_agent.structured.sql import SQLResult, SQLTool
 from rag_agent.tracing import NULL_TRACER, Tracer
 from rag_agent.uploads import UploadError, UploadInfo, UploadStore, answer_from_uploads
+from rag_agent.web_qa import answer_from_web
 
 log = logging.getLogger(__name__)
 
@@ -374,6 +375,21 @@ class Engine:
             file_types=file_types,
         )
 
+    def _answer_web(self, question: str, index: CorpusIndex | None, budget: int | None,
+                    confirmed: list[str] | None) -> Answer:
+        """Э16: the web, next to relevant fragments of the user's files (for explicit conflicts)."""
+        archive = []
+        if index is not None:
+            hits = self.search(question, 4)
+            acfg = self.settings.agent
+            if hits and acfg.crag:
+                scores = RelevanceEvaluator(self, acfg).scores(question, [h.node for h in hits])
+                hits = [h for h, s in zip(hits, scores) if s >= acfg.crag_upper][:3]
+            archive = hits[:3]
+        policy = Policy.for_catalog(index.catalog if index is not None else None, web=True)
+        return answer_from_web(question, self.llm, self.settings, policy=policy, prov=Provenance(), archive=archive,
+                               confirmed=set(confirmed or []), reasoning_budget=budget)
+
     def _answer_direct(self, standalone: str, index: CorpusIndex, steps: list[TraceStep], *, top_k: int, mode: str,
                        rerank: bool | None, symbols: bool | None, aggregate: bool, budget: int | None,
                        escalate: bool) -> tuple[Answer, bool]:
@@ -445,6 +461,7 @@ class Engine:
         uploads: list[str] | None = None,
         session: str | None = None,
         confirmed: list[str] | None = None,
+        web: str | None = None,
     ) -> Answer:
         """Route the question, then answer it from the user's files (with citations)
         or from general knowledge. ``history`` is the previous chat turns
@@ -472,15 +489,17 @@ class Engine:
         level = "deep" if reasoning_mode == "on" else "none"
         aggregate = False
         complexity = "none"  # the router's difficulty estimate: multi-step questions go to the agent (Э7)
+        wants_web = False  # the router: fresh or external information is needed (Э16)
+        web_mode = web or self.settings.web.mode
         # the router also rewrites follow-ups into standalone questions and estimates the reasoning level
         if route == "auto" or turns or reasoning_mode == "auto":
             decision = route_question(question, turns, self.llm)
             standalone = decision.standalone_question
             if reasoning_mode == "auto" or (reasoning_mode == "on" and decision.needs_reasoning):
                 level = decision.reasoning
-            aggregate, complexity = decision.aggregate, decision.reasoning
+            aggregate, complexity, wants_web = decision.aggregate, decision.reasoning, decision.web
             detail = {"route": decision.route, "standalone_question": standalone, "fallback": decision.fallback,
-                      "reasoning": decision.reasoning, "aggregate": decision.aggregate}
+                      "reasoning": decision.reasoning, "aggregate": decision.aggregate, "web": decision.web}
             if route == "auto":
                 chosen = decision.route
                 # corpus signal: a question that names a function, class or file of the corpus is about the files
@@ -506,6 +525,9 @@ class Engine:
             dups = [f"{i.name} = {i.duplicate_of}" for i in infos if i.duplicate_of]
             if dups:
                 notice = "Загруженный файл уже есть в корпусе: " + "; ".join(dups)
+        elif web_mode == "always" or (web_mode == "auto" and wants_web):
+            answer = self._answer_web(standalone, index, budget, confirmed)
+            answer.question = question
         elif chosen == "general":
             answer = generate_general(question, turns, self.llm, reasoning_budget=budget)
         else:
@@ -524,6 +546,13 @@ class Engine:
                                                         escalate=reasoning_mode == "auto" and rcfg.escalate)
                 if escalated:
                     level = "deep"
+            # S19: irrelevant corpus results send the question to the web in auto mode
+            if web_mode == "auto" and not answer.answerable and not answer.pending and any(
+                    s.name == "crag" and s.detail.get("verdict") == "incorrect" for s in answer.trace):
+                first = answer.trace
+                answer = self._answer_web(standalone, index, budget, confirmed)
+                answer.trace[:0] = [*first, TraceStep(name="web_fallback", duration_s=0.0,
+                                                      detail={"reason": "irrelevant corpus results"})]
             answer.question = question
 
         answer.standalone_question = standalone if standalone != question else None
@@ -607,6 +636,7 @@ class Engine:
             "retrieval": self.settings.retrieval.model_dump(),
             "reasoning": self.settings.reasoning.model_dump(),
             "agent": self.settings.agent.model_dump(),
+            "web": {"mode": self.settings.web.mode, "searxng_url": self.settings.web.searxng_url},
             "defaults": {"include_ext": self.settings.corpus.include_ext, "exclude": self.settings.corpus.exclude},
         }
 

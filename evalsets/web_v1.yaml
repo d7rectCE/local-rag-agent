@@ -1,0 +1,103 @@
+# Вопросы, требующие актуальной внешней информации (ТЗ ч.2: класс Q10, 10–15 вопросов; S19, H15).
+# Эталонные ответы верны на дату as_of и проверены по первоисточникам: JSON API PyPI, релизы на GitHub,
+# python.org, arXiv. Три вопроса — с ложной предпосылкой, как в FreshQA: правильный ответ её опровергает.
+# При повторных прогонах позже даты as_of версии могут устареть — эталон нужно обновить по тем же источникам.
+
+version: 1
+name: web_v1
+corpus: ../demo_corpus
+
+items:
+  - id: q10-01
+    class: Q10
+    as_of: "2026-09-26"
+    question: Какая последняя стабильная версия scikit-learn?
+    answer: scikit-learn 1.9.1, выпущена 10 сентября 2026 г.
+    must_include: ['1[.,]9[.,]1']
+
+  - id: q10-02
+    class: Q10
+    as_of: "2026-09-26"
+    question: Какая сейчас последняя версия PyTorch?
+    answer: PyTorch 2.14.0 (пакет torch на PyPI), выпущена 2 сентября 2026 г.
+    must_include: ['2[.,]14']
+
+  - id: q10-03
+    class: Q10
+    as_of: "2026-09-26"
+    question: Какая последняя версия pandas и что главного изменилось в pandas 3.0?
+    answer: pandas 3.0.6 (17 сентября 2026 г.). В 3.0 — согласованное поведение копий и представлений через Copy-on-Write по умолчанию, отдельный строковый тип str вместо object для строк, требуется Python 3.11 и новее.
+    must_include: ['3[.,]0', 'copy-on-write|copy on write|копировани']
+
+  - id: q10-04
+    class: Q10
+    as_of: "2026-09-26"
+    question: Какая последняя версия NumPy?
+    answer: NumPy 2.5.3, выпущена 6 сентября 2026 г.
+    must_include: ['2[.,]5[.,]3']
+
+  - id: q10-05
+    class: Q10
+    as_of: "2026-09-26"
+    question: Что нового в NumPy 3.0?
+    answer: Ложная предпосылка — NumPy 3.0 не выпущен; последняя версия на 26 сентября 2026 г. — 2.5.3.
+    must_include: ['2[.,]5|не вышл|не выпущ|не существ|нет такой|ещё не|пока не']
+    notes: ложная предпосылка
+
+  - id: q10-06
+    class: Q10
+    as_of: "2026-09-26"
+    question: Какая последняя версия Python?
+    answer: Python 3.14.7.
+    must_include: ['3[.,]14[.,]7']
+
+  - id: q10-07
+    class: Q10
+    as_of: "2026-09-26"
+    question: Когда вышел Python 3.14?
+    answer: Python 3.14.0 вышел 7 октября 2025 г.
+    must_include: ['7 октября|October 7|Oct\.? 7|2025-10-07|07\.10\.2025']
+
+  - id: q10-08
+    class: Q10
+    as_of: "2026-09-26"
+    question: Какая последняя версия библиотеки transformers от Hugging Face?
+    answer: transformers 5.17.0, выпущена 9 сентября 2026 г.
+    must_include: ['5[.,]17']
+
+  - id: q10-09
+    class: Q10
+    as_of: "2026-09-26"
+    question: Какая последняя версия Docling?
+    answer: Docling 2.130.0, выпущена 22 сентября 2026 г.
+    must_include: ['2[.,]130']
+
+  - id: q10-10
+    class: Q10
+    as_of: "2026-09-26"
+    question: Какая последняя версия Ollama?
+    answer: Ollama v0.34.4 (релиз на GitHub 23 сентября 2026 г.).
+    must_include: ['0[.,]34[.,]4']
+
+  - id: q10-11
+    class: Q10
+    as_of: "2026-09-26"
+    question: На какой конференции опубликована статья RT-DETR и какой AP на COCO у модели RT-DETR-R50?
+    answer: CVPR 2024 («DETRs Beat YOLOs on Real-time Object Detection»); RT-DETR-R50 — 53.1% AP на COCO при 108 FPS.
+    must_include: ['CVPR', '53[.,]1']
+
+  - id: q10-12
+    class: Q10
+    as_of: "2026-09-26"
+    question: Почему в scikit-learn 2.0 удалили HistGradientBoostingClassifier?
+    answer: Ложная предпосылка — scikit-learn 2.0 не выпущена (последняя версия 1.9.1), HistGradientBoostingClassifier не удалялся и есть в актуальной версии.
+    must_include: ['1[.,]9|не вышл|не выпущ|не существ|нет такой|ещё не|пока не|не удал']
+    notes: ложная предпосылка
+
+  - id: q10-13
+    class: Q10
+    as_of: "2026-09-26"
+    question: Почему PyTorch прекратил поддержку видеокарт AMD через ROCm?
+    answer: Ложная предпосылка — PyTorch не прекращал поддержку ROCm; официальные сборки PyTorch для ROCm выпускаются и для актуальных версий.
+    must_include: ['не прекращ|продолжа|поддерживает|есть сборк|выпуска']
+    notes: ложная предпосылка

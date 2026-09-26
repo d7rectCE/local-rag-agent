@@ -230,6 +230,14 @@ def sidebar(status: dict) -> None:
         help="Агент сам вызывает поиск, точный поиск имён, SQL к каталогу и чтение файлов, пока не соберёт улики. "
         "«Авто» — только для агрегатных и многошаговых вопросов, простые отвечаются сразу.",
     )
+    st.segmented_control(
+        "Интернет", list(AGENT_LABELS), default=status.get("web", {}).get("mode", "off"),
+        format_func=AGENT_LABELS.get, key="web",
+        help="Поиск через локальный SearXNG. «Авто» — только для вопросов о свежих и внешних фактах "
+        "(«последняя версия», новости, чужие статьи) или когда в файлах нет ничего релевантного. "
+        "Наружу уходят только поисковые запросы из вашего вопроса и загрузки страниц; запрос с именами из ваших "
+        "файлов требует подтверждения.",
+    )
     st.toggle("Код", key="code_mode",
               help="Код-агент: пишет и запускает код в песочнице без сети, правит копию проекта под git и показывает "
               "diff; в вашу папку изменения попадают только по кнопке «Применить в папку». Нужен запущенный Docker.")
@@ -386,12 +394,18 @@ def render_answer(ans: dict) -> None:
         st.caption(":material/help: В найденных фрагментах ответа нет.")
     elif not ans["grounded"]:
         st.caption(":material/warning: Ответ без ссылок на источники, проверьте его вручную.")
+    for c in ans.get("conflicts", []):  # FR16: the web and the user's files disagree
+        with st.container(border=True):
+            st.markdown(f":material/compare_arrows: **Расхождение: {c.get('topic', '')}**")
+            st.markdown(f"В ваших файлах: {c['archive']}  \nВ интернете: {c['web']}")
     if ans.get("general"):
         with st.container(border=True):
             st.caption(":material/school: Из общих знаний модели (не из ваших файлов)")
             st.markdown(ans["general"])
     if ans["citations"]:
         st.markdown("  \n".join(f"**[{c['n']}]** `{c['file_path']}` — {c['location']}" for c in ans["citations"]))
+        if any(s.get("file_type") == "web" for s in ans["sources"]):
+            st.caption(":material/public: Ссылки на страницы показаны текстом и не открываются сами (правило 4).")
     with st.expander(f"Найденные фрагменты ({len(ans['sources'])})"):
         for s in ans["sources"]:
             mark = " · процитирован" if s["cited"] else ""
@@ -517,6 +531,7 @@ def main() -> None:
                     if st.session_state.get("ask_uploads") else [],
                     "session": session_id(),
                     "confirmed": st.session_state.get("confirmed", []),
+                    "web": st.session_state.get("web") or "off",
                 })
             if err:
                 st.error(err)

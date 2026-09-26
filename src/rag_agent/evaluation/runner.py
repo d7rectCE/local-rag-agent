@@ -77,6 +77,9 @@ class ItemResult(BaseModel):
     # uploads (Э13)
     upload: str | None = None
     upload_route: str | None = None
+    # web (Э16)
+    web_supported: int = 0
+    web_unsupported: int = 0
     judge: Verdict | None = None
     error: str | None = None
 
@@ -169,6 +172,9 @@ def evaluate_item(engine: Engine, item: EvalItem, *, retrieval_k: int, top_k: in
         r.reasoning_tokens = ans.reasoning_tokens
         r.reasoning_truncated = ans.reasoning_truncated
         r.escalated = any(s.name == "escalate" for s in ans.trace)
+        support = next((s for s in ans.trace if s.name == "web_support"), None)
+        if support is not None:
+            r.web_supported, r.web_unsupported = support.detail.get("supported", 0), support.detail.get("unsupported", 0)
         stop = next((s for s in ans.trace if s.name == "agent_stop"), None)
         if stop is not None:
             r.agent_used, r.agent_steps, r.agent_stop = True, stop.detail.get("steps", 0), stop.detail.get("reason")
@@ -371,6 +377,16 @@ def summarize(results: list[ItemResult], es: EvalSet, n_boot: int = 1000) -> dic
             "tokens": _mean(r.tokens for r in rs), "latency": percentiles([r.latency_s for r in rs]),
             "routes": dict(Counter(r.upload_route for r in rs))}
         for f, rs in sorted(by_upload.items())
+    }
+
+    # --- web (Э16, H15): how often questions go to the web, and support of web answers ---
+    web_answers = [r for r in answered if r.route == "web"]
+    sentences = sum(r.web_supported + r.web_unsupported for r in web_answers)
+    summary["web"] = {
+        "used_q10": _mean(float(r.route == "web") for r in answered if r.cls == "Q10"),
+        "used_other": _mean(float(r.route == "web") for r in answered if r.cls != "Q10"),
+        "unsupported_share": sum(r.web_unsupported for r in web_answers) / sentences if sentences else None,
+        "latency_web": percentiles([r.latency_s for r in web_answers]),
     }
 
     # --- agent and CRAG (Э7, H6, NFR2) ---

@@ -201,6 +201,28 @@ class CodeConfig(BaseModel):
     mount_corpus: bool = False
 
 
+class WebConfig(BaseModel):
+    """Web gateway (ТЗ ч.2 S19, Э16): SearXNG on this machine, page reading, citations with dates."""
+
+    # off: never; auto: temporal markers / external facts (router) or irrelevant corpus results;
+    # always: every question also searches the web. Off by default: the web is an explicit toggle (S21)
+    mode: Literal["off", "auto", "always"] = "off"
+    searxng_url: str = "http://127.0.0.1:8888"
+    searxng_image: str = "searxng/searxng"
+    results: int = 8
+    pages: int = 3  # pages read per question
+    page_max_mb: float = 3.0
+    timeout_s: float = 15.0
+    cache_days: float = 7.0
+    passages: int = 6  # compressed fragments given to the answer
+    # primary sources first, aggregators and SEO sites last (S19)
+    prefer: list[str] = ["arxiv.org", "aclanthology.org", "openreview.net", "github.com", "pypi.org", "docs.python.org",
+                         "readthedocs.io", "pytorch.org", "scikit-learn.org", "numpy.org", "pandas.pydata.org",
+                         "huggingface.co", "python.org", "wikipedia.org", "ollama.com", "docs."]
+    demote: list[str] = ["medium.com", "towardsdatascience.com", "geeksforgeeks.org", "w3schools.com", "tutorialspoint.com",
+                         "javatpoint.com", "quora.com", "pinterest.", "dev.to", "habr.com/ru/companies", "analyticsvidhya.com"]
+
+
 class Settings(BaseModel):
     corpus: CorpusConfig = CorpusConfig()
     storage: StorageConfig = StorageConfig()
@@ -215,6 +237,7 @@ class Settings(BaseModel):
     agent: AgentConfig = AgentConfig()
     uploads: UploadsConfig = UploadsConfig()
     code: CodeConfig = CodeConfig()
+    web: WebConfig = WebConfig()
     tracing: TracingConfig = TracingConfig()
     evaluation: EvaluationConfig = EvaluationConfig()
     api: ApiConfig = ApiConfig()
@@ -243,7 +266,8 @@ def _apply_env_overrides(data: dict[str, Any], environ: dict[str, str]) -> None:
         node = data
         for part in path[:-1]:
             node = node.setdefault(part, {})
-        node[path[-1]] = yaml.safe_load(raw) if raw != "" else None
+        # YAML 1.1 reads on/off/yes/no as booleans; here they are mode names (reasoning, agent, web)
+        node[path[-1]] = raw if raw.lower() in {"on", "off", "yes", "no"} else (yaml.safe_load(raw) if raw != "" else None)
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:

@@ -17,6 +17,7 @@ class FileType(StrEnum):
     DOCX = "docx"
     TXT = "txt"
     CATALOG = "catalog"  # a result of an SQL query to the catalog of experiments (Э6), not a file
+    WEB = "web"  # passages of a web page (Э16): file_path is the URL
 
 
 class NodeType(StrEnum):

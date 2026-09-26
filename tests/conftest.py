@@ -125,7 +125,8 @@ class FakeLLM(BaseLLM):
 
     def __init__(self, settings: Settings, reply: dict | str | None = None, route: dict | str | None = None,
                  general: str = "Общий ответ.", extraction: dict | None = None, sql: list[dict] | None = None,
-                 agent: list[dict] | None = None, pipeline: dict | None = None):
+                 agent: list[dict] | None = None, pipeline: dict | None = None, web_query: str = "scikit-learn latest version",
+                 conflicts: list[dict] | None = None):
         super().__init__(settings.llm)
         self.reply = reply if reply is not None else {"answerable": True, "answer": "Learning rate был 0.05 [1].", "general": ""}
         self.route = route  # None -> corpus with the question unchanged
@@ -134,6 +135,8 @@ class FakeLLM(BaseLLM):
         self.sql = list(sql or [])  # replies of successive SQL calls; the last one repeats
         self.agent = list(agent or [])  # scripted agent steps; after the script: answer
         self.pipeline = pipeline or {"pipeline": "free", "target": ""}  # code agent's task type
+        self.web_query = web_query
+        self.conflicts = conflicts or []
         self.calls: list[list[dict]] = []
         self.kinds: list[str] = []
         self.budgets: list[int] = []  # reasoning budgets of chat_reasoning calls
@@ -155,6 +158,18 @@ class FakeLLM(BaseLLM):
             self.kinds.append("sql")
             reply = (self.sql.pop(0) if len(self.sql) > 1 else self.sql[0]) if self.sql else {
                 "sql": "SELECT path, cell, name, value FROM metrics", "reason": ""}
+        elif "queries" in props:
+            self.kinds.append("web_query")
+            reply = {"queries": [self.web_query]}
+        elif "passages" in props:
+            self.kinds.append("web_compress")
+            page = messages[-1]["content"]
+            relevant = "1.9.1" in page
+            reply = {"relevant": relevant, "passages": ["scikit-learn 1.9.1 released on 2026-09-10."] if relevant else [],
+                     "published": "2026-09-10" if relevant else ""}
+        elif "conflicts" in props:
+            self.kinds.append("conflicts")
+            reply = {"conflicts": self.conflicts}
         elif "pipeline" in props:
             self.kinds.append("code_pipeline")
             reply = self.pipeline

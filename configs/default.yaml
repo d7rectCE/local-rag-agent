@@ -118,6 +118,12 @@ code:                                 # ТЗ ч.2 S17: code agent in a Docker sa
   aci: true                           # view / search / edit with syntax check (false: overwrite whole files)
   workspace_max_mb: 50                # text files of the corpus copied into the git working copy
 
+web:                                  # ТЗ ч.2 S19: web gateway through a local SearXNG (rag searxng start)
+  mode: "off"                         # off | auto (temporal / external questions, irrelevant corpus results) | always
+  searxng_url: http://127.0.0.1:8888
+  pages: 3                            # pages read per question; main text extracted, cached for cache_days
+  cache_days: 7
+
 tracing:
   enabled: true
   log_prompts: true                   # traces stay local, inside storage.data_dir

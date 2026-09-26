@@ -37,7 +37,9 @@ ROUTER_PROMPT = """Ты — маршрутизатор запросов асси
 
 Отметь, агрегатный ли вопрос (aggregate): true — нужно собрать или сравнить значения по многим экспериментам, запускам, файлам или функциям: лучший или худший по метрике, максимум, минимум, среднее, «сколько», «все», «список», «в каких», сортировка; false — вопрос об одном конкретном месте или значении.
 
-Верни JSON: {"route": "corpus" | "general", "standalone_question": "...", "reasoning": "none" | "light" | "deep", "aggregate": true | false}"""
+Отметь, нужен ли интернет (web): true — ответ зависит от свежих или внешних сведений, которых не может быть в личном архиве: «последняя версия», «сейчас», «в этом году», «недавно», новости, релизы и изменения библиотек, факты о чужих статьях и моделях; false — ответ есть в файлах пользователя или в общих знаниях.
+
+Верни JSON: {"route": "corpus" | "general", "standalone_question": "...", "reasoning": "none" | "light" | "deep", "aggregate": true | false, "web": true | false}"""
 
 ROUTER_SCHEMA = {
     "type": "object",
@@ -46,8 +48,9 @@ ROUTER_SCHEMA = {
         "standalone_question": {"type": "string"},
         "reasoning": {"type": "string", "enum": ["none", "light", "deep"]},
         "aggregate": {"type": "boolean"},
+        "web": {"type": "boolean"},
     },
-    "required": ["route", "standalone_question", "reasoning", "aggregate"],
+    "required": ["route", "standalone_question", "reasoning", "aggregate", "web"],
     "additionalProperties": False,
 }
 
@@ -63,6 +66,7 @@ class RouteDecision:
     fallback: bool = False  # router failed and the default route was used
     reasoning: ReasoningLevel = "none"  # difficulty estimate (ТЗ ч.2 S15): sets the reasoning budget
     aggregate: bool = False  # over many experiments / files: the catalog is queried with SQL (Э6)
+    web: bool = False  # needs fresh or external information (Э16)
 
     @property
     def needs_reasoning(self) -> bool:
@@ -99,6 +103,6 @@ def route_question(question: str, history: list[dict] | None, llm: BaseLLM) -> R
         level = data.get("reasoning")
         return RouteDecision(route, standalone, time.perf_counter() - t0,
                              reasoning=level if level in ("none", "light", "deep") else "none",
-                             aggregate=bool(data.get("aggregate", False)))
+                             aggregate=bool(data.get("aggregate", False)), web=bool(data.get("web", False)))
     except LLMError:
         return RouteDecision("corpus", question, time.perf_counter() - t0, fallback=True)

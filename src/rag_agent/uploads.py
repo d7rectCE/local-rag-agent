@@ -252,10 +252,21 @@ class UploadStore:
         return self._load(info)[0]
 
     def search(self, info: UploadInfo, query: str, top_k: int, reranker=None, pool: int = 40) -> list[Hit]:
-        """The temporary index of one upload: cosine over its fragments, then the reranker."""
+        """The temporary index of one upload: fragments with the exact keys of the question (dates,
+        names with digits) first, then cosine over its fragments and the reranker."""
         nodes, vectors = self._load(info)
         if vectors is None or not nodes:
             return []
+        exact = exact_matches(nodes, exact_keys(query), limit=3)
+        if exact:
+            rest = [h for h in self._dense(nodes, vectors, query, top_k, reranker, pool)
+                    if h.node.id not in {n.id for n in exact}]
+            top = max((h.score for h in rest), default=0.0)
+            merged = [(n, top + 1.0) for n in exact] + [(h.node, h.score) for h in rest]
+            return [Hit(node=n, score=sc, rank=k) for k, (n, sc) in enumerate(merged[:top_k], start=1)]
+        return self._dense(nodes, vectors, query, top_k, reranker, pool)
+
+    def _dense(self, nodes: list[Node], vectors, query: str, top_k: int, reranker, pool: int) -> list[Hit]:
         q = np.asarray(self.embedder.encode([query]).dense[0], dtype=np.float32)
         q = q / (np.linalg.norm(q) or 1.0)
         order = np.argsort(-(vectors @ q))[: max(top_k, pool) if reranker is not None else top_k]
@@ -267,6 +278,66 @@ class UploadStore:
         else:
             ranked = [(nodes[i], float(vectors[i] @ q)) for i in order]
         return [Hit(node=n, score=s, rank=k) for k, (n, s) in enumerate(ranked[:top_k], start=1)]
+
+
+# --------------------------------------------------------------------------- exact keys of the question
+
+_MONTHS = {"январ": 1, "феврал": 2, "март": 3, "апрел": 4, "ма": 5, "июн": 6, "июл": 7, "август": 8,
+           "сентябр": 9, "октябр": 10, "ноябр": 11, "декабр": 12}
+_DATE_RU = re.compile(r"\b(\d{1,2})\s+(январ[яь]|феврал[яь]|марта?|апрел[яь]|ма[йя]|июн[яь]|июл[яь]|августа?|"
+                      r"сентябр[яь]|октябр[яь]|ноябр[яь]|декабр[яь])(?:\s+(\d{4}))?", re.IGNORECASE)
+_DATE_ISO = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+# a name with a digit: run-431, cifar10-subset-v2, ResNet-18, exp_07
+_IDENT = re.compile(r"(?<![\w-])(?=[\w./-]*\d)(?=[\w./-]*[A-Za-zА-Яа-я])[A-Za-zА-Яа-я\d][\w./-]*[\w](?![\w-])")
+
+
+def exact_keys(question: str) -> list[str]:
+    """Strings the answer must contain literally: dates (also written as 2025-03-14 and 14.03.2025) and
+    names with digits. Dense retrieval over a table of hundreds of similar rows does not tell run-431
+    from run-413, and a date asked in words does not look like its ISO form."""
+    keys = []
+    for day, month, year in _DATE_RU.findall(question):
+        m = next(v for k, v in _MONTHS.items() if month.lower().startswith(k))
+        d = int(day)
+        keys += [f"{year}-{m:02d}-{d:02d}", f"{d:02d}.{m:02d}.{year}"] if year else [f"-{m:02d}-{d:02d}"]
+    keys += _DATE_ISO.findall(question)
+    keys += [t for t in _IDENT.findall(question) if not t.isdigit() and not _DATE_ISO.fullmatch(t)]
+    return list(dict.fromkeys(keys))
+
+
+def exact_matches(nodes: list[Node], keys: list[str], limit: int, rare: float = 0.2) -> list[Node]:
+    """Fragments that contain the rare keys of the question, the most keys first. A key found in more
+    than ``rare`` of the fragments (a model name in a journal) does not tell them apart and is ignored."""
+    if not keys or not nodes:
+        return []
+    texts = [(n.text or "").lower() for n in nodes]
+    pats = {k: re.compile(rf"(?<![\w]){re.escape(k.lower())}(?![\w])" if k[0].isalnum() else re.escape(k.lower()))
+            for k in keys}
+    found = {k: [i for i, t in enumerate(texts) if pats[k].search(t)] for k in keys}
+    useful = [k for k, idx in found.items() if 0 < len(idx) <= max(1, int(rare * len(nodes)))]
+    counts: dict[int, int] = {}
+    for k in useful:
+        for i in found[k]:
+            counts[i] = counts.get(i, 0) + 1
+    order = sorted(counts, key=lambda i: (-counts[i], i))
+    return [nodes[i] for i in order[:limit]]
+
+
+def fit_budget(hits: list[Hit], budget_chars: int) -> list[Hit]:
+    """Whole fragments in rank order until the budget is spent: a table cut at a fixed length hides the
+    rows after the cut, so a fragment goes in whole or not at all (the first one always goes)."""
+    kept, size = [], 0
+    for h in hits:
+        n = len(h.node.text or "")
+        if kept and size + n > budget_chars:
+            break
+        kept.append(h)
+        size += n
+    return [Hit(node=h.node, score=h.score, rank=k) for k, h in enumerate(kept, start=1)]
+
+
+def _longest(hits: list[Hit], floor: int) -> int:
+    return max([floor] + [len(h.node.text or "") for h in hits])
 
 
 # --------------------------------------------------------------------------- answering (Self-Route)
@@ -318,19 +389,18 @@ def read_in_parts(question: str, nodes: list[Node], llm, budget_chars: int, max_
             continue
         tokens += int(resp.usage.get("prompt_tokens", 0)) + int(resp.usage.get("completion_tokens", 0))
         selected += [part[k - 1] for k in picked if isinstance(k, int) and 1 <= k <= len(part)]
+    exact = exact_matches(nodes, exact_keys(question), limit=3)  # a map call can miss an exact date or name
+    selected = exact + [n for n in selected if n.id not in {e.id for e in exact}]
     step = TraceStep(name="upload_parts", duration_s=round(time.perf_counter() - t0, 3),
-                     detail={"parts": len(parts), "selected": [n.id for n in selected], "tokens": tokens})
+                     detail={"parts": len(parts), "selected": [n.id for n in selected], "exact": [n.id for n in exact],
+                             "tokens": tokens})
     if not selected:
         return Answer(question=question, answer="В загруженном файле не нашлось сведений для ответа на этот вопрос.",
                       answerable=False, grounded=True, trace=[step], model=llm.name)
-    kept, size = [], 0
-    for n in selected:  # the reduce step must fit the budget too
-        if kept and size + len(n.text or "") > budget_chars:
-            break
-        kept.append(n)
-        size += len(n.text or "")
-    hits = [Hit(node=n, score=1.0, rank=k) for k, n in enumerate(kept, start=1)]
-    answer = generate_answer(question, hits, llm, max_source_chars, reasoning_budget, note=UNTRUSTED_NOTE)
+    # the reduce step must fit the budget too; fragments go in whole
+    hits = fit_budget([Hit(node=n, score=1.0, rank=k) for k, n in enumerate(selected, start=1)], budget_chars)
+    answer = generate_answer(question, hits, llm, _longest(hits, max_source_chars), reasoning_budget,
+                             note=UNTRUSTED_NOTE)
     answer.trace.insert(0, step)
     return answer
 
@@ -359,8 +429,9 @@ def answer_from_uploads(store: UploadStore, infos: list[UploadInfo], question: s
     else:
         found = [h for info in infos for h in store.search(info, question, store.cfg.top_k, reranker)]
         found = sorted(found, key=lambda h: -h.score)[: store.cfg.top_k]
-        hits = [Hit(node=h.node, score=h.score, rank=k) for k, h in enumerate(found, start=1)]
-        answer = generate_answer(question, hits, llm, max_source_chars, reasoning_budget, note=UNTRUSTED_NOTE)
+        hits = fit_budget(found, budget)
+        answer = generate_answer(question, hits, llm, _longest(hits, max_source_chars), reasoning_budget,
+                                 note=UNTRUSTED_NOTE)
         used = "index"
         if mode == "self_route" and not answer.answerable:
             first = answer.trace

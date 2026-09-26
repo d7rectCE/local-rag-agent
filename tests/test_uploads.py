@@ -9,7 +9,9 @@ from pathlib import Path
 import pytest
 
 from rag_agent.engine import Engine
-from rag_agent.uploads import UploadError, detect_type
+from rag_agent.retrieval import Hit
+from rag_agent.schema import FileType, Node, NodeType
+from rag_agent.uploads import UploadError, detect_type, exact_keys, exact_matches, fit_budget
 from tests.conftest import FakeLLM
 
 NOTE = "# Договор\n\nСрок сдачи этапа 1 — 10 апреля 2026 г.\n\nСумма договора — 150 000 рублей.\n"
@@ -109,3 +111,20 @@ def test_add_to_corpus_is_explicit_and_never_overwrites(settings, fake_embedder,
     assert first["path"] == "uploads/contract.md" and second["path"] == "uploads/contract (1).md"
     assert (corpus / "uploads" / "contract.md").read_text(encoding="utf-8") == NOTE
     eng.close()
+
+
+def test_exact_keys_and_matches():
+    assert exact_keys("Что произошло в лаборатории 14 марта 2025 года?") == ["2025-03-14", "14.03.2025"]
+    assert exact_keys("Какие параметры были у запуска run-431 на cifar10-subset-v2?") == ["run-431", "cifar10-subset-v2"]
+    assert exact_keys("Что было 2 июня?") == ["-06-02"]
+    assert exact_keys("Сколько запусков в 2025 году?") == []  # a bare number is not a key
+    rows = [f"2025-03-{d:02d} | run-{400 + d} | ResNet-18 | val accuracy 0.9{d:02d}" for d in range(1, 21)]
+    nodes = [Node(id=f"f#L{k}", file_path="f.txt", file_type=FileType.TXT, node_type=NodeType.TABLE, text="\n".join(rows[k:k + 4]))
+             for k in range(0, 20, 4)]
+    assert [n.id for n in exact_matches(nodes, exact_keys("Что было у run-414?"), 3)] == ["f#L12"]
+    assert [n.id for n in exact_matches(nodes, exact_keys("Что было 14 марта 2025?"), 3)] == ["f#L12"]
+    assert exact_matches(nodes, exact_keys("Какой ResNet-18 лучший?"), 3) == []  # in every fragment: no signal
+    hits = [Hit(node=n, score=1.0, rank=k) for k, n in enumerate(nodes, start=1)]
+    size = len(nodes[0].text)
+    assert len(fit_budget(hits, 2 * size + 1)) == 2 and len(fit_budget(hits, 1)) == 1  # whole fragments only
+

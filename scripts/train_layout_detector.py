@@ -3,8 +3,11 @@ Docling's layout model (ТЗ S1 "CV-компонент проекта").
 
     # 1. DocLayNet parquet (HF cache) -> 640x640 JPEG + boxes
     python scripts/train_layout_detector.py prepare --out C:/ml-cache/doclaynet640
-    # 2. fine-tune a COCO-pretrained RT-DETRv2
+    # 2. fine-tune a COCO-pretrained RT-DETRv2 (checkpoint every 500 steps)
     python scripts/train_layout_detector.py train --data C:/ml-cache/doclaynet640 --out runs/layout/rtdetr_v2_r50
+    #    pause: save a checkpoint and exit; continue later from the same batch
+    python scripts/train_layout_detector.py stop --out runs/layout/rtdetr_v2_r50
+    python scripts/train_layout_detector.py train --data C:/ml-cache/doclaynet640 --out runs/layout/rtdetr_v2_r50 --resume
     # 3. mAP on the DocLayNet test split: ours and Docling's (heron)
     python scripts/train_layout_detector.py evaluate --data C:/ml-cache/doclaynet640 --model runs/layout/rtdetr_v2_r50/best
     python scripts/train_layout_detector.py evaluate --data C:/ml-cache/doclaynet640 --model <docling models dir>/<heron>
@@ -129,11 +132,19 @@ def collate(processor, batch):
     return enc["pixel_values"], enc["labels"], recs
 
 
-def loader(dataset, processor, batch_size: int, shuffle: bool):
+def loader(dataset, processor, batch_size: int, order: list[int] | None = None):
+    """``order`` fixes the sample order (a per-epoch permutation), so a resumed epoch sees
+    exactly the batches it has not seen yet."""
     import torch
 
-    return torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=0,
+    return torch.utils.data.DataLoader(dataset, batch_size=batch_size, sampler=order, num_workers=0,
                                        collate_fn=lambda b: collate(processor, b))
+
+
+def epoch_order(n: int, seed: int, epoch: int) -> list[int]:
+    import torch
+
+    return torch.randperm(n, generator=torch.Generator().manual_seed(seed * 1000 + epoch)).tolist()
 
 
 # --------------------------------------------------------------------------- evaluation
@@ -216,28 +227,60 @@ def train(args) -> None:
     sched = torch.optim.lr_scheduler.LambdaLR(
         opt, lambda s: (s + 1) / warmup if s < warmup else 0.5 * (1 + math.cos(math.pi * (s - warmup) / max(1, steps - warmup))))
     log = (out / "train_log.jsonl").open("a", encoding="utf-8")
-    best, step = -1.0, 0
-    for epoch in range(args.epochs):
+    ckpt_path, stop_flag = out / "checkpoint.pt", out / "STOP"
+    best, step, start_epoch, skip = -1.0, 0, 0, 0
+    if args.resume and ckpt_path.exists():
+        ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+        model.load_state_dict(ckpt["model"])
+        opt.load_state_dict(ckpt["optimizer"])
+        sched.load_state_dict(ckpt["scheduler"])
+        best, step, start_epoch, skip = ckpt["best"], ckpt["step"], ckpt["epoch"], ckpt["batch_in_epoch"]
+        print(f"resumed from step {step} (epoch {start_epoch}, batch {skip})", flush=True)
+    stop_flag.unlink(missing_ok=True)
+
+    def save_checkpoint(epoch: int, batch_in_epoch: int) -> None:
+        tmp = ckpt_path.with_suffix(".tmp")
+        torch.save({"model": model.state_dict(), "optimizer": opt.state_dict(), "scheduler": sched.state_dict(),
+                    "best": best, "step": step, "epoch": epoch, "batch_in_epoch": batch_in_epoch}, tmp)
+        tmp.replace(ckpt_path)
+
+    for epoch in range(start_epoch, args.epochs):
         model.train()
         t0, losses = time.perf_counter(), []
-        for pixel_values, labels, _ in loader(train_set, processor, args.batch_size, shuffle=True):
-            labels = [{k: v.to(device) for k, v in lab.items()} for lab in labels]
-            with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=device != "cpu"):
-                loss = model(pixel_values=pixel_values.to(device), labels=labels).loss
-            opt.zero_grad(set_to_none=True)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 0.1)
-            opt.step()
-            sched.step()
-            losses.append(float(loss))
-            step += 1
-            if step % 50 == 0:
-                print(f"epoch {epoch} step {step}/{steps} loss {np.mean(losses[-50:]):.4f} "
-                      f"{(time.perf_counter() - t0) / len(losses):.2f}s/it", flush=True)
+        order = epoch_order(len(train_set), args.seed, epoch)[skip * args.batch_size:]
+        batch_in_epoch = skip
+        skip = 0
+        try:
+            for pixel_values, labels, _ in loader(train_set, processor, args.batch_size, order):
+                labels = [{k: v.to(device) for k, v in lab.items()} for lab in labels]
+                with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=device != "cpu"):
+                    loss = model(pixel_values=pixel_values.to(device), labels=labels).loss
+                opt.zero_grad(set_to_none=True)
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 0.1)
+                opt.step()
+                sched.step()
+                losses.append(float(loss))
+                step += 1
+                batch_in_epoch += 1
+                if step % 50 == 0:
+                    print(f"epoch {epoch} step {step}/{steps} loss {np.mean(losses[-50:]):.4f} "
+                          f"{(time.perf_counter() - t0) / len(losses):.2f}s/it", flush=True)
+                if step % args.ckpt_every == 0:
+                    save_checkpoint(epoch, batch_in_epoch)
+                if stop_flag.exists():
+                    raise KeyboardInterrupt
+        except KeyboardInterrupt:  # `stop` command or Ctrl+C: save and leave, `--resume` continues here
+            save_checkpoint(epoch, batch_in_epoch)
+            stop_flag.unlink(missing_ok=True)
+            print(f"paused at step {step} (epoch {epoch}, batch {batch_in_epoch}); resume with --resume", flush=True)
+            log.close()
+            return
+        save_checkpoint(epoch + 1, 0)
         model.save_pretrained(out / "last")
         processor.save_pretrained(out / "last")
         val = evaluate_model(str(out / "last"), Path(args.data), "validation", device, args.batch_size, args.val_limit)
-        record = {"epoch": epoch, "train_loss": round(float(np.mean(losses)), 4), "val_map": val["map"],
+        record = {"epoch": epoch, "train_loss": round(float(np.mean(losses)), 4) if losses else None, "val_map": val["map"],
                   "val_map_50": val["map_50"], "minutes": round((time.perf_counter() - t0) / 60, 1)}
         log.write(json.dumps(record) + "\n")
         log.flush()
@@ -246,6 +289,7 @@ def train(args) -> None:
             best = val["map"]
             model.save_pretrained(out / "best")
             processor.save_pretrained(out / "best")
+        save_checkpoint(epoch + 1, 0)  # remembers the new best
     log.close()
 
 
@@ -267,6 +311,10 @@ def main() -> None:
     t.add_argument("--limit", type=int, default=None)
     t.add_argument("--val-limit", type=int, default=500)
     t.add_argument("--seed", type=int, default=0)
+    t.add_argument("--resume", action="store_true", help="continue from <out>/checkpoint.pt")
+    t.add_argument("--ckpt-every", type=int, default=500, help="steps between checkpoints")
+    s = sub.add_parser("stop", help="ask a running training to save a checkpoint and exit")
+    s.add_argument("--out", required=True)
     e = sub.add_parser("evaluate")
     e.add_argument("--data", required=True)
     e.add_argument("--model", required=True)
@@ -279,6 +327,9 @@ def main() -> None:
         prepare(Path(args.out), args.size, args.limit)
     elif args.cmd == "train":
         train(args)
+    elif args.cmd == "stop":
+        (Path(args.out) / "STOP").touch()
+        print("stop requested: the training saves a checkpoint after the current batch and exits")
     else:
         import torch
 

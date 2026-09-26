@@ -117,6 +117,8 @@ def test_overwrite_baseline_can_break_files(settings, tmp_path: Path, project: P
 
 
 def test_plot_logs_pipeline(settings, tmp_path: Path, project: Path):
+    pytest.importorskip("pandas")  # the generated script runs with this Python (the sandbox has both)
+    pytest.importorskip("matplotlib")
     ws = Workspace.create(tmp_path / "ws", project)
     llm = FakeLLM(settings, pipeline={"pipeline": "plot_logs", "target": "logs/train.log"})
     res = CodeAgent(settings, llm, HostSandbox(), ws, "Построй график по логу обучения", "t2").run()

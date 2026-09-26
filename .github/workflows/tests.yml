@@ -9,10 +9,13 @@ jobs:
   pytest:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       # Tests use a fake embedder and a fake LLM: no torch, no models, no private data.
-      - run: pip install numpy nbformat qdrant-client fastapi httpx pydantic pyyaml pytest python-docx charset-normalizer
+      # pandas + matplotlib: the code agent's plot pipeline runs its script with this Python in the tests
+      - run: >-
+          pip install numpy nbformat qdrant-client fastapi httpx pydantic pyyaml pytest python-docx charset-normalizer
+          python-multipart beautifulsoup4 lxml pandas matplotlib
       - run: python -m pytest -q

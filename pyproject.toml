@@ -26,10 +26,17 @@ dependencies = [
     "python-docx",
     "charset-normalizer",
     "docling",
+    "python-multipart",  # file uploads in the API (Э13)
+    "beautifulsoup4",  # main text of web pages (Э16)
+    "lxml",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest", "nbclient", "ipykernel", "scikit-learn", "matplotlib", "pandas", "reportlab", "pycocotools", "datasets"]
+# SQL validation by parsing (Э6); without it a stricter regex check is used, the read-only connection holds either way
+sql = ["sqlglot"]
+# better main-text extraction of web pages than the built-in BeautifulSoup fallback (Э16)
+web = ["trafilatura"]
 
 [project.scripts]
 rag = "rag_agent.cli:app"

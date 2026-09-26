@@ -5,6 +5,7 @@ Run with ``rag ui`` (the API must be running: ``rag serve``).
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -28,6 +29,7 @@ SUPPORTED_TYPES = list(TYPE_LABELS)
 ROUTE_LABELS = {"auto": "Авто", "corpus": "Мои файлы", "general": "Общие знания"}
 REASONING_LABELS = {"off": "Выкл", "on": "Вкл", "auto": "Авто"}
 AGENT_LABELS = {"off": "Выкл", "auto": "Авто", "always": "Всегда"}
+TRUST_LABELS = {"trusted": ":green[доверенное]", "private": ":blue[приватное]", "untrusted": ":orange[недоверенное]"}
 TOOL_LABELS = {"search": "поиск", "exact_search": "точный поиск имени", "sql_query": "SQL к каталогу",
                "read_file": "чтение файла", "list_dir": "список файлов", "answer": "ответ", "refuse": "отказ"}
 STATE_LABELS = {
@@ -304,6 +306,19 @@ def render_answer(ans: dict) -> None:
         with st.expander(f"Черновик рассуждений ({level}{ans.get('reasoning_tokens', 0)} токенов{cut})"):
             st.caption("Это черновик модели, а не объяснение ответа: подтверждением служат только ссылки на источники.")
             st.markdown(ans["reasoning"])
+    for p in ans.get("pending", []):  # FR17: the agent waits for the user's approval of this exact call
+        with st.container(border=True):
+            st.markdown(f":material/gpp_maybe: **Нужно подтверждение** ({p['rule']}): {p['reason']}")
+            st.code(f"{p['tool']}({json.dumps(p['args'], ensure_ascii=False, indent=2)})", language="python")
+            c1, c2 = st.columns(2)
+            if c1.button("Подтвердить", key=f"ok_{p['key']}", type="primary", use_container_width=True):
+                st.session_state.confirm_request = {"question": ans["question"],
+                                                   "confirmed": [*st.session_state.get("confirmed", []), p["key"]]}
+                st.session_state.confirmed = st.session_state.confirm_request["confirmed"]
+                st.rerun()
+            if c2.button("Отклонить", key=f"no_{p['key']}", use_container_width=True):
+                st.info("Действие отклонено, агент его не выполнит.")
+        return
     st.markdown(ans["answer"])
     if ans.get("route") == "general":
         st.caption(":material/school: Ответ из общих знаний модели, файлы не использовались.")
@@ -339,8 +354,12 @@ def render_answer(ans: dict) -> None:
                 d = s["detail"]
                 verdict = {"correct": "релевантно", "ambiguous": "частично", "incorrect": "нерелевантно"}.get(d.get("verdict"), "")
                 args = ", ".join(f"{k}={v!r}" for k, v in (d.get("args") or {}).items() if v not in (None, ""))
+                trust = TRUST_LABELS.get(d.get("trust"), "")
+                policy = d.get("policy") or {}
+                blocked = f" · :red[{policy['decision']}: {policy['rule']}]" if policy.get("decision") not in (None, "allow") else ""
                 st.markdown(f"**{d.get('step')}. {TOOL_LABELS.get(d.get('action'), d.get('action'))}**({args})"
-                            + (f" · {verdict}" if verdict else "") + f" · {s['duration_s']:.1f} с")
+                            + (f" · {verdict}" if verdict else "") + (f" · {trust}" if trust else "") + blocked
+                            + f" · {s['duration_s']:.1f} с")
                 if d.get("thought"):
                     st.caption(d["thought"])
                 if d.get("observation"):
@@ -396,6 +415,12 @@ def main() -> None:
                 st.markdown(msg["content"])
 
     question = st.chat_input("Спросите про свои файлы или задайте общий вопрос…")
+    confirm = st.session_state.pop("confirm_request", None)
+    if confirm and not question:  # re-run the question with the approved action allowed
+        question = confirm["question"]
+        messages.pop()  # the answer that asked for the confirmation
+        if messages and messages[-1]["role"] == "user":
+            messages.pop()
     if question:
         history = [
             {"role": m["role"], "content": m["content"] if m["role"] == "user" else answer_text(m["answer"])}
@@ -419,6 +444,7 @@ def main() -> None:
                     "uploads": [u["id"] for u in st.session_state.get("uploads", [])]
                     if st.session_state.get("ask_uploads") else [],
                     "session": session_id(),
+                    "confirmed": st.session_state.get("confirmed", []),
                 })
             if err:
                 st.error(err)

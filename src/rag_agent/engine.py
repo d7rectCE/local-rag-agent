@@ -11,6 +11,7 @@ from pathlib import Path
 
 from rag_agent.agent import Agent, RelevanceEvaluator, rewrite_query
 from rag_agent.config import REPO_ROOT, Settings, load_settings
+from rag_agent.policy import defang_markdown
 from rag_agent.generation import Answer, TraceStep, generate_answer, generate_general
 from rag_agent.index.embedder import Embedder
 from rag_agent.index.indexer import CorpusIndex, IndexProgress, corpus_key, run_indexing
@@ -381,6 +382,7 @@ class Engine:
         agent: str | None = None,
         uploads: list[str] | None = None,
         session: str | None = None,
+        confirmed: list[str] | None = None,
     ) -> Answer:
         """Route the question, then answer it from the user's files (with citations)
         or from general knowledge. ``history`` is the previous chat turns
@@ -451,7 +453,8 @@ class Engine:
             sql_ok = self.settings.catalog.sql and (index.dir / ANALYTICS_FILE).exists()
             # ТЗ S7: only aggregate and multi-step questions go through the agent loop
             if agent_mode == "always" or (agent_mode == "auto" and (aggregate or complexity != "none")):
-                agent = Agent(self, index, top_k=top_k, mode=mode, sql=sql_ok, reasoning_budget=budget)
+                agent = Agent(self, index, top_k=top_k, mode=mode, sql=sql_ok, reasoning_budget=budget,
+                              confirmed=set(confirmed or []))
                 answer = agent.run(standalone, aggregate=aggregate)
             else:
                 answer, escalated = self._answer_direct(standalone, index, steps, top_k=top_k, mode=mode, rerank=rerank,
@@ -462,6 +465,8 @@ class Engine:
             answer.question = question
 
         answer.standalone_question = standalone if standalone != question else None
+        # rule 4 (ТЗ ч.2 S20): rendering the answer must not load images or follow links by itself
+        answer.answer, answer.general = defang_markdown(answer.answer), defang_markdown(answer.general)
         answer.reasoning_level = level
         answer.notice = notice
         answer.trace[:0] = steps

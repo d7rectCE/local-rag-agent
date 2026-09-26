@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Literal
 from rag_agent.config import AgentConfig
 from rag_agent.generation import Answer, TraceStep, generate_answer
 from rag_agent.llm import LLMError
+from rag_agent.policy import Policy, Provenance, urls_in
 from rag_agent.retrieval import Hit
 from rag_agent.schema import Node
 
@@ -116,11 +117,17 @@ class RelevanceEvaluator:
 
 
 class Agent:
-    def __init__(self, engine: Engine, index, *, top_k: int, mode: str, sql: bool, reasoning_budget: int | None):
+    def __init__(self, engine: Engine, index, *, top_k: int, mode: str, sql: bool, reasoning_budget: int | None,
+                 policy: Policy | None = None, confirmed: set[str] | None = None):
         self.engine, self.index = engine, index
         self.cfg: AgentConfig = engine.settings.agent
         self.top_k, self.mode, self.reasoning_budget = top_k, mode, reasoning_budget
-        self.tools = [t for t in TOOLS if sql or t != "sql_query"]
+        self.policy = policy or Policy.for_catalog(index.catalog)
+        self.prov = Provenance()
+        self.confirmed = confirmed or set()  # keys of calls the user has approved (FR17)
+        self.pending: list[dict] = []
+        available = set(self.policy.tools())
+        self.tools = [t for t in TOOLS if (t in available or t in ("answer", "refuse")) and (sql or t != "sql_query")]
         self.evaluator = RelevanceEvaluator(engine, self.cfg)
         self.evidence: dict[str, tuple[Node, float]] = {}  # node id -> (node, relevance to the question)
         self.steps: list[TraceStep] = []
@@ -205,13 +212,15 @@ class Agent:
         system = AGENT_PROMPT.format(tools="\n".join(f"- {TOOLS[t]}" for t in self.tools), max_steps=self.cfg.max_steps,
                                      sql_rule=sql_rule)
         hint = "\nПодсказка маршрутизатора: вопрос агрегатный, начни с sql_query." if aggregate and "sql_query" in self.tools else ""
+        self.prov.known_urls |= urls_in(question)  # the user may name pages to read
         # step 0 without the model: a search by the question itself, so the agent starts from context
         t1 = time.perf_counter()
         seed_args = {"query": question}
         seed, extra = self.tool(question, "search", seed_args)
+        trust = self.policy.observe("search", self.prov, seed)
         self.steps.append(TraceStep(name="agent", duration_s=round(time.perf_counter() - t1, 3), detail={
             "step": 0, "thought": "начальный поиск по вопросу", "action": "search", "args": seed_args, **extra,
-            "observation": seed[:1500]}))
+            "observation": seed[:1500], "trust": trust.value}))
         messages = [{"role": "system", "content": system},
                     {"role": "user", "content": f"Вопрос: {question}{hint}\n\nРезультат начального поиска:\n{seed}"}]
         schema = _schema(self.tools)
@@ -244,11 +253,24 @@ class Agent:
                 self.steps.append(TraceStep(name="agent", duration_s=round(time.perf_counter() - t1, 3), detail=detail))
                 stop = action
                 break
-            if key in seen_calls:
+            decision = self.policy.check(action, args, self.prov)
+            if decision.action == "confirm" and key in self.confirmed:
+                decision.action = "allow"  # the user approved exactly this call
+            detail["policy"] = {"decision": decision.action, "rule": decision.rule, "reason": decision.reason}
+            if decision.action == "confirm":  # stop: plan, then execute only after the user's approval
+                self.pending.append({"key": key, "tool": action, "args": args, "rule": decision.rule,
+                                     "reason": decision.reason})
+                self.steps.append(TraceStep(name="agent", duration_s=round(time.perf_counter() - t1, 3), detail=detail))
+                stop = "needs confirmation"
+                break
+            if decision.action == "deny":
+                observation, extra = f"действие заблокировано политикой ({decision.rule}): {decision.reason}", {}
+            elif key in seen_calls:
                 observation, extra = "этот вызов уже был — используй его результат или сделай другой", {"repeat": True}
             else:
                 seen_calls.add(key)
                 observation, extra = self.tool(question, action, args)
+                extra["trust"] = self.policy.observe(action, self.prov, observation).value
             if extra.get("verdict") == "incorrect":
                 low_searches += 1
                 if low_searches > self.cfg.crag_retries and not self._relevant():
@@ -272,6 +294,11 @@ class Agent:
         return self.evaluator.verdict(self._best()) in ("correct", "ambiguous", "unknown")
 
     def _finish(self, question: str, refused: str | None) -> Answer:
+        if self.pending:
+            p = self.pending[0]
+            return Answer(question=question, answer=f"Для продолжения нужно подтверждение: {p['tool']} "
+                          f"{json.dumps(p['args'], ensure_ascii=False)} — {p['reason']}.", answerable=False, grounded=True,
+                          trace=list(self.steps), model=self.engine.llm.name, pending=list(self.pending))
         # CRAG: an answer only from evidence that is relevant enough; otherwise an honest refusal
         if refused is not None or not self.evidence or not self._relevant():
             reason = refused or ("релевантных фрагментов не найдено" if self.evidence else "ничего не найдено")

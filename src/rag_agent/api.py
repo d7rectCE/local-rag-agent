@@ -48,6 +48,7 @@ class AskRequest(BaseModel):
     reasoning: Literal["off", "on", "auto"] | None = None
     agent: Literal["off", "auto", "always"] | None = None
     uploads: list[str] = []  # ids of files uploaded into this session: the question is about them
+    confirmed: list[str] = []  # keys of agent actions the user approved (FR17)
     session: str | None = None
 
 
@@ -195,6 +196,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
                 agent=req.agent,
                 uploads=req.uploads,
                 session=req.session,
+                confirmed=req.confirmed,
             )
         except NoCorpusError as exc:
             raise HTTPException(404, "Сначала проиндексируйте папку") from exc

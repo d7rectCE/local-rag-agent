@@ -189,3 +189,13 @@ def test_a_csv_from_a_log_is_not_a_plot(settings, tmp_path: Path, project: Path)
     res = CodeAgent(settings, llm, HostSandbox(), ws, "Сохрани метрики по эпохам из logs/train.log в reports/epochs.csv",
                     "t3").run()
     assert res.pipeline == "free" and "reports/train.png" not in res.artifacts
+
+
+def test_a_csv_from_a_log_is_not_collect_metrics(settings, tmp_path: Path, project: Path):
+    ws = Workspace.create(tmp_path / "ws", project)
+    llm = FakeLLM(settings, pipeline={"pipeline": "collect_metrics", "target": ""},
+                  agent=[{"thought": "", "action": "finish", "args": {"summary": "-"}}])
+    agent = CodeAgent(settings, llm, HostSandbox(), ws, "Сохрани метрики по эпохам из logs/train.log в reports/epochs.csv",
+                      "t4")
+    agent.catalog_rows = [{"notebook": "a.ipynb", "metric": "f1", "value": 0.9}]
+    assert agent.run().pipeline == "free"

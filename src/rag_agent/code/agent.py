@@ -242,6 +242,9 @@ class CodeAgent:
         task = self.result.task.lower()
         if pipeline == "plot_logs" and not re.search(r"график|графи|plot|png|картин|диаграм|визуализ", task):
             pipeline = "free"  # a table or CSV from a log is not a plot: the template would draw the wrong artifact
+        if pipeline == "collect_metrics" and (re.search(r"[\w./-]+\.(?:log|txt|json|out)\b", task)
+                                              or not re.search(r"ноутбук|notebook|ipynb|эксперимент", task)):
+            pipeline = "free"  # the template reads the catalog of the notebooks, not a log or another file
         return pipeline, target
 
     def pipeline_collect_metrics(self) -> str | None:
@@ -256,11 +259,13 @@ class CodeAgent:
                                 lineterminator="\n")
         writer.writeheader()
         writer.writerows(self.catalog_rows)
-        self.ws.create_file("reports/metrics_from_notebooks.csv", buf.getvalue(), check=False)
+        named = re.search(r"[\w./-]+\.csv\b", self.result.task)  # the path the task asks for, if any
+        out = named.group(0).lstrip("./") if named else "reports/metrics_from_notebooks.csv"
+        self.ws.create_file(out, buf.getvalue(), check=False)
         self.ws.commit("конвейер collect_metrics: метрики из каталога")
-        run = self._run(["python", "-c", "import pandas as pd; df = pd.read_csv('reports/metrics_from_notebooks.csv'); "
+        run = self._run(["python", "-c", f"import pandas as pd; df = pd.read_csv({out!r}); "
                                          "print(df.shape); print(df.groupby('notebook').size())"])
-        return f"reports/metrics_from_notebooks.csv: {len(self.catalog_rows)} строк\n{run.report()}" if run.ok else None
+        return f"{out}: {len(self.catalog_rows)} строк\n{run.report()}" if run.ok else None
 
     def pipeline_plot_logs(self, target: str) -> str | None:
         logs = [target] if target and (self.ws.root / target).is_file() else [f for f in self.ws.files() if f.endswith(".log")]

@@ -1,0 +1,203 @@
+# Код-задачи на демо-корпусе (ТЗ ч.2: класс Q9, 15–25 задач; S17, H13, H14).
+# Каждая задача: постановка, исходное состояние рабочей копии (копия demo_corpus, к которой применяются
+# правки patch — так вносятся ошибки) и автоматическая проверка check: pytest-файл, который после работы
+# агента запускается в песочнице в корне рабочей копии. Агент проверку не видит.
+
+version: 1
+name: code_v1
+corpus: ../demo_corpus
+
+tasks:
+  - id: c01-f1-average
+    task: calc_metrics из ml_toolkit/metrics.py по умолчанию должна считать F1 с усреднением macro, но на calc_metrics([0, 1, 1, 0], [0, 1, 0, 0]) даёт F1 0.75 вместо 0.7333. Найди и исправь ошибку.
+    patch:
+      - {file: ml_toolkit/metrics.py, old: 'average: str = "macro"', new: 'average: str = "micro"'}
+    check: |
+      from ml_toolkit.metrics import calc_metrics
+
+      def test_macro_by_default():
+          assert abs(calc_metrics([0, 1, 1, 0], [0, 1, 0, 0])["f1"] - 0.7333) < 1e-3
+
+      def test_average_is_still_a_parameter():
+          assert abs(calc_metrics([0, 1, 1, 0], [0, 1, 0, 0], average="micro")["f1"] - 0.75) < 1e-9
+
+  - id: c02-train-params
+    task: В scripts/train.py для модели hist_gb в модель не передаются max_leaf_nodes и l2_regularization. Добавь аргументы командной строки --max-leaf-nodes (по умолчанию 31) и --l2 (по умолчанию 0.0) и передай их в модель в model_params.
+    check: |
+      import importlib.util
+
+      spec = importlib.util.spec_from_file_location("train", "scripts/train.py")
+      train = importlib.util.module_from_spec(spec)
+      spec.loader.exec_module(train)
+
+      def test_new_arguments():
+          p = train.model_params(train.parse_args(["--model", "hist_gb", "--max-leaf-nodes", "15", "--l2", "1.0"]))
+          assert p["max_leaf_nodes"] == 15 and p["l2_regularization"] == 1.0 and "learning_rate" in p
+
+      def test_defaults():
+          p = train.model_params(train.parse_args(["--model", "hist_gb"]))
+          assert p["max_leaf_nodes"] == 31 and p["l2_regularization"] == 0.0
+
+  - id: c03-collect-metrics
+    task: Собери метрики всех экспериментов из ноутбуков в CSV-таблицу в папке reports (ноутбук, метрика, выборка, значение).
+    check: |
+      import glob
+      import pandas as pd
+
+      def test_table():
+          tables = [pd.read_csv(f) for f in glob.glob("reports/*.csv")]
+          assert tables, "в reports нет CSV"
+          df = max(tables, key=len)
+          assert len(df) >= 10
+          text = df.to_csv()
+          assert "02_logreg" in text and "0.998" in text
+
+  - id: c04-plot-log
+    task: Построй график val_acc по эпохам из logs/train_numpy_mlp.log и сохрани его в reports/val_acc.png.
+    check: |
+      import os
+
+      def test_png():
+          assert os.path.getsize("reports/val_acc.png") > 5000
+          assert open("reports/val_acc.png", "rb").read(4) == b"\x89PNG"
+
+  - id: c05-notebook-nameerror
+    task: В ноутбуке experiments/07_scratch.ipynb ячейка с f1_manual падает с NameError. Исправь ноутбук так, чтобы он выполнялся целиком без ошибок (f1_manual лежит в scripts/legacy_metrics.py).
+    check: |
+      import os
+      import nbclient
+      import nbformat
+
+      def test_notebook_runs():
+          path = "experiments/07_scratch.ipynb"
+          nb = nbformat.read(path, as_version=4)
+          nbclient.NotebookClient(nb, timeout=300, kernel_name="python3",
+                                  resources={"metadata": {"path": os.path.dirname(os.path.abspath(path))}}).execute()
+          assert any("f1_manual" in "".join(c.source) for c in nb.cells if c.cell_type == "code")
+
+  - id: c06-precision-at-k
+    task: Добавь в ml_toolkit/metrics.py функцию precision_at_k(y_true, scores, k) — доля положительных объектов (y_true == 1) среди k объектов с наибольшими scores.
+    check: |
+      from ml_toolkit.metrics import precision_at_k
+
+      def test_values():
+          assert precision_at_k([1, 0, 1, 0], [0.9, 0.8, 0.7, 0.1], 2) == 0.5
+          assert abs(precision_at_k([1, 0, 1, 0], [0.9, 0.8, 0.7, 0.1], 3) - 2 / 3) < 1e-9
+          assert precision_at_k([0, 1], [0.1, 0.9], 1) == 1.0
+
+  - id: c07-hparam-traceback
+    task: Команда python scripts/hparam_search.py --dataset breast_cancer --n-iter 2 падает с ошибкой. Найди и исправь причину.
+    patch:
+      - {file: scripts/hparam_search.py, old: 'params = sample_params(SEARCH_SPACE, rng)', new: 'params = sample_params(SEARCH_SPAC, rng)'}
+    check: |
+      import subprocess
+      import sys
+
+      def test_script_runs():
+          r = subprocess.run([sys.executable, "scripts/hparam_search.py", "--dataset", "breast_cancer", "--n-iter", "2",
+                              "--n-splits", "3", "--out", "/tmp/hs.csv"], capture_output=True, text=True, timeout=300)
+          assert r.returncode == 0, r.stderr[-1000:]
+          assert "saved 2 trials" in r.stdout
+
+  - id: c08-step-fast
+    task: В ml_toolkit/trainer.py добавь в SCHEDULES расписание "step_fast" — ступенчатое, как step, но с gamma=0.25. Поведение "step" не меняй.
+    check: |
+      from ml_toolkit.trainer import SCHEDULES
+
+      def test_step_fast():
+          f = SCHEDULES["step_fast"]
+          assert f(1.0, 0, 40) == 1.0 and abs(f(1.0, 10, 40) - 0.25) < 1e-12 and abs(f(1.0, 20, 40) - 0.0625) < 1e-12
+
+      def test_step_unchanged():
+          assert SCHEDULES["step"](1.0, 10, 40) == 0.5
+
+  - id: c09-write-tests
+    task: Напиши тесты для функции calc_metrics из ml_toolkit/metrics.py в файле tests/test_metrics.py — не меньше трёх тестов — и убедись, что они проходят.
+    check: |
+      import re
+      import subprocess
+      import sys
+
+      def test_written_tests_pass():
+          r = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/test_metrics.py"],
+                             capture_output=True, text=True, timeout=300)
+          assert r.returncode == 0, r.stdout[-1500:]
+          assert int(re.search(r"(\d+) passed", r.stdout).group(1)) >= 3
+
+  - id: c10-epochs-csv
+    task: Сохрани метрики по эпохам из logs/train_numpy_mlp.log в reports/epochs.csv с колонками epoch, train_loss, val_loss, val_acc.
+    check: |
+      import pandas as pd
+
+      def test_csv():
+          df = pd.read_csv("reports/epochs.csv")
+          assert {"epoch", "train_loss", "val_loss", "val_acc"} <= set(df.columns)
+          assert len(df) == 38
+          row = df[df["epoch"] == 27].iloc[0]
+          assert abs(row["val_acc"] - 0.9639) < 1e-9
+
+  - id: c11-indentation
+    task: import ml_toolkit.utils падает с ошибкой. Исправь модуль.
+    patch:
+      - {file: ml_toolkit/utils.py, old: "    random.seed(seed)\n    np.random.seed(seed)", new: "    random.seed(seed)\n  np.random.seed(seed)"}
+    check: |
+      import numpy as np
+      from ml_toolkit.utils import set_seed
+
+      def test_seed():
+          set_seed(3)
+          a = np.random.rand()
+          set_seed(3)
+          assert np.random.rand() == a
+
+  - id: c12-dataset-sizes
+    task: Напиши скрипт scripts/dataset_sizes.py, который для каждого датасета из ml_toolkit.data (breast_cancer, wine, digits, diabetes) печатает размеры train, val и test из make_split в строке вида "имя train val test".
+    check: |
+      import re
+      import subprocess
+      import sys
+
+      def test_output():
+          r = subprocess.run([sys.executable, "scripts/dataset_sizes.py"], capture_output=True, text=True, timeout=300)
+          assert r.returncode == 0, r.stderr[-1000:]
+          for name, sizes in [("breast_cancer", "341 114 114"), ("wine", "106 36 36"), ("digits", "1077 360 360"),
+                              ("diabetes", "264 89 89")]:
+              pattern = name + r"\D+" + r"\D+".join(sizes.split())
+              assert re.search(pattern, r.stdout), f"{name}: {r.stdout[-500:]}"
+
+  - id: c13-split-logic
+    task: make_split("breast_cancer") должен давать разбиение 60/20/20 (341/114/114 объектов), а сейчас валидационная выборка меньше. Найди и исправь ошибку в ml_toolkit/data.py.
+    patch:
+      - {file: ml_toolkit/data.py, old: "rel_val = val_size / (1.0 - test_size)", new: "rel_val = val_size"}
+    check: |
+      from ml_toolkit.data import make_split
+
+      def test_sizes():
+          s = make_split("breast_cancer")
+          assert (len(s.y_train), len(s.y_val), len(s.y_test)) == (341, 114, 114)
+
+  - id: c14-bar-plot
+    task: Добавь в ml_toolkit/viz.py функцию plot_metric_bars(metrics, path) — столбчатая диаграмма значений словаря метрик, сохранённая в файл path.
+    check: |
+      import os
+      from ml_toolkit.viz import plot_metric_bars
+
+      def test_bars(tmp_path):
+          out = tmp_path / "bars.png"
+          plot_metric_bars({"accuracy": 0.97, "f1": 0.95, "roc_auc": 0.99}, str(out))
+          assert out.exists() and os.path.getsize(out) > 1000
+
+  - id: c15-log-run-append
+    task: log_run из ml_toolkit/utils.py должна дописывать запуски в журнал, но после двух вызовов в файле остаётся одна запись. Исправь.
+    patch:
+      - {file: ml_toolkit/utils.py, old: 'with p.open("a", encoding="utf-8") as f:', new: 'with p.open("w", encoding="utf-8") as f:'}
+    check: |
+      import json
+      from ml_toolkit.utils import log_run
+
+      def test_append(tmp_path):
+          path = tmp_path / "runs.jsonl"
+          log_run("a", {}, {"f1": 1.0}, str(path))
+          log_run("b", {}, {"f1": 0.5}, str(path))
+          lines = path.read_text(encoding="utf-8").splitlines()
+          assert [json.loads(line)["name"] for line in lines] == ["a", "b"]

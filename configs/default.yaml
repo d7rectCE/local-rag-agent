@@ -108,6 +108,16 @@ uploads:                              # ТЗ ч.2 S16: files uploaded into a con
   context_share: 0.33                 # a file up to a third of llm.num_ctx goes into the context whole
   top_k: 8
 
+code:                                 # ТЗ ч.2 S17: code agent in a Docker sandbox
+  image: rag-sandbox:py312            # docker build -t rag-sandbox:py312 -f docker/sandbox.Dockerfile docker
+  timeout_s: 120                      # per run; no network, read-only root, uid 1000, limits below
+  memory: 2g
+  cpus: 2
+  max_iterations: 5                   # failed runs the agent may fix from the execution feedback
+  max_steps: 20
+  aci: true                           # view / search / edit with syntax check (false: overwrite whole files)
+  workspace_max_mb: 50                # text files of the corpus copied into the git working copy
+
 tracing:
   enabled: true
   log_prompts: true                   # traces stay local, inside storage.data_dir

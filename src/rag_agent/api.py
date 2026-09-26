@@ -7,8 +7,12 @@ from contextlib import asynccontextmanager
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from rag_agent.code.agent import CodeResult
+from rag_agent.code.sandbox import SandboxError
+from rag_agent.code.workspace import WorkspaceError
 from rag_agent.engine import Engine, IndexingBusyError, NoCorpusError
 from rag_agent.generation import Answer
 from rag_agent.index.indexer import IndexProgress
@@ -31,6 +35,14 @@ class OpenRequest(BaseModel):
 class ChatTurn(BaseModel):
     role: Literal["user", "assistant"]
     content: str
+
+
+class CodeRequest(BaseModel):
+    task: str
+
+
+class RollbackRequest(BaseModel):
+    commit: str
 
 
 class SQLRequest(BaseModel):
@@ -180,6 +192,46 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             raise HTTPException(404, "Сначала выберите и проиндексируйте папку") from exc
         except IndexingBusyError as exc:
             raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/code")
+    def code(req: CodeRequest) -> CodeResult:
+        try:
+            return eng().code_task(req.task)
+        except NoCorpusError as exc:
+            raise HTTPException(404, "Сначала выберите и проиндексируйте папку") from exc
+        except SandboxError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        except LLMError as exc:
+            raise HTTPException(502, f"LLM недоступна: {exc}") from exc
+
+    @app.get("/code/{task_id}")
+    def code_result(task_id: str) -> CodeResult:
+        try:
+            return eng().code_result(task_id)
+        except WorkspaceError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.post("/code/{task_id}/apply")
+    def code_apply(task_id: str) -> CodeResult:
+        """apply_changes: the explicit confirmation of the user (FR14)."""
+        try:
+            return eng().apply_code(task_id)
+        except WorkspaceError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/code/{task_id}/rollback")
+    def code_rollback(task_id: str, req: RollbackRequest) -> CodeResult:
+        try:
+            return eng().rollback_code(task_id, req.commit)
+        except WorkspaceError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.get("/code/{task_id}/file")
+    def code_file(task_id: str, path: str) -> FileResponse:
+        try:
+            return FileResponse(eng().code_file(task_id, path))
+        except WorkspaceError as exc:
+            raise HTTPException(404, str(exc)) from exc
 
     @app.post("/ask")
     def ask(req: AskRequest) -> Answer:

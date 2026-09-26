@@ -125,7 +125,7 @@ class FakeLLM(BaseLLM):
 
     def __init__(self, settings: Settings, reply: dict | str | None = None, route: dict | str | None = None,
                  general: str = "Общий ответ.", extraction: dict | None = None, sql: list[dict] | None = None,
-                 agent: list[dict] | None = None):
+                 agent: list[dict] | None = None, pipeline: dict | None = None):
         super().__init__(settings.llm)
         self.reply = reply if reply is not None else {"answerable": True, "answer": "Learning rate был 0.05 [1].", "general": ""}
         self.route = route  # None -> corpus with the question unchanged
@@ -133,6 +133,7 @@ class FakeLLM(BaseLLM):
         self.extraction = extraction if extraction is not None else EXTRACTION
         self.sql = list(sql or [])  # replies of successive SQL calls; the last one repeats
         self.agent = list(agent or [])  # scripted agent steps; after the script: answer
+        self.pipeline = pipeline or {"pipeline": "free", "target": ""}  # code agent's task type
         self.calls: list[list[dict]] = []
         self.kinds: list[str] = []
         self.budgets: list[int] = []  # reasoning budgets of chat_reasoning calls
@@ -154,6 +155,9 @@ class FakeLLM(BaseLLM):
             self.kinds.append("sql")
             reply = (self.sql.pop(0) if len(self.sql) > 1 else self.sql[0]) if self.sql else {
                 "sql": "SELECT path, cell, name, value FROM metrics", "reason": ""}
+        elif "pipeline" in props:
+            self.kinds.append("code_pipeline")
+            reply = self.pipeline
         elif "action" in props:
             self.kinds.append("agent")
             reply = self.agent.pop(0) if self.agent else {"thought": "достаточно", "action": "answer", "args": {}}

@@ -275,6 +275,50 @@ def ablate(spec: Path = typer.Argument(..., help="Ablation spec (YAML)")) -> Non
     typer.echo(f"Report: {out_dir / 'ablation.md'}")
 
 
+@app.command()
+def code(task: str, root: Optional[Path] = typer.Option(None, help="Corpus folder (default: last used)")) -> None:
+    """Code agent: solve a task in a git working copy inside the Docker sandbox; prints the diff (nothing is applied)."""
+    engine = _engine()
+    if root:
+        engine.open_corpus(root)
+    res = engine.code_task(task)
+    engine.close()
+    typer.echo(f"[{res.status}] конвейер {res.pipeline}, запусков {res.runs} (неудачных {res.failed_runs}), {res.latency_s:.0f} с")
+    typer.echo(res.summary)
+    for f in res.artifacts:
+        typer.echo(f"  создан {f}")
+    typer.echo(res.diff or "(изменений нет)")
+    typer.echo(f"Задача {res.task_id}: применить к папке — POST /code/{res.task_id}/apply или кнопка в UI")
+
+
+@app.command("ablate-code")
+def ablate_code(spec: Path = typer.Argument(..., help="Code ablation spec (YAML)")) -> None:
+    """Run the code agent on a task set under several configurations (H13, H14)."""
+    from rag_agent.code.agent import catalog_metric_rows
+    from rag_agent.engine import Engine
+    from rag_agent.evaluation.code_eval import run_code_ablation
+    from rag_agent.llm import make_llm
+
+    settings = load_settings()
+    engine = Engine(settings)  # the catalog of the demo corpus feeds the collect_metrics pipeline
+    rows = catalog_metric_rows(engine)
+    engine.close()
+    out = run_code_ablation(spec, settings, REPO_ROOT / "runs" / "ablations", lambda s: make_llm(s.llm), rows,
+                            log=typer.echo)
+    typer.echo(f"Report: {out / 'ablation.md'}")
+
+
+@app.command("code-validate")
+def code_validate(tasks: Path = typer.Argument(REPO_ROOT / "evalsets" / "code_v1.yaml")) -> None:
+    """Check a code task set in the sandbox: every check fails at the start and passes on the original corpus."""
+    from rag_agent.code.sandbox import DockerSandbox
+    from rag_agent.evaluation.code_eval import load_code_tasks, validate_tasks
+
+    ts = load_code_tasks(tasks)
+    problems = validate_tasks(ts, DockerSandbox(load_settings().code), log=typer.echo)
+    typer.echo(f"{ts.name}: {len(ts.tasks)} задач — " + ("OK" if not problems else "проблемы:\n  " + "\n  ".join(problems)))
+
+
 @app.command("eval-validate")
 def eval_validate(evalset: Path = typer.Argument(DEFAULT_EVALSET), root: Optional[Path] = None) -> None:
     """Check that every reference in the eval set points to an indexed fragment."""

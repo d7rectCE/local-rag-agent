@@ -183,6 +183,24 @@ class UploadsConfig(BaseModel):
     top_k: int = 8
 
 
+class CodeConfig(BaseModel):
+    """Code agent and its sandbox (ТЗ ч.2 S17, Э15)."""
+
+    image: str = "rag-sandbox:py312"  # docker/sandbox.Dockerfile
+    timeout_s: float = 120.0  # per run in the sandbox
+    memory: str = "2g"
+    cpus: float = 2.0
+    pids: int = 256
+    max_iterations: int = 5  # failed runs before the agent stops (H13: 1 = no fixing from execution feedback)
+    max_steps: int = 20
+    aci: bool = True  # view / search / edit with a syntax check; false: whole-file overwrite (H14 baseline)
+    workspace_max_mb: float = 50.0  # text files copied from the corpus into the working copy
+    file_max_mb: float = 2.0
+    # the whole corpus read-only at /corpus: off by default — it would expose folders excluded from indexing
+    # (e.g. "Аккаунты"); the working copy already holds the filtered text files
+    mount_corpus: bool = False
+
+
 class Settings(BaseModel):
     corpus: CorpusConfig = CorpusConfig()
     storage: StorageConfig = StorageConfig()
@@ -196,6 +214,7 @@ class Settings(BaseModel):
     catalog: CatalogConfig = CatalogConfig()
     agent: AgentConfig = AgentConfig()
     uploads: UploadsConfig = UploadsConfig()
+    code: CodeConfig = CodeConfig()
     tracing: TracingConfig = TracingConfig()
     evaluation: EvaluationConfig = EvaluationConfig()
     api: ApiConfig = ApiConfig()

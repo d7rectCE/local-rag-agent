@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import logging
 import threading
 import time
@@ -10,6 +11,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from rag_agent.agent import Agent, RelevanceEvaluator, rewrite_query
+from rag_agent.code.agent import CodeAgent, CodeResult, catalog_metric_rows, new_task_id
+from rag_agent.code.sandbox import DockerSandbox
+from rag_agent.code.workspace import Workspace, WorkspaceError
 from rag_agent.config import REPO_ROOT, Settings, load_settings
 from rag_agent.policy import defang_markdown
 from rag_agent.generation import Answer, TraceStep, generate_answer, generate_general
@@ -271,6 +275,64 @@ class Engine:
         target.write_bytes(self.uploads.file_path(info).read_bytes())
         progress = self.index_folder(index.root, background=True)
         return {"path": target.relative_to(index.root).as_posix(), "progress": progress.model_dump()}
+
+    # --- code agent (ТЗ ч.2 S17) ------------------------------------------------------
+    def _workspace(self, task_id: str) -> Workspace:
+        if not re.fullmatch(r"[0-9A-Za-z-]{6,64}", task_id or ""):
+            raise WorkspaceError("неверный идентификатор задачи")
+        root = self.settings.data_dir / "workspaces" / task_id
+        if not (root / ".git").exists():
+            raise WorkspaceError(f"задача {task_id} не найдена")
+        return Workspace(root)
+
+    def code_task(self, task: str, sandbox: DockerSandbox | None = None) -> CodeResult:
+        """Solve a code task in a fresh git working copy of the corpus; the user's folder is untouched."""
+        index = self.index
+        cfg = self.settings.code
+        task_id = new_task_id()
+        ws = Workspace.create(self.settings.data_dir / "workspaces" / task_id, index.root,
+                              exclude=self.corpus_prefs(index.root)["exclude"], max_mb=cfg.workspace_max_mb,
+                              file_max_mb=cfg.file_max_mb)
+        agent = CodeAgent(self.settings, self.llm, sandbox or DockerSandbox(cfg), ws, task, task_id,
+                          corpus=index.root, catalog_rows=catalog_metric_rows(self))
+        res = agent.run()
+        self._save_code(ws, res)
+        self.tracer.log("code_task", task=task if self.tracer.log_prompts else None, task_id=task_id, status=res.status,
+                        pipeline=res.pipeline, steps=len(res.steps), runs=res.runs, failed_runs=res.failed_runs,
+                        changed=len(res.changed), broken=len(res.broken_files), latency_s=res.latency_s)
+        return res
+
+    @staticmethod
+    def _save_code(ws: Workspace, res: CodeResult) -> None:
+        (ws.root / ".agent").mkdir(exist_ok=True)
+        (ws.root / ".agent" / "result.json").write_text(res.model_dump_json(indent=2), encoding="utf-8")
+
+    def code_result(self, task_id: str) -> CodeResult:
+        ws = self._workspace(task_id)
+        return CodeResult.model_validate_json((ws.root / ".agent" / "result.json").read_text(encoding="utf-8"))
+
+    def apply_code(self, task_id: str) -> CodeResult:
+        """apply_changes (FR14): called only by the user's explicit confirmation in the UI or API."""
+        ws, res = self._workspace(task_id), self.code_result(task_id)
+        res.applied = ws.apply_to(self.index.root)
+        self._save_code(ws, res)
+        self.tracer.log("apply_changes", task_id=task_id, files=res.applied)
+        if res.applied and not self.progress.running:
+            self.index_folder(self.index.root, background=True)
+        return res
+
+    def rollback_code(self, task_id: str, commit: str) -> CodeResult:
+        ws, res = self._workspace(task_id), self.code_result(task_id)
+        ws.rollback(commit)
+        res.diff, res.changed, res.checkpoints = ws.diff(), [list(c) for c in ws.changed()], ws.checkpoints()
+        self._save_code(ws, res)
+        return res
+
+    def code_file(self, task_id: str, rel: str) -> Path:
+        p = self._workspace(task_id).path(rel)
+        if not p.is_file():
+            raise WorkspaceError(f"нет файла {rel}")
+        return p
 
     def cancel_indexing(self) -> None:
         self._cancel.set()

@@ -230,6 +230,9 @@ def sidebar(status: dict) -> None:
         help="Агент сам вызывает поиск, точный поиск имён, SQL к каталогу и чтение файлов, пока не соберёт улики. "
         "«Авто» — только для агрегатных и многошаговых вопросов, простые отвечаются сразу.",
     )
+    st.toggle("Код", key="code_mode",
+              help="Код-агент: пишет и запускает код в песочнице без сети, правит копию проекта под git и показывает "
+              "diff; в вашу папку изменения попадают только по кнопке «Применить в папку». Нужен запущенный Docker.")
     st.slider("Фрагментов в контексте", 2, 12, status["retrieval"]["top_k"], key="top_k")
     st.selectbox("Режим", ["dense", "sparse", "hybrid"], index=["dense", "sparse", "hybrid"].index(status["retrieval"]["mode"]),
                  key="mode", help="sparse и hybrid работают только с BGE-M3")
@@ -287,6 +290,59 @@ def uploads_panel() -> None:
     if uploads:
         st.toggle("Спрашивать по загруженным файлам", key="ask_uploads",
                   help="Вкл — вопросы задаются по загруженным файлам, выкл — по рабочей папке")
+
+
+CODE_STATUS = {"done": ":green[готово]", "failed": ":red[не удалось]", "limit": ":orange[лимит шагов]",
+               "error": ":red[ошибка]"}
+
+
+def render_code(res: dict) -> None:
+    """Result of a code task (ТЗ ч.2 S17, FR13, FR14): steps, diff, artifacts; applying is the user's confirmation."""
+    st.markdown(f"**Код-агент** · {CODE_STATUS.get(res['status'], res['status'])} · конвейер `{res['pipeline']}` · "
+                f"запусков {res['runs']} (неудачных {res['failed_runs']}) · {res['latency_s']:.0f} с")
+    st.markdown(res["summary"] or "—")
+    if res["steps"]:
+        with st.expander(f"Шаги агента ({len(res['steps'])})"):
+            for s in res["steps"]:
+                args = ", ".join(f"{k}={str(v)[:80]!r}" for k, v in (s.get("args") or {}).items())
+                st.markdown(f"**{s['step']}. {s['action']}**({args})")
+                if s.get("thought"):
+                    st.caption(s["thought"])
+                if s.get("observation"):
+                    st.code(s["observation"], language="text")
+    if res["broken_files"]:
+        st.error("Файлы с синтаксическими ошибками после правок: " + ", ".join(res["broken_files"]))
+    for rel in res["artifacts"]:
+        if rel.lower().endswith((".png", ".svg")):
+            data = _client().get(f"/code/{res['task_id']}/file", params={"path": rel})
+            if data.status_code == 200:
+                st.image(data.content, caption=rel)
+        else:
+            st.caption(f":material/description: создан `{rel}`")
+    if res["diff"]:
+        with st.expander(f"Изменения ({len(res['changed'])} файлов)", expanded=True):
+            st.code(res["diff"][:60000], language="diff")
+    if res["applied"]:
+        st.success("Перенесено в вашу папку: " + ", ".join(res["applied"]))
+    elif res["changed"]:
+        c1, c2 = st.columns([1, 2])
+        if c1.button("Применить в папку", key=f"apply_{res['task_id']}", type="primary", use_container_width=True,
+                     help="Скопировать изменённые и новые файлы из рабочей копии в вашу папку (apply_changes)"):
+            new, err = api("POST", f"/code/{res['task_id']}/apply")
+            if err:
+                st.error(err)
+            else:
+                res.update(new)
+                st.rerun()
+        points = [f"{c['commit']} — {c['message']}" for c in res["checkpoints"]]
+        choice = c2.selectbox("Контрольные точки", points, key=f"cp_{res['task_id']}", label_visibility="collapsed")
+        if c2.button("Откатить к выбранной", key=f"rb_{res['task_id']}", use_container_width=True) and choice:
+            new, err = api("POST", f"/code/{res['task_id']}/rollback", json={"commit": choice.split(" — ")[0]})
+            if err:
+                st.error(err)
+            else:
+                res.update(new)
+                st.rerun()
 
 
 def answer_text(ans: dict) -> str:
@@ -409,7 +465,9 @@ def main() -> None:
                 "Общие вопросы можно задавать и без индексации.")
     for msg in messages:
         with st.chat_message(msg["role"]):
-            if msg["role"] == "assistant":
+            if msg["role"] == "assistant" and "code" in msg:
+                render_code(msg["code"])
+            elif msg["role"] == "assistant":
                 render_answer(msg["answer"])
             else:
                 st.markdown(msg["content"])
@@ -421,10 +479,24 @@ def main() -> None:
         messages.pop()  # the answer that asked for the confirmation
         if messages and messages[-1]["role"] == "user":
             messages.pop()
+    if question and st.session_state.get("code_mode"):
+        messages.append({"role": "user", "content": question})
+        with st.chat_message("user"):
+            st.markdown(question)
+        with st.chat_message("assistant"):
+            with st.spinner("Код-агент работает…"):
+                res, err = api("POST", "/code", json={"task": question})
+            if err:
+                st.error(err)
+                messages.pop()
+            else:
+                render_code(res)
+                messages.append({"role": "assistant", "code": res})
+        question = None
     if question:
         history = [
             {"role": m["role"], "content": m["content"] if m["role"] == "user" else answer_text(m["answer"])}
-            for m in messages
+            for m in messages if m["role"] == "user" or "answer" in m
         ]
         messages.append({"role": "user", "content": question})
         with st.chat_message("user"):

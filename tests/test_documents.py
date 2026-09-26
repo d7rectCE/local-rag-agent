@@ -140,3 +140,32 @@ def test_docx_edges_link_figures(tmp_path: Path):
     fig = next(n for n in result.nodes if n.node_type == NodeType.FIGURE)
     assert fig.text == "Figure 1 — Learning curve" and fig.embed
     assert any(e.type == EdgeType.ILLUSTRATES and e.src == fig.id for e in result.edges)
+
+
+def _docling_ready() -> bool:
+    try:
+        import docling  # noqa: F401
+    except ImportError:
+        return False
+    from rag_agent.config import DocumentsConfig
+    from rag_agent.ingest.pdf_parser import models_dir
+
+    return models_dir(DocumentsConfig()).exists()
+
+
+@pytest.mark.skipif(not _docling_ready(), reason="Docling or its models are not installed (CI)")
+def test_pdf_two_column_paper_structure():
+    from rag_agent.config import REPO_ROOT, DocumentsConfig
+
+    root = REPO_ROOT / "demo_corpus"
+    cf = next(f for f in iter_corpus(root, [".pdf"]) if f.rel_path == "papers/shift_augmentation_note.pdf")
+    result = parse_file(cf, ChunkingConfig(), DocumentsConfig())
+    sections = [n.location.section for n in result.nodes if n.node_type == NodeType.SECTION]
+    assert any(s and s.endswith("2 Method") for s in sections)
+    method = next(n for n in result.nodes if n.location.section and n.location.section.endswith("2 Method"))
+    assert "1077 to 5385" in method.text.replace("\n", " ")  # reading order kept across the column break
+    table = next(n for n in result.nodes if n.node_type == NodeType.TABLE)
+    assert "0.9722" in table.text and "0.9778" in table.text
+    figure = next(n for n in result.nodes if n.node_type == NodeType.FIGURE)
+    assert figure.text.startswith("Figure 1") and figure.embed
+    assert result.nodes[0].metadata["ocr"] is False  # born-digital: no OCR

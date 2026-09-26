@@ -54,6 +54,9 @@ class DocumentsConfig(BaseModel):
     ocr_langs: list[str] = ["ru", "en"]
     min_text_chars: int = 30  # a page with fewer extractable characters counts as scanned
     table_mode: Literal["accurate", "fast"] = "accurate"
+    # PDF text backend: docling-parse (Docling's default) cannot open its resources from a
+    # non-ASCII install path on Windows; auto falls back to pdfium there
+    backend: Literal["auto", "docling_parse", "pypdfium"] = "auto"
 
 
 class EmbeddingConfig(BaseModel):

@@ -55,8 +55,20 @@ def models_dir(cfg: DocumentsConfig) -> Path:
     return Path(cfg.models_dir).expanduser()
 
 
+def pdf_backend(cfg: DocumentsConfig) -> str:
+    """docling-parse loads its glyph and font resources with narrow-char file APIs, which
+    fail when the package lives under a non-ASCII path (e.g. a Windows profile with a Cyrillic user name)."""
+    if cfg.backend != "auto":
+        return cfg.backend
+    import importlib.util
+
+    spec = importlib.util.find_spec("docling_parse")
+    location = str(Path(spec.origin).parent) if spec and spec.origin else ""
+    return "docling_parse" if location.isascii() else "pypdfium"
+
+
 def _converter(cfg: DocumentsConfig, ocr: bool):
-    key = (ocr, cfg.models_dir, cfg.device, tuple(cfg.ocr_langs), cfg.table_mode)
+    key = (ocr, cfg.models_dir, cfg.device, tuple(cfg.ocr_langs), cfg.table_mode, pdf_backend(cfg))
     with _LOCK:
         if key in _CONVERTERS:
             return _CONVERTERS[key]
@@ -85,9 +97,14 @@ def _converter(cfg: DocumentsConfig, ocr: bool):
         if ocr:
             opts.ocr_options = EasyOcrOptions(lang=list(cfg.ocr_langs), download_enabled=False,
                                               use_gpu=cfg.device != "cpu")
-        converter = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)})
+        fmt = PdfFormatOption(pipeline_options=opts)
+        if pdf_backend(cfg) == "pypdfium":
+            from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
+
+            fmt = PdfFormatOption(pipeline_options=opts, backend=PyPdfiumDocumentBackend)
+        converter = DocumentConverter(format_options={InputFormat.PDF: fmt})
         _CONVERTERS[key] = converter
-        log.info("docling converter ready (ocr=%s, models=%s)", ocr, artifacts)
+        log.info("docling converter ready (ocr=%s, backend=%s, models=%s)", ocr, pdf_backend(cfg), artifacts)
         return converter
 
 

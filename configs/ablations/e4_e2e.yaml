@@ -1,0 +1,11 @@
+# Э4 + Э11, сквозная оценка (ответы + LLM-судья) на demo_v3: структурный разбор DOCX против сплошного
+# текста (H10: точность ответов по DOCX, включая таблицы, правки и комментарии).
+name: e4-end-to-end
+evalset: ../../evalsets/demo_v3.yaml
+retrieval_only: false
+judge: true
+runs:
+  - name: "структурный разбор DOCX (по умолчанию)"
+    overrides: {chunking: {docx: structured}}
+  - name: "H10: DOCX сплошным текстом"
+    overrides: {chunking: {docx: plain}}

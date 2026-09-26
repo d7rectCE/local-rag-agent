@@ -104,8 +104,8 @@ def run_ablation(
         if progress.state != "done":
             raise RuntimeError(f"indexing failed for {run.name}: {progress.message}")
         problems = validate_evalset(es, engine.index.catalog)
-        if problems:
-            raise RuntimeError(f"eval set does not match the index for {run.name}: {problems[:5]}")
+        if problems:  # e.g. a baseline parser that drops comments: those references count as misses
+            log(f"    {len(problems)} reference(s) match no fragment in this configuration: {problems[:3]}")
         results = run_eval(engine, es, retrieval_k=settings.evaluation.retrieval_k, generate=not spec.retrieval_only)
         judge_name = None
         if spec.judge and not spec.retrieval_only:

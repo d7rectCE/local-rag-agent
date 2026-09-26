@@ -1,0 +1,12 @@
+# Э4 + Э11: документы в корпусе (PDF, DOCX, TXT). Набор demo_v3 (90 вопросов).
+#   1 — итоговая конфигурация Э3 со структурным разбором документов (по умолчанию);
+#   2 — H10: DOCX как сплошной текст окнами (базовая линия ТЗ ч.2);
+# Запуск: rag ablate configs/ablations/e4.yaml
+name: e4-documents
+evalset: ../../evalsets/demo_v3.yaml
+retrieval_only: true
+runs:
+  - name: "1. структурный разбор DOCX (по умолчанию)"
+    overrides: {chunking: {docx: structured}}
+  - name: "2. H10: DOCX сплошным текстом"
+    overrides: {chunking: {docx: plain}}

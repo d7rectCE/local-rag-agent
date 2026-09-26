@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from pathlib import Path
 from typing import Literal
@@ -33,6 +34,7 @@ class SourceRef(BaseModel):
     lines: tuple[int, int] | None = None
     page: int | None = None
     section: str | None = None  # substring of the innermost heading of the node's section
+    quote: str | None = None  # regex found in the fragment's text or context: independent of chunking
 
     @property
     def file_type(self) -> str:
@@ -51,6 +53,8 @@ class SourceRef(BaseModel):
             innermost = (loc.section or "").split(" > ")[-1]
             if self.section.lower() not in innermost.lower():
                 return False
+        if self.quote is not None and not re.search(self.quote, f"{node.text}\n{node.context}", re.IGNORECASE):
+            return False
         if self.lines is not None:
             if loc.line_start is None or loc.cell is not None:
                 return False
@@ -68,6 +72,8 @@ class SourceRef(BaseModel):
             parts.append(f"«{self.section}»")
         if self.lines is not None:
             parts.append(f"L{self.lines[0]}-{self.lines[1]}")
+        if self.quote is not None:
+            parts.append(f"/{self.quote}/")
         return "#".join(parts)
 
 

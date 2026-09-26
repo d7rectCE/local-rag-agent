@@ -127,7 +127,7 @@ def serve(host: Optional[str] = None, port: Optional[int] = None) -> None:
     uvicorn.run(create_app(), host=host or settings.api.host, port=port or settings.api.port)
 
 
-DEFAULT_EVALSET = REPO_ROOT / "evalsets" / "demo_v2.yaml"
+DEFAULT_EVALSET = REPO_ROOT / "evalsets" / "demo_v3.yaml"
 
 
 @app.command("eval")

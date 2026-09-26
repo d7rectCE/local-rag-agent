@@ -13,7 +13,7 @@
 #   answer        эталонный ответ (для LLM-судьи); для Q6 не задаётся
 #   must_include  регулярные выражения (без учёта регистра), которые обязаны встретиться в ответе
 #   sources       эталонные источники: {file, cell} для ноутбуков (ячейки с 1), {file, lines: [начало, конец]}
-#                 для .py и текстов, {file, page} и/или {file, section} для PDF и DOCX (section — подстрока
+#                 для .py и текстов, {file, page}, {file, section} для PDF и DOCX (section — подстрока
 #                 самого вложенного заголовка). Найденный фрагмент релевантен, если он из того же файла и той же ячейки или его
 #                 строки пересекаются с диапазоном — поэтому разметка не зависит от способа чанкинга.
 #
@@ -571,7 +571,7 @@ items:
     answer: Переобучение ручного MLP на numpy заметно после 30-й эпохи — train loss продолжает падать (около 0.07 к эпохе 37), а accuracy на валидации держится на 0.9639, достигнутой на эпохе 27; ранняя остановка с patience 10 прервала обучение на эпохе 37 и вернула лучшие веса; weight decay увеличили до 1e-3, learning rate уменьшили до 0.005.
     must_include: ['30', '0[.,]9639']
     sources:
-      - {file: docs/report_march.docx, section: Переобучение}
+      - {file: docs/report_march.docx, quote: 'переобучение заметно после 30'}
 
   - id: d-q1-02
     class: Q1
@@ -579,7 +579,7 @@ items:
     answer: Значение weight decay исправлено с 5e-4 на 1e-3 (правка в режиме рецензирования).
     must_include: ['5e-4', '1e-3']
     sources:
-      - {file: docs/report_march.docx, section: Переобучение}
+      - {file: docs/report_march.docx, quote: 'weight decay с 1e-4'}
 
   - id: d-q1-03
     class: Q1
@@ -587,7 +587,7 @@ items:
     answer: А. Петров предложил проверить аугментацию поворотами, а не только сдвигами.
     must_include: ['поворот']
     sources:
-      - {file: docs/report_march.docx, section: Выводы}
+      - {file: docs/report_march.docx, quote: 'поворотами'}
 
   - id: d-q1-04
     class: Q1
@@ -595,7 +595,7 @@ items:
     answer: 0.998 (breast_cancer, валидация; F1 0.9906).
     must_include: ['0[.,]998\b']
     sources:
-      - {file: docs/report_march.docx, section: Результаты}
+      - {file: docs/report_march.docx, quote: 'LogisticRegression, C=1.0'}
 
   - id: d-q3-01
     class: Q3
@@ -603,7 +603,7 @@ items:
     answer: MLPClassifier с аугментацией сдвигами на digits — ROC-AUC 0.9998.
     must_include: ['0[.,]9998', 'digits']
     sources:
-      - {file: docs/report_march.docx, section: Результаты}
+      - {file: docs/report_march.docx, quote: 'MLPClassifier [+] сдвиги'}
 
   - id: d-q4-01
     class: Q4
@@ -611,7 +611,7 @@ items:
     answer: Да, рисунок 1 — кривые обучения NumpyMLP (cross-entropy и accuracy на валидации) в разделе «2.1. Переобучение».
     must_include: ['Переобучени']
     sources:
-      - {file: docs/report_march.docx, section: Переобучение}
+      - {file: docs/report_march.docx, quote: 'Кривые обучения NumpyMLP'}
 
   # ---------------------------------------------------------------- TXT, LOG
   - id: t-q1-01
@@ -739,7 +739,7 @@ items:
     must_include: ['27', '0[.,]9639']
     sources:
       - {file: logs/train_numpy_mlp.log, lines: [29, 29]}
-      - {file: docs/report_march.docx, section: Переобучение}
+      - {file: docs/report_march.docx, quote: 'переобучение заметно после 30'}
 
   - id: q6-09
     class: Q6

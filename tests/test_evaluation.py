@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -7,7 +8,7 @@ from rag_agent.engine import Engine
 from rag_agent.evaluation.dataset import EvalSet, SourceRef, load_evalset, validate_evalset
 from rag_agent.evaluation.metrics import bootstrap_ci, precision_recall, retrieval_metrics
 from rag_agent.evaluation.report import render_report
-from rag_agent.evaluation.runner import run_eval, run_judge, summarize
+from rag_agent.evaluation.runner import ItemResult, run_eval, run_judge, summarize
 from rag_agent.schema import FileType, Location, Node, NodeType
 from tests.conftest import FakeLLM
 
@@ -144,4 +145,35 @@ def test_ablation_report_without_reference_fragments(settings, fake_embedder, co
     report = render_ablation(AblationSpec(name="x", evalset="x", runs=[r["run"] for r in rows]), es, rows,
                              [{r.id: r for r in results}] * 2)
     assert "метрики поиска не считаются" in report and "Recall@5 [95% CI]" not in report
+    eng.close()
+
+
+def test_rejudge_keeps_answers_and_renders_again(settings, fake_embedder, corpus: Path, tmp_path: Path, monkeypatch):
+    from rag_agent.evaluation import ablation
+    from rag_agent.evaluation.ablation import AblationRun, AblationSpec, _save_run, rejudge_ablation
+
+    eng = Engine(settings, embedder=fake_embedder, llm=FakeLLM(settings))
+    eng.index_folder(corpus)
+    es = small_evalset()
+    es.items = [i for i in es.items if i.id != "bad"]
+    results = run_eval(eng, es, retrieval_k=10, top_k=3)  # saved without a judge
+    out = tmp_path / "20260101-000000-x"
+    config = {"corpus": str(corpus), "index_signature": "x", "embedder": "fake", "chunking": {"python": "lines"},
+              "retrieval": {"mode": "dense", "top_k": 3, "eval_k": 10}, "route": "auto", "llm": "fake", "judge": None,
+              "git": None, "date": "today"}
+    for k in (1, 2):
+        _save_run(out / f"0{k}-run", results, summarize(results, es, n_boot=50) | {"index": {"nodes": 7}},
+                  config | {"name": f"run {k}"}, es)
+    monkeypatch.setattr(ablation, "load_evalset", lambda path: es)
+    monkeypatch.setattr(ablation, "make_llm", lambda cfg: FakeLLM(settings))
+    spec = AblationSpec(name="x", evalset="x", runs=[AblationRun(name="run 1"), AblationRun(name="run 2")])
+    report = rejudge_ablation(spec, settings, out, log=lambda _: None)
+    lines = (out / "01-run" / "results.jsonl").read_text(encoding="utf-8").splitlines()
+    rejudged = [ItemResult.model_validate_json(line) for line in lines]
+    assert all(r.judge is not None for r in rejudged if r.answer is not None)
+    assert [r.answer for r in rejudged] == [r.answer for r in results]  # nothing regenerated
+    summary = json.loads((out / "01-run" / "summary.json").read_text(encoding="utf-8"))
+    assert summary["index"] == {"nodes": 7} and summary["judge"]["correctness"]["mean"] is not None
+    assert "rejudged" in json.loads((out / "02-run" / "config.json").read_text(encoding="utf-8"))
+    assert report.exists() and (out / "ablation.json").exists()
     eng.close()

@@ -144,6 +144,43 @@ def run_ablation(
     return rows, out_dir
 
 
+def rejudge_ablation(spec: AblationSpec, base: Settings, out_dir: Path, log: Callable[[str], None] = print) -> Path:
+    """Judge the saved answers of an ablation run again (after a fix of the judge) and render its report
+    anew. Answers, retrieval and latencies are kept: nothing is regenerated."""
+    es = load_evalset(spec.evalset_path())
+    if spec.classes:
+        es.items = [i for i in es.items if i.cls in spec.classes]
+    run_dirs = sorted(p for p in out_dir.iterdir() if p.is_dir() and (p / "results.jsonl").exists())
+    if len(run_dirs) != len(spec.runs):
+        raise ValueError(f"{out_dir} has {len(run_dirs)} runs, the spec {len(spec.runs)}")
+    judge_name = base.evaluation.judge_model
+    judge = make_llm(base.llm.model_copy(update={"model": judge_name, "think": base.evaluation.judge_think}))
+    rows, per_item = [], []
+    try:
+        for i, (run, d) in enumerate(zip(spec.runs, run_dirs), start=1):
+            lines = (d / "results.jsonl").read_text(encoding="utf-8").splitlines()
+            results = [ItemResult.model_validate_json(line) for line in lines if line.strip()]
+            log(f"[{i}/{len(spec.runs)}] {run.name}: {len(results)} ответов заново к судье")
+            run_judge(results, es, judge)
+            old = json.loads((d / "summary.json").read_text(encoding="utf-8"))
+            summary = summarize(results, es, n_boot=base.evaluation.bootstrap)
+            if "index" in old:
+                summary["index"] = old["index"]
+            config = json.loads((d / "config.json").read_text(encoding="utf-8"))
+            config["rejudged"] = {"at": datetime.now().astimezone().isoformat(timespec="seconds"), "judge": judge_name}
+            _save_run(d, results, summary, config, es)
+            rows.append({"run": run, "summary": summary, "config": config})
+            per_item.append({r.id: r for r in results})
+    finally:
+        judge.unload()
+        judge.close()
+    (out_dir / "ablation.md").write_text(render_ablation(spec, es, rows, per_item), encoding="utf-8")
+    (out_dir / "ablation.json").write_text(
+        json.dumps([{"name": r["run"].name, "overrides": r["run"].overrides, "summary": r["summary"]} for r in rows],
+                   ensure_ascii=False, indent=2), encoding="utf-8")
+    return out_dir / "ablation.md"
+
+
 def _fmt(x, d: int = 3) -> str:
     return "—" if x is None else f"{x:.{d}f}"
 

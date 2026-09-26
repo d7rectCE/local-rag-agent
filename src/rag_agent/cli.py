@@ -277,6 +277,16 @@ def ablate(spec: Path = typer.Argument(..., help="Ablation spec (YAML)")) -> Non
 
 
 @app.command()
+def rejudge(spec: Path = typer.Argument(..., help="Ablation spec (YAML) of the run"),
+            run_dir: Path = typer.Argument(..., help="runs/ablations/<stamp>-<name>")) -> None:
+    """Judge the saved answers of an ablation run again (after a fix of the judge); nothing is regenerated."""
+    from rag_agent.evaluation.ablation import load_spec, rejudge_ablation
+
+    report = rejudge_ablation(load_spec(spec), load_settings(), run_dir, log=typer.echo)
+    typer.echo(f"Report: {report}")
+
+
+@app.command()
 def searxng(action: str = typer.Argument("status", help="start | stop | status")) -> None:
     """The local SearXNG metasearch container for the web gateway (bound to 127.0.0.1)."""
     from rag_agent.web import searxng as run

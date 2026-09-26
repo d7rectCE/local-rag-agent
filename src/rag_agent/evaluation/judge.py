@@ -64,7 +64,7 @@ def judge_answer(
     answer: str,
     general: str,
     cited_sources: list[tuple[int, str, str]],  # (n, label, text)
-    max_source_chars: int = 2000,
+    max_source_chars: int = 8000,  # at least what the generator saw: a shorter cut marks true answers as made up
 ) -> Verdict:
     sources = "\n\n".join(
         f'<source id="{n}" ref="{label}">\n{text[:max_source_chars]}\n</source>' for n, label, text in cited_sources

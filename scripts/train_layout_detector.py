@@ -143,9 +143,11 @@ def prepare(out: Path, size: int, limit: int | None, per_category: int | None = 
         held = {doc for *_, doc in train if zlib.crc32(doc.encode()) % 20 == 0}  # ~5% of documents
         val = [r for r in train if r[4] in held]
         train = [r for r in train if r[4] not in held]
+    val = _sample(val, per_category and max(1, per_category // 10), seed)
+    random.Random(seed).shuffle(val)  # shards are sorted by category: a prefix (--val-limit) must mix them
     splits = {
         "train": _sample(train, per_category, seed)[:limit],
-        "validation": _sample(val, per_category and max(1, per_category // 10), seed)[:limit],
+        "validation": val[:limit],
         "test": _scan(files["test"])[:limit],
     }
     for split, rows in splits.items():

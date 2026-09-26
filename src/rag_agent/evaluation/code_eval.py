@@ -98,6 +98,8 @@ class TaskResult(BaseModel):
     changed: int
     broken: int
     latency_s: float
+    rejected_edits: int = 0  # ACI edits refused by the syntax check (H14: breakages that did not happen)
+    false_done: bool = False  # the agent reported success, the hidden check failed
     check_output: str = ""
     summary: str = ""
     error: str | None = None
@@ -117,7 +119,9 @@ def run_code_eval(settings: Settings, ts: CodeTaskSet, llm, sandbox=None, catalo
                 r = TaskResult(id=task.id, solved=solved, status=res.status, pipeline=res.pipeline, steps=len(res.steps),
                                runs=res.runs, failed_runs=res.failed_runs, changed=len(res.changed),
                                broken=len(res.broken_files), latency_s=res.latency_s, check_output=out,
-                               summary=res.summary[:500])
+                               rejected_edits=sum(str(st.get("observation", "")).startswith("ошибка: правка отклонена")
+                                                  for st in res.steps),
+                               false_done=res.status == "done" and not solved, summary=res.summary[:500])
             except Exception as exc:  # one task must not stop the run
                 r = TaskResult(id=task.id, solved=False, status="error", pipeline="", steps=0, runs=0, failed_runs=0,
                                changed=0, broken=0, latency_s=0.0, error=f"{type(exc).__name__}: {exc}")
@@ -136,6 +140,8 @@ def summarize_code(results: list[TaskResult], n_boot: int = 1000) -> dict:
         "mean_failed_runs": sum(r.failed_runs for r in results) / max(1, len(results)),
         "broken_files_share": sum(r.broken for r in results) / changed if changed else 0.0,
         "tasks_with_broken_files": sum(1 for r in results if r.broken),
+        "rejected_edits": sum(r.rejected_edits for r in results),
+        "false_done": sum(r.false_done for r in results),
         "errors": sum(1 for r in results if r.status == "error"),
         "latency": percentiles([r.latency_s for r in results]),
     }
@@ -195,9 +201,11 @@ def run_code_ablation(spec_path: str | Path, base: Settings, out_root: Path, mak
     lines = [f"# Код-агент: {spec.name}", "",
              f"Набор `{ts.name}`: задач {len(ts.tasks)}. Решена — прошла скрытая проверка в песочнице. Δ — парный "
              "бутстреп по задачам относительно первой конфигурации. Испорченные — доля изменённых файлов, которые не "
-             "разбираются после правок (H14).", "",
-             "| # | Конфигурация | Решено [95% CI] | Δ, p | Шагов | Неудачных запусков | Испорченные файлы | p50 / p95, с |",
-             "|---|---|---|---|---|---|---|---|"]
+             "разбираются после правок (H14); отклонено ACI — правки, которые проверка синтаксиса не дала записать. "
+             "Ложное «готово» — агент сообщил об успехе, а скрытая проверка не прошла.", "",
+             "| # | Конфигурация | Решено [95% CI] | Δ, p | Шагов | Неудачных запусков | Испорченные файлы "
+             "| Отклонено ACI | Ложное «готово» | p50 / p95, с |",
+             "|---|---|---|---|---|---|---|---|---|---|"]
     for k, (run, results, s) in enumerate(rows, start=1):
         delta = "—"
         if k > 1:
@@ -207,7 +215,8 @@ def run_code_ablation(spec_path: str | Path, base: Settings, out_root: Path, mak
         sol = s["solved"]
         lines.append(f"| {k} | {run.name} | {sol['mean']:.2f} [{sol['ci'][0]:.2f}; {sol['ci'][1]:.2f}] | {delta} "
                      f"| {s['mean_steps']:.1f} | {s['mean_failed_runs']:.2f} | {s['broken_files_share']:.2f} "
-                     f"({s['tasks_with_broken_files']} задач) | {s['latency']['p50']:.0f} / {s['latency']['p95']:.0f} |")
+                     f"({s['tasks_with_broken_files']} задач) | {s.get('rejected_edits', '—')} | {s.get('false_done', '—')} "
+                     f"| {s['latency']['p50']:.0f} / {s['latency']['p95']:.0f} |")
     lines += ["", "По задачам (решена / неудачных запусков):", "",
               "| Задача | " + " | ".join(f"{k}" for k in range(1, len(rows) + 1)) + " |", "|---|" + "---|" * len(rows)]
     for t in ts.tasks:

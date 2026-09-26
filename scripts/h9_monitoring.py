@@ -15,7 +15,8 @@ series finds degradation with fewer false alarms than detectors with default thr
    correction for the number of series (BH within a window, LORD++ online).
 
 Fragment vectors are read from the built index; only canaries, distractors and the
-reranker run on the CPU (the GPU is busy). Nothing is downloaded.
+reranker run on the CPU (the GPU is busy): texts up to 256 tokens, the reranker in
+dynamic int8. Nothing is downloaded.
 
 Needs driftfdr (pip install -e ".[monitoring]").
 
@@ -55,7 +56,7 @@ TOP = 5
 # --------------------------------------------------------------------------- canary answers per state
 
 
-def distractor_texts(limit: int = 300, chars: int = 1200) -> list[str]:
+def distractor_texts(limit: int = 300, chars: int = 800) -> list[str]:
     """Source of locally installed web libraries: a domain the archive does not have."""
     roots = [Path(p) for p in site.getsitepackages()]
     texts = []
@@ -90,7 +91,7 @@ def index_vectors(index_dir: Path, ids: list[str]) -> np.ndarray:
     from qdrant_client import QdrantClient
 
     tmp = Path(tempfile.mkdtemp(prefix="rag-h9-"))
-    shutil.copytree(index_dir / "qdrant", tmp / "qdrant")
+    shutil.copytree(index_dir / "qdrant", tmp / "qdrant", ignore=shutil.ignore_patterns(".lock"))  # held by a running engine
     client = QdrantClient(path=str(tmp / "qdrant"))
     vecs, offset = {}, None
     while True:
@@ -106,36 +107,52 @@ def index_vectors(index_dir: Path, ids: list[str]) -> np.ndarray:
 
 
 def answers(canaries, nodes: list[Node], texts: list[str], doc: np.ndarray, embedder, reranker, n_distractors: int,
-            log):
-    """rank of the first fragment answering each canary, per state and component (0 = not in the pool)."""
+            log, cache_dir: Path):
+    """rank of the first fragment answering each canary, per state and component (0 = not in the pool).
+    Query and distractor vectors are cached; a (canary, fragment) pair is re-ranked once for all states."""
     t0 = time.perf_counter()
-    q = np.asarray(embedder.encode([c.question for c in canaries]).dense, dtype=np.float32)
     dis_texts = distractor_texts(n_distractors) if n_distractors else []
-    dis = np.asarray(embedder.encode(dis_texts).dense, dtype=np.float32) if dis_texts else None
-    log(f"embedded {len(canaries)} canaries, {0 if dis is None else len(dis)} distractors "
-        f"in {time.perf_counter() - t0:.0f} s")
-    out = {}
+    emb_file = cache_dir / "h9_vectors.npz"
+    if emb_file.exists():
+        z = np.load(emb_file)
+        q, dis = z["q"], (z["dis"] if len(z["dis"]) else None)
+        log(f"canary and distractor vectors loaded from {emb_file.name}")
+    else:
+        q = np.asarray(embedder.encode([c.question for c in canaries]).dense, dtype=np.float32)
+        dis = np.asarray(embedder.encode(dis_texts).dense, dtype=np.float32) if dis_texts else None
+        np.savez(emb_file, q=q, dis=dis if dis is not None else np.zeros((0, q.shape[1]), np.float32))
+        log(f"embedded {len(canaries)} canaries, {0 if dis is None else len(dis)} distractors "
+            f"in {time.perf_counter() - t0:.0f} s")
+    pools = {}
     for state in STATES:
-        D, Q, pool_nodes = doc, q, list(nodes)
+        D, Q = doc, q
         if state == "weak_embedder":
             D, Q = norm(doc[:, :WEAK_DIMS]), norm(q[:, :WEAK_DIMS])
         if state == "new_domain" and dis is not None:
             D = np.concatenate([doc, dis])
-            pool_nodes = pool_nodes + [None] * len(dis)
-        sims = norm(Q) @ norm(D).T
-        top = np.argsort(-sims, axis=1)[:, :POOL]
+        pools[state] = np.argsort(-(norm(Q) @ norm(D).T), axis=1)[:, :POOL]
+    need = {i: sorted({int(j) for top in pools.values() for j in top[i]}) for i in range(len(canaries))}
+    n_pairs = sum(len(v) for v in need.values())
+    log(f"re-ranking {n_pairs} unique pairs (of {len(canaries) * POOL * len(STATES)})")
+    score: dict[tuple[int, int], float] = {}
+    for k, (i, js) in enumerate(need.items(), start=1):
+        cand = [texts[j] if j < len(texts) else dis_texts[j - len(texts)] for j in js]
+        for j, sc in zip(js, reranker.score(canaries[i].question, cand)):
+            score[(i, j)] = float(sc)
+        if k % 20 == 0:
+            log(f"  {k}/{len(canaries)} canaries re-ranked ({time.perf_counter() - t0:.0f} s)")
+    out = {}
+    for state in STATES:
         dense_rank, rerank_rank = [], []
         for i, c in enumerate(canaries):
-            cand = [pool_nodes[j] for j in top[i]]
-            hits = [n is not None and c.answered_by(n) for n in cand]
+            top = [int(j) for j in pools[state][i]]
+            hits = [j < len(nodes) and c.answered_by(nodes[j]) for j in top]
             dense_rank.append(next((k + 1 for k, h in enumerate(hits) if h), 0))
-            cand_texts = [texts[j] if j < len(texts) else dis_texts[j - len(texts)] for j in top[i]]
-            scores = reranker.score(c.question, cand_texts)
-            order = np.argsort(-np.asarray(scores))
-            rerank_rank.append(next((k + 1 for k, j in enumerate(order) if hits[j]), 0))
+            order = sorted(range(len(top)), key=lambda k: -score[(i, top[k])])
+            rerank_rank.append(next((r + 1 for r, k in enumerate(order) if hits[k]), 0))
         out[state] = {"retrieval": np.array(dense_rank), "rerank": np.array(rerank_rank)}
         log(f"  {state}: retrieval miss@{TOP} {np.mean([r == 0 or r > TOP for r in dense_rank]):.3f}, "
-            f"rerank miss@{TOP} {np.mean([r == 0 or r > TOP for r in rerank_rank]):.3f} ({time.perf_counter() - t0:.0f} s)")
+            f"rerank miss@{TOP} {np.mean([r == 0 or r > TOP for r in rerank_rank]):.3f}")
     return out
 
 
@@ -198,6 +215,8 @@ def main() -> None:
     ap.add_argument("--steps", type=int, default=3000)
     ap.add_argument("--distractors", type=int, default=200)
     ap.add_argument("--threads", type=int, default=6)
+    ap.add_argument("--int8", action=argparse.BooleanOptionalAction, default=True,
+                    help="int8 dynamic quantization of the reranker on the CPU")
     args = ap.parse_args()
     import torch
     from driftfdr import MonitorConfig, run_monitor, summarize
@@ -216,10 +235,13 @@ def main() -> None:
     by_id = cat.get_nodes(ids)
     nodes = [by_id[i] for i in ids]
     texts = [n.embedding_text(settings.chunking.context_header) for n in nodes]
-    emb_cfg = settings.embedding.model_copy(update={"device": "cpu", "fp16": False, "max_length": 512})
+    emb_cfg = settings.embedding.model_copy(update={"device": "cpu", "fp16": False, "max_length": 256})
     embedder = Embedder(emb_cfg)
-    reranker = Reranker(settings.retrieval.model_copy(update={"rerank_max_length": 512}), device="cpu", fp16=False,
+    reranker = Reranker(settings.retrieval.model_copy(update={"rerank_max_length": 256}), device="cpu", fp16=False,
                         local_files_only=True)
+    if args.int8:  # dynamic int8 of the linear layers: 2-3x faster on the CPU, the ranking barely changes
+        reranker.load()
+        reranker._model = torch.ao.quantization.quantize_dynamic(reranker._model, {torch.nn.Linear}, dtype=torch.qint8)
     cache = out / "canary_ranks.json"
     if cache.exists():
         raw = json.loads(cache.read_text(encoding="utf-8"))
@@ -228,7 +250,7 @@ def main() -> None:
     else:
         doc = index_vectors(index_dir, ids)
         log(f"{len(ids)} fragment vectors read from the index")
-        ans = answers(canaries, nodes, texts, doc, embedder, reranker, args.distractors, log)
+        ans = answers(canaries, nodes, texts, doc, embedder, reranker, args.distractors, log, out)
         cache.write_text(json.dumps({"canaries": [c.id for c in canaries], "segments": [c.segment for c in canaries],
                                      "ranks": {s: {c: v.tolist() for c, v in comps.items()} for s, comps in ans.items()}},
                                     ensure_ascii=False), encoding="utf-8")

@@ -175,11 +175,13 @@ def test_code_eval_harness(settings, tmp_path: Path, project: Path):
     # the "original" project is itself broken, so validation flags the task: a bug must be planted by the patch
     [problem] = validate_tasks(ts, HostSandbox(), log=lambda _: None)
     assert problem.startswith("fix-ratio: check fails on the original corpus")
-    results = run_code_eval(settings, ts, FakeLLM(settings, agent=list(FIX)), HostSandbox(), log=lambda _: None,
-                            work_root=tmp_path)
-    assert [(r.id, r.solved, r.failed_runs) for r in results] == [("fix-ratio", True, 1)]
+    broken_edit = {"thought": "", "action": "edit_file",  # refused by the syntax check of ACI, counted for H14
+                   "args": {"path": "scripts/ratio.py", "old": "print(ratio(1, 0))", "new": "print(ratio(1, 2)"}}
+    results = run_code_eval(settings, ts, FakeLLM(settings, agent=[FIX[0], broken_edit, *FIX[1:]]), HostSandbox(),
+                            log=lambda _: None, work_root=tmp_path)
+    assert [(r.id, r.solved, r.failed_runs, r.rejected_edits, r.false_done) for r in results] ==         [("fix-ratio", True, 1, 1, False)]
     s = summarize_code(results, n_boot=50)
-    assert s["solved"]["mean"] == 1.0 and s["broken_files_share"] == 0.0
+    assert s["solved"]["mean"] == 1.0 and s["broken_files_share"] == 0.0 and s["rejected_edits"] == 1
 
 
 def test_a_csv_from_a_log_is_not_a_plot(settings, tmp_path: Path, project: Path):

@@ -127,3 +127,21 @@ def test_reasoning_accounting_and_h11_section(settings, fake_embedder, corpus: P
     assert "## Рассуждения: точность против затрат" in report and "не давшие прироста" in report
     assert "- 1. on: 1.00" in report  # the fake judge scores both runs the same: every extra token is wasted
     eng.close()
+
+
+def test_ablation_report_without_reference_fragments(settings, fake_embedder, corpus: Path):
+    """Upload (Q7) and web (Q10) sets have no corpus fragments to find: the report skips retrieval tables."""
+    from rag_agent.evaluation.ablation import AblationRun, AblationSpec, render_ablation
+
+    eng = Engine(settings, embedder=fake_embedder, llm=FakeLLM(settings))
+    eng.index_folder(corpus)
+    es = small_evalset()
+    es.items = [i for i in es.items if i.id == "d"]  # a general question: no sources
+    results = run_eval(eng, es, retrieval_k=5, top_k=3)
+    summary = summarize(results, es, n_boot=50)
+    assert summary["retrieval"]["recall@5"]["mean"] is None
+    rows = [{"run": AblationRun(name=n), "summary": summary} for n in ("a", "b")]
+    report = render_ablation(AblationSpec(name="x", evalset="x", runs=[r["run"] for r in rows]), es, rows,
+                             [{r.id: r for r in results}] * 2)
+    assert "метрики поиска не считаются" in report and "Recall@5 [95% CI]" not in report
+    eng.close()

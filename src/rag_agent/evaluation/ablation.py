@@ -129,8 +129,8 @@ def run_ablation(
         rows.append({"run": run, "summary": summary, "config": config})
         per_item.append({r.id: r for r in results})
         engine.close()
-        rec = summary["retrieval"][COMPARE_METRIC]["mean"]
-        log(f"    {COMPARE_METRIC} = {rec:.3f}")
+        rec = summary["retrieval"][COMPARE_METRIC]["mean"]  # None for sets without reference fragments (Q7, Q10)
+        log(f"    {COMPARE_METRIC} = {_fmt(rec)}")
 
     report = render_ablation(spec, es, rows, per_item)
     (out_dir / "ablation.md").write_text(report, encoding="utf-8")
@@ -308,41 +308,44 @@ def render_ablation(spec: AblationSpec, es: EvalSet, rows: list[dict], per_item:
     ref_items = per_item[0]
     ids = [i for i, r in ref_items.items() if r.retrieval]
     types = sorted({ft for row in rows for ft in row["summary"]["retrieval_by_file_type"]})
-    out = [
-        f"# Абляции: {spec.name}",
-        "",
-        f"Набор `{es.name}` v{es.version}: вопросов с эталонными источниками — {len(ids)}. "
-        f"Сравнение каждой конфигурации с первой (референсной) — парный бутстреп по вопросам для {COMPARE_METRIC}: "
-        "Δ, 95% интервал Δ и одностороннее p для гипотезы «конфигурация не лучше референса».",
-        "",
-        "| # | Конфигурация | Recall@5 [95% CI] | Recall@10 | MRR@10 | nDCG@10 | Δ Recall@5 [CI], p | "
-        + "".join(f".{ft} R@5 | " for ft in types) + "Поиск p50/p95, с |",
-        "|---|---|---|---|---|---|---|" + "---|" * len(types) + "---|",
-    ]
-    for k, (row, items) in enumerate(zip(rows, per_item), start=1):
-        s = row["summary"]
-        ret = s["retrieval"]
-        r5 = ret["recall@5"]
-        ci = r5["ci"]
-        cmp = paired_bootstrap(_metric_values(items, ids, COMPARE_METRIC), _metric_values(ref_items, ids, COMPARE_METRIC))
-        delta = "—" if k == 1 else (
-            f"{cmp['diff']:+.3f} [{cmp['ci'][0]:+.2f}; {cmp['ci'][1]:+.2f}], p={cmp['p']:.3f}" if cmp["ci"] else "—"
-        )
-        ft = s["retrieval_by_file_type"]
-        lat = s.get("retrieval_latency") or {}
-        out.append(
-            f"| {k} | {row['run'].name} | {r5['mean']:.3f} [{ci[0]:.2f}; {ci[1]:.2f}] | {_fmt(ret['recall@10']['mean'])} "
-            f"| {_fmt(ret['mrr']['mean'])} | {_fmt(ret['ndcg@10']['mean'])} | {delta} "
-            f"| {''.join(_fmt(ft.get(t, {}).get('recall@5')) + ' | ' for t in types)}"
-            f"{_fmt(lat.get('p50'), 2)} / {_fmt(lat.get('p95'), 2)} |"
-        )
-    classes = sorted({c for row in rows for c in row["summary"]["retrieval_by_class"]})
-    out += ["", "Recall@5 по классам вопросов:", "",
-            "| # | Конфигурация | " + " | ".join(f"{c} {CLASS_NAMES[c]}" for c in classes) + " |",
-            "|---|---|" + "---|" * len(classes)]
-    for k, row in enumerate(rows, start=1):
-        by = row["summary"]["retrieval_by_class"]
-        out.append(f"| {k} | {row['run'].name} | " + " | ".join(_fmt(by.get(c, {}).get("recall@5")) for c in classes) + " |")
+    out = [f"# Абляции: {spec.name}", ""]
+    if not ids:  # uploads (Q7), web (Q10): no fragments of the corpus to find, only answers to judge
+        out.append(f"Набор `{es.name}` v{es.version}: у вопросов нет эталонных фрагментов корпуса, метрики поиска "
+                   "не считаются — только качество и стоимость ответов.")
+    else:
+        out += [
+            f"Набор `{es.name}` v{es.version}: вопросов с эталонными источниками — {len(ids)}. "
+            f"Сравнение каждой конфигурации с первой (референсной) — парный бутстреп по вопросам для {COMPARE_METRIC}: "
+            "Δ, 95% интервал Δ и одностороннее p для гипотезы «конфигурация не лучше референса».",
+            "",
+            "| # | Конфигурация | Recall@5 [95% CI] | Recall@10 | MRR@10 | nDCG@10 | Δ Recall@5 [CI], p | "
+            + "".join(f".{ft} R@5 | " for ft in types) + "Поиск p50/p95, с |",
+            "|---|---|---|---|---|---|---|" + "---|" * len(types) + "---|",
+        ]
+        for k, (row, items) in enumerate(zip(rows, per_item), start=1):
+            s = row["summary"]
+            ret = s["retrieval"]
+            r5 = ret["recall@5"]
+            ci = r5["ci"]
+            cmp = paired_bootstrap(_metric_values(items, ids, COMPARE_METRIC), _metric_values(ref_items, ids, COMPARE_METRIC))
+            delta = "—" if k == 1 else (
+                f"{cmp['diff']:+.3f} [{cmp['ci'][0]:+.2f}; {cmp['ci'][1]:+.2f}], p={cmp['p']:.3f}" if cmp["ci"] else "—"
+            )
+            ft = s["retrieval_by_file_type"]
+            lat = s.get("retrieval_latency") or {}
+            out.append(
+                f"| {k} | {row['run'].name} | {r5['mean']:.3f} [{ci[0]:.2f}; {ci[1]:.2f}] | {_fmt(ret['recall@10']['mean'])} "
+                f"| {_fmt(ret['mrr']['mean'])} | {_fmt(ret['ndcg@10']['mean'])} | {delta} "
+                f"| {''.join(_fmt(ft.get(t, {}).get('recall@5')) + ' | ' for t in types)}"
+                f"{_fmt(lat.get('p50'), 2)} / {_fmt(lat.get('p95'), 2)} |"
+            )
+        classes = sorted({c for row in rows for c in row["summary"]["retrieval_by_class"]})
+        out += ["", "Recall@5 по классам вопросов:", "",
+                "| # | Конфигурация | " + " | ".join(f"{c} {CLASS_NAMES[c]}" for c in classes) + " |",
+                "|---|---|" + "---|" * len(classes)]
+        for k, row in enumerate(rows, start=1):
+            by = row["summary"]["retrieval_by_class"]
+            out.append(f"| {k} | {row['run'].name} | " + " | ".join(_fmt(by.get(c, {}).get("recall@5")) for c in classes) + " |")
     if any("judge" in row["summary"] for row in rows):
         out += ["", "| # | Конфигурация | Корректность (судья) | Верность контексту | Ложные отказы | Латентность p95, с |",
                 "|---|---|---|---|---|---|"]

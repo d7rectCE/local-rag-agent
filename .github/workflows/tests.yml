@@ -13,6 +13,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      # secrets and personal paths (user profile folders) in the tracked files: fail before anything else
+      - run: python scripts/check_repo.py
       # Tests use a fake embedder and a fake LLM: no torch, no models, no private data.
       # pandas + matplotlib: the code agent's plot pipeline runs its script with this Python in the tests
       - run: >-

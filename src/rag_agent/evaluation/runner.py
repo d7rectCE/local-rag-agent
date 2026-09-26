@@ -90,7 +90,7 @@ def git_revision() -> str | None:
         rev = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True, timeout=10)
         dirty = subprocess.run(["git", "status", "--porcelain"], cwd=REPO_ROOT, capture_output=True, text=True, timeout=10)
         return rev.stdout.strip() + ("+dirty" if dirty.stdout.strip() else "") if rev.returncode == 0 else None
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):  # a busy machine must not lose a finished run
         return None
 
 
@@ -168,6 +168,7 @@ def evaluate_item(engine: Engine, item: EvalItem, *, retrieval_k: int, top_k: in
             r.citation_precision_ref = citation_precision([cited[i] for i in r.citations if i in cited], item.sources)
         r.latency_s = ans.latency_s
         r.tokens = sum(int(s.detail.get("prompt_tokens", 0)) + int(s.detail.get("completion_tokens", 0)) for s in ans.trace)
+        r.tokens += sum(int(s.detail.get("tokens", 0)) for s in ans.trace if s.name == "upload_parts")  # map calls
         r.generated_tokens = sum(int(s.detail.get("completion_tokens", 0)) for s in ans.trace)
         r.reasoning_level = ans.reasoning_level
         r.reasoning_tokens = ans.reasoning_tokens

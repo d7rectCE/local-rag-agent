@@ -224,15 +224,33 @@ def parse_txt(cf: CorpusFile, cfg: ChunkingConfig) -> ParsedFile:
     elif kind == "table":
         sample = "\n".join(lines[:50])
         delim = csv.Sniffer().sniff(sample, delimiters="\t;|,").delimiter
-        rows = [r for r in csv.reader(io.StringIO(text), delimiter=delim) if any(c.strip() for c in r)]
-        header, body_rows = rows[0], rows[1:]
+        # one row per line (exports rarely quote newlines), so every row keeps its line number
+        rows = [(i + 1, next(csv.reader([ln], delimiter=delim))) for i, ln in enumerate(lines) if ln.strip()]
+        width = Counter(len(r) for _, r in rows).most_common(1)[0][0]
+        start = next(k for k, (_, r) in enumerate(rows) if len(r) == width)
+        preamble = rows[:start]  # a title or notes above the table are not its header
+        if preamble:
+            add(f"{rel}#L{preamble[0][0]}-{preamble[-1][0]}", NodeType.SECTION, "preamble",
+                "\n".join(delim.join(r) for _, r in preamble), preamble[0][0], preamble[-1][0])
+        header, body_rows = rows[start][1], rows[start + 1:]
         file_node.metadata.update({"columns": header, "n_rows": len(body_rows), "delimiter": delim})
-        step = 40
-        for k in range(0, max(len(body_rows), 1), step):
-            part = body_rows[k:k + step]
-            add(f"{rel}#rows{k + 1}-{k + len(part)}", NodeType.TABLE, f"rows {k + 1}-{k + len(part)}",
-                rows_to_markdown([header] + part), k + 2, k + 1 + len(part),
-                columns=header)
+        # chunks are packed by size, never cut: a row that does not fit starts the next chunk
+        budget = cfg.max_chunk_chars - len(rows_to_markdown([header]))
+        chunk: list[tuple[int, list[str]]] = []
+        size = 0
+        for line_no, row in body_rows + [(None, None)]:
+            row_len = len(rows_to_markdown([header, row])) - len(rows_to_markdown([header])) if row is not None else 0
+            if chunk and (row is None or size + row_len > budget):
+                a, b = chunk[0][0], chunk[-1][0]
+                add(f"{rel}#L{a}-{b}", NodeType.TABLE, f"rows {a}-{b}",
+                    rows_to_markdown([header] + [r for _, r in chunk]), a, b, columns=header)
+                chunk, size = [], 0
+            if row is not None:
+                chunk.append((line_no, row))
+                size += row_len
+        if not body_rows:
+            add(f"{rel}#L{rows[start][0]}", NodeType.TABLE, "header", rows_to_markdown([header]), rows[start][0],
+                rows[start][0], columns=header)
     elif kind == "code":
         for a, b in line_windows(len(lines), cfg.lines_per_chunk, cfg.overlap_lines):
             body = "\n".join(lines[a:b])

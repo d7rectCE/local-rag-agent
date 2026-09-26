@@ -98,7 +98,7 @@ agent:                                # ТЗ S7: ReAct agent + CRAG
   timeout_s: 60                       # then the agent answers from the evidence it has
   crag: true                          # relevance check of retrieved fragments (reranker score)
   crag_upper: 0.5                     # >= upper: relevant
-  crag_lower: 0.1                     # < lower: rewrite the query; still low after the retries -> honest refusal
+  crag_lower: 0.02                    # < lower: rewrite the query; still low -> honest refusal (calibrated)
   crag_retries: 1
 
 uploads:                              # ТЗ ч.2 S16: files uploaded into a conversation

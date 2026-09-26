@@ -1,0 +1,15 @@
+# Э6, H5 (ТЗ ч.1): SQL-инструмент решает агрегатные вопросы Q3, недоступные RAG.
+# 16 вопросов Q3 из demo_v5 (9 новых — по многим ноутбукам сразу), у 16 из них эталонный SQL:
+# точность исполнения (EX) на том же каталоге и корректность ответа по судье.
+name: e6-sql
+evalset: ../../evalsets/demo_v5.yaml
+classes: [Q3]
+retrieval_only: false
+judge: true
+runs:
+  - name: "агент с SQL-инструментом (по умолчанию)"
+    overrides: {}
+  - name: "H5: без SQL (только поиск)"
+    overrides: {catalog: {sql: false}}
+  - name: "без агента: SQL перед ответом"
+    overrides: {agent: {mode: "off"}}

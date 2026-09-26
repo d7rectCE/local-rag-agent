@@ -164,7 +164,9 @@ class AgentConfig(BaseModel):
     # CRAG: relevance of the retrieved fragments by the cross-encoder (reranker) score in [0, 1]
     crag: bool = True
     crag_upper: float = 0.5  # >= upper: relevant
-    crag_lower: float = 0.1  # < lower: irrelevant -> rewrite the query; after the retries -> refuse
+    # < lower: irrelevant -> rewrite the query; after the retries -> refuse. 0.02 from the calibration on
+    # demo_v4 (reports/e7/crag_calibration.md): half of Q6 caught, no false refusals
+    crag_lower: float = 0.02
     crag_retries: int = 1
 
 

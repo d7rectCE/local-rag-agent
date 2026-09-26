@@ -1,4 +1,10 @@
-# Эталонный набор вопросов для публичного демо-корпуса (ТЗ 5.1, S9; ТЗ ч.2 5.1), версия 4 (Э12):
+# Эталонный набор вопросов для публичного демо-корпуса (ТЗ 5.1, S9; ТЗ ч.2 5.1), версия 5 (Э6):
+# вопросы v4 без изменений + эталонный SQL (поле sql) к агрегатным вопросам, на которые отвечает каталог
+# экспериментов, + 9 агрегатных вопросов по многим ноутбукам сразу (H5: SQL решает Q3, недоступные RAG).
+# Эталонный SQL исполняется на том же каталоге, что и SQL системы: точность исполнения сравнивает запросы,
+# а эталонный answer — истину по файлам (судья сверяет ответ с ней).
+#
+# Версия 4 (Э12):
 # вопросы v3 без изменений + 16 вопросов класса Q8 «требующий рассуждения» (ТЗ ч.2: 15–20 вопросов;
 # ответ невозможен без сопоставления нескольких фактов и вывода).
 #
@@ -24,8 +30,8 @@
 #
 # Пропорции классов Q1–Q6 — как в ТЗ (25/15/15/15/15/15 %), плюс класс G для проверки маршрутизатора.
 
-version: 4
-name: demo_v4
+version: 5
+name: demo_v5
 corpus: ../demo_corpus
 
 items:
@@ -193,6 +199,7 @@ items:
   # ---------------------------------------------------------------- Q3: агрегатные и сравнительные
   - id: q3-01
     class: Q3
+    sql: "SELECT e.path, m.value FROM metrics m JOIN experiments e ON e.id = m.experiment_id WHERE m.name = 'roc_auc' AND m.split = 'val' AND e.dataset = 'breast_cancer' ORDER BY m.value DESC LIMIT 1"
     question: В каком ноутбуке лучший ROC-AUC на breast cancer?
     answer: В 02_logreg_baseline — логистическая регрессия, ROC-AUC 0.998 на валидации; у HistGradientBoosting лучший на валидации 0.9928 (03_gradient_boosting).
     must_include: ['02_logreg|логистическ|logistic']
@@ -202,6 +209,7 @@ items:
 
   - id: q3-02
     class: Q3
+    sql: "SELECT COUNT(DISTINCT path) FROM experiments WHERE dataset = 'breast_cancer'"
     question: Сколько ноутбуков используют датасет breast_cancer?
     answer: Три — 01_eda_breast_cancer, 02_logreg_baseline, 03_gradient_boosting.
     must_include: ['\b3\b|три']
@@ -212,6 +220,7 @@ items:
 
   - id: q3-03
     class: Q3
+    sql: "SELECT DISTINCT dataset FROM experiments"
     question: Какие датасеты используются в экспериментах?
     answer: breast_cancer, digits, wine и diabetes (встроенные датасеты scikit-learn).
     must_include: ['breast', 'digits', 'wine', 'diabetes']
@@ -224,6 +233,7 @@ items:
 
   - id: q3-04
     class: Q3
+    sql: "SELECT value FROM metrics WHERE name = 'accuracy' AND split = 'val' AND path LIKE '%04_digits%'"
     question: Сравни accuracy MLP с аугментацией и без неё.
     answer: С аугментацией 0.9778, без — 0.9722 на валидации; аугментация немного помогла.
     must_include: ['0[.,]9778', '0[.,]9722']
@@ -234,6 +244,7 @@ items:
 
   - id: q3-05
     class: Q3
+    sql: "SELECT variant, value FROM metrics WHERE name = 'roc_auc' AND split = 'val' AND variant LIKE 'learning_rate=%' AND (value = (SELECT MAX(value) FROM metrics WHERE name = 'roc_auc' AND split = 'val' AND variant LIKE 'learning_rate=%') OR value = (SELECT MIN(value) FROM metrics WHERE name = 'roc_auc' AND split = 'val' AND variant LIKE 'learning_rate=%'))"
     question: In the gradient boosting learning-rate sweep, which learning rate gave the best validation ROC-AUC and which the worst?
     answer: Best 0.3 (ROC-AUC 0.9928), worst 0.01 (ROC-AUC 0.9892).
     must_include: ['0[.,]3\b', '0[.,]01']
@@ -242,6 +253,7 @@ items:
 
   - id: q3-06
     class: Q3
+    sql: "SELECT variant, value FROM metrics WHERE name = 'rmse' AND split = 'val' AND variant IN ('alpha=0.01', 'alpha=100.0')"
     question: Какое alpha оказалось лучшим для Ridge и какой RMSE на валидации был при alpha=100?
     answer: Лучшее alpha = 0.01 (RMSE 53.549 на валидации); при alpha=100 RMSE 55.851.
     must_include: ['0[.,]01', '55[.,]851']
@@ -522,6 +534,7 @@ items:
   # ---------------------------------------------------------------- Q3
   - id: q3-07
     class: Q3
+    sql: "SELECT variant, value FROM metrics WHERE name = 'accuracy' AND split = 'val' AND variant LIKE 'schedule=%' ORDER BY value DESC LIMIT 1"
     question: Какое расписание learning rate дало лучшую accuracy на валидации в сравнении расписаний для numpy-MLP?
     answer: constant — 0.9639 (лучшая эпоха 25); cosine — 0.9583; step — 0.9500.
     must_include: ['constant']
@@ -910,3 +923,92 @@ items:
     sources:
       - {file: ml_toolkit/trainer.py, lines: [53, 63]}
       - {file: logs/train_numpy_mlp.log, lines: [2, 4]}
+
+  # ---------------------------------------------------------------- Q3 по всему архиву (Э6, H5)
+  - id: a-01
+    class: Q3
+    question: В каком эксперименте самая высокая accuracy на валидации среди всех ноутбуков?
+    answer: В 02_logreg_baseline — логистическая регрессия на breast cancer, accuracy 0.9912; следом MLP с аугментацией в 04 (0.9778).
+    must_include: ['0[.,]9912']
+    sql: "SELECT path, value FROM metrics WHERE name = 'accuracy' AND split = 'val' ORDER BY value DESC LIMIT 1"
+    sources:
+      - {file: experiments/02_logreg_baseline.ipynb, cell: 6}
+
+  - id: a-02
+    class: Q3
+    question: В каких ноутбуках эксперименты на датасете digits и какие модели там использовались?
+    answer: В двух — 04_digits_augmentation (MLPClassifier из scikit-learn, с аугментацией сдвигами и без) и 08_numpy_mlp (ручной NumpyMLP).
+    must_include: ['04', '08']
+    sql: "SELECT DISTINCT path, model FROM experiments WHERE dataset = 'digits'"
+    sources:
+      - {file: experiments/04_digits_augmentation.ipynb, cell: 3}
+      - {file: experiments/08_numpy_mlp.ipynb, cell: 3}
+
+  - id: a-03
+    class: Q3
+    question: Перечисли все метрики, посчитанные на тестовой выборке, по всем ноутбукам.
+    answer: 03_gradient_boosting — accuracy 0.9298, F1 0.9246, ROC-AUC 0.9904; 06_diabetes_regression — RMSE 53.438, R² 0.426; 08_numpy_mlp — accuracy 0.9528, F1 0.9527, ROC-AUC 0.9947.
+    must_include: ['0[.,]9298', '53[.,]438', '0[.,]9528']
+    sql: "SELECT path, name, value FROM metrics WHERE split = 'test'"
+    sources:
+      - {file: experiments/03_gradient_boosting.ipynb, cell: 8}
+      - {file: experiments/06_diabetes_regression.ipynb, cell: 6}
+      - {file: experiments/08_numpy_mlp.ipynb, cell: 10}
+
+  - id: a-04
+    class: Q3
+    question: Какой эксперимент показал наибольшую accuracy на тестовой выборке?
+    answer: 08_numpy_mlp — accuracy 0.9528 на тесте (у финального бустинга в 03 — 0.9298).
+    must_include: ['0[.,]9528']
+    sql: "SELECT path, value FROM metrics WHERE name = 'accuracy' AND split = 'test' ORDER BY value DESC LIMIT 1"
+    sources:
+      - {file: experiments/08_numpy_mlp.ipynb, cell: 10}
+      - {file: experiments/03_gradient_boosting.ipynb, cell: 8}
+
+  - id: a-05
+    class: Q3
+    question: Какой средний ROC-AUC на валидации по всему перебору learning rate для HistGradientBoosting?
+    answer: Около 0.9915 — среднее пяти значений 0.9892, 0.9908, 0.9925, 0.9921 и 0.9928.
+    must_include: ['0[.,]991']
+    sql: "SELECT AVG(value) FROM metrics WHERE name = 'roc_auc' AND split = 'val' AND variant LIKE 'learning_rate=%'"
+    sources:
+      - {file: experiments/03_gradient_boosting.ipynb, cell: 5}
+
+  - id: a-06
+    class: Q3
+    question: В каких ноутбуках есть ячейки, выполнение которых закончилось ошибкой, и что это за ошибки?
+    answer: Только в 07_scratch — ячейка 4 падает с NameError (f1_manual не импортирована).
+    must_include: ['07|scratch', 'NameError']
+    sql: "SELECT path, cell, error_name FROM cells WHERE has_error = 1"
+    sources:
+      - {file: experiments/07_scratch.ipynb, cell: 4}
+
+  - id: a-07
+    class: Q3
+    question: Какие функции из ml_toolkit чаще всего вызываются в ноутбуках?
+    answer: make_preprocessor (9 вызовов в 6 ноутбуках), calc_metrics (7 вызовов в 5 ноутбуках) и build_model (7 вызовов в 4 ноутбуках).
+    must_include: ['make_preprocessor', 'calc_metrics']
+    sql: "SELECT c.name, COUNT(*) AS n FROM calls c WHERE c.path LIKE '%.ipynb' AND c.name IN (SELECT name FROM functions WHERE path LIKE 'ml_toolkit/%' AND kind = 'function') GROUP BY c.name ORDER BY n DESC LIMIT 3"
+    sources:
+      - {file: experiments/02_logreg_baseline.ipynb, cell: 5}
+      - {file: experiments/03_gradient_boosting.ipynb, cell: 5}
+      - {file: experiments/04_digits_augmentation.ipynb, cell: 6}
+
+  - id: a-08
+    class: Q3
+    question: Сколько функций, классов и методов определено в пакете ml_toolkit?
+    answer: 32 функции, 10 классов и 28 методов.
+    must_include: ['32', '10', '28']
+    sql: "SELECT kind, COUNT(*) FROM functions WHERE path LIKE 'ml_toolkit/%' GROUP BY kind"
+    sources:
+      - {file: ml_toolkit/trainer.py}
+      - {file: ml_toolkit/evaluation.py}
+
+  - id: a-09
+    class: Q3
+    question: Какое число кластеров выбрано по силуэту в кластеризации wine и какое значение силуэта у него?
+    answer: k = 3, силуэт 0.2849 — максимум среди k от 2 до 6.
+    must_include: ['0[.,]2849']
+    sql: "SELECT variant, value FROM metrics WHERE name = 'silhouette' ORDER BY value DESC LIMIT 1"
+    sources:
+      - {file: experiments/05_wine_clustering.ipynb, cell: 5}

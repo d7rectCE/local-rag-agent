@@ -1,0 +1,14 @@
+# Э7, H6 (ТЗ ч.1): проверка релевантности (CRAG) снижает долю неверных ответов; доля корректных отказов на Q6.
+# NFR2: p95 до 5 с для Q1 и до 30 с для агентных вопросов. Все 115 вопросов demo_v5, порог CRAG 0.02
+# (reports/e7/crag_calibration.md).
+name: e7-agent
+evalset: ../../evalsets/demo_v5.yaml
+retrieval_only: false
+judge: true
+runs:
+  - name: "агент + CRAG (по умолчанию)"
+    overrides: {}
+  - name: "H6: агент без CRAG"
+    overrides: {agent: {crag: false}}
+  - name: "без агента и CRAG (как Э4)"
+    overrides: {agent: {mode: "off", crag: false}}

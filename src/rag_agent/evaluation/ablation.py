@@ -130,7 +130,9 @@ def run_ablation(
         per_item.append({r.id: r for r in results})
         engine.close()
         rec = summary["retrieval"][COMPARE_METRIC]["mean"]  # None for sets without reference fragments (Q7, Q10)
-        log(f"    {COMPARE_METRIC} = {_fmt(rec)}")
+        scores = [s for r in results if (s := _score(r)) is not None]
+        log(f"    поиск {COMPARE_METRIC} = {_fmt(rec)} (не зависит от настроек ответа); "
+            f"точность ответов = {_fmt(sum(scores) / len(scores) if scores else None)}")
 
     report = render_ablation(spec, es, rows, per_item)
     (out_dir / "ablation.md").write_text(report, encoding="utf-8")

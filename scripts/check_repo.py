@@ -57,19 +57,22 @@ def mask(value: str) -> str:
     return value[:4] + "…" + f"({len(value)} симв.)" if len(value) > 6 else "…"
 
 
+_UESC = re.compile(r"\\u([0-9a-fA-F]{4})")
+
+
 def scan_text(text: str) -> list[tuple[int, str, str]]:
     found = []
     for no, line in enumerate(text.splitlines(), start=1):
         if "noqa: secret" in line:
             continue
+        line = _UESC.sub(lambda m: chr(int(m.group(1), 16)), line)  # JSON written with ensure_ascii
         for kind, pat in SECRETS:
             for m in pat.finditer(line):
                 found.append((no, kind, mask(m.group(m.lastindex or 0))))
-        for pat in PATHS:
-            for m in pat.finditer(line):
-                user = m.group(1).strip().lower()
-                if user not in GENERIC_USERS and re.fullmatch(r"[\w.-]{2,}", user):  # a name, not a pattern
-                    found.append((no, "personal path", mask(m.group(1))))
+        users = {m.group(1).strip() for pat in PATHS for m in pat.finditer(line)}  # C:/Users/x matches two patterns
+        for user in sorted(users):
+            if user.lower() not in GENERIC_USERS and re.fullmatch(r"[\w.-]{2,}", user):  # a name, not a pattern
+                found.append((no, "personal path", mask(user)))
     return found
 
 

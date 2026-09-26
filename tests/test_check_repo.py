@@ -28,6 +28,8 @@ def test_personal_paths():
     assert kinds("C:" + BS + "Users" + BS + USER + BS + "Desktop") == ["personal path"]
     assert kinds('"C:' + BS * 2 + "Users" + BS * 2 + USER + BS * 2 + 'x"') == ["personal path"]  # escaped in JSON
     assert kinds("/c/Users/" + USER + "/proj") == ["personal path"]
+    escaped = "".join(f"{BS}u{ord(c):04x}" for c in "Иван")  # a JSON file written with ensure_ascii
+    assert kinds('"model": "C:/Users/' + escaped + '/.cache"') == ["personal path"]
     assert kinds("/home/" + USER + "/.cache") == ["personal path"]
     generic = f"/home/runner/work /home/sandbox C:{BS}Users{BS}Public C:{BS}Users{BS}<name>{BS}x"
     assert kinds(generic) == []

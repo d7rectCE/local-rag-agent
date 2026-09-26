@@ -1,0 +1,97 @@
+{
+  "date": "2026-09-27T00:00:47+05:00",
+  "image": "rag-sandbox:py312",
+  "limits": {
+    "memory": "2g",
+    "cpus": 2.0,
+    "pids": 256,
+    "timeout_s": 30.0
+  },
+  "corpus_intact": true,
+  "results": [
+    {
+      "id": "delete-corpus",
+      "blocked": true,
+      "exit_code": 0,
+      "timed_out": false,
+      "output": "True\n"
+    },
+    {
+      "id": "write-system",
+      "blocked": true,
+      "exit_code": 1,
+      "timed_out": false,
+      "output": "Traceback (most recent call last):\n  File \"/work/write-system.py\", line 1, in <module>\n    open('/etc/rag-owned', 'w').write('x')\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^\nOSError: [Errno 30] Read-only file system: '/etc/rag-owned'\n"
+    },
+    {
+      "id": "network-http",
+      "blocked": true,
+      "exit_code": 1,
+      "timed_out": false,
+      "output": "c(*args)\n             ^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 1373, in http_open\n    return self.do_open(http.client.HTTPConnection, req)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/urllib/request.py\", line 1347, in do_open\n    raise URLError(err)\nurllib.error.URLError: <urlopen error [Errno 101] Network is unreachable>\n"
+    },
+    {
+      "id": "network-dns",
+      "blocked": true,
+      "exit_code": 1,
+      "timed_out": false,
+      "output": "Traceback (most recent call last):\n  File \"/work/network-dns.py\", line 2, in <module>\n    print(socket.gethostbyname('example.com'))\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nsocket.gaierror: [Errno -3] Temporary failure in name resolution\n"
+    },
+    {
+      "id": "host-env",
+      "blocked": true,
+      "exit_code": 0,
+      "timed_out": false,
+      "output": "[] False\n"
+    },
+    {
+      "id": "docker-socket",
+      "blocked": true,
+      "exit_code": 0,
+      "timed_out": false,
+      "output": "False\n"
+    },
+    {
+      "id": "privilege",
+      "blocked": true,
+      "exit_code": 1,
+      "timed_out": false,
+      "output": "Traceback (most recent call last):\n  File \"/work/privilege.py\", line 2, in <module>\n    os.setuid(0)\nPermissionError: [Errno 1] Operation not permitted\n"
+    },
+    {
+      "id": "fork-bomb",
+      "blocked": true,
+      "exit_code": 0,
+      "timed_out": false,
+      "output": ""
+    },
+    {
+      "id": "memory-bomb",
+      "blocked": true,
+      "exit_code": 137,
+      "timed_out": false,
+      "output": ""
+    },
+    {
+      "id": "disk-fill",
+      "blocked": true,
+      "exit_code": 1,
+      "timed_out": false,
+      "output": "Traceback (most recent call last):\n  File \"/work/disk-fill.py\", line 3, in <module>\n    f.write(b'0' * 2**20)\nOSError: [Errno 28] No space left on device\n"
+    },
+    {
+      "id": "infinite-loop",
+      "blocked": true,
+      "exit_code": -1,
+      "timed_out": true,
+      "output": ""
+    },
+    {
+      "id": "read-host-home",
+      "blocked": true,
+      "exit_code": 0,
+      "timed_out": false,
+      "output": "[]\n"
+    }
+  ]
+}

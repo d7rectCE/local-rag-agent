@@ -1,0 +1,813 @@
+[
+  {
+    "name": "Self-Route (по умолчанию)",
+    "overrides": {
+      "uploads": {
+        "route": "self_route"
+      }
+    },
+    "summary": {
+      "n_items": 18,
+      "n_errors": 0,
+      "retrieval": {
+        "recall@1": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "recall@3": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "recall@5": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "recall@10": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "hit@5": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "mrr": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "ndcg@10": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        }
+      },
+      "retrieval_by_class": {},
+      "retrieval_latency": {
+        "p50": null,
+        "p95": null
+      },
+      "retrieval_by_file_type": {},
+      "routing": {
+        "accuracy": null,
+        "confusion": {}
+      },
+      "answers": {
+        "must_include": {
+          "mean": 0.8888888888888888,
+          "n": 18,
+          "ci": [
+            0.7222222222222222,
+            1.0
+          ]
+        },
+        "citation_precision_ref": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "grounded_rate": null
+      },
+      "judge": {
+        "correctness": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "correctness_general": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "faithfulness": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "relevance": {
+          "mean": 1.0,
+          "n": 18,
+          "ci": [
+            1.0,
+            1.0
+          ]
+        },
+        "citation_precision": null,
+        "n_judge_errors": 0
+      },
+      "judge_by_class": {
+        "Q7": {
+          "n": 18,
+          "correctness": 0.6944444444444444
+        }
+      },
+      "refusals": {
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "false_refusals": 0
+      },
+      "latency": {
+        "all": {
+          "p50": 1.9365,
+          "p95": 68.92594999999997
+        },
+        "corpus": {
+          "p50": null,
+          "p95": null
+        },
+        "general": {
+          "p50": null,
+          "p95": null
+        },
+        "mean_tokens": 12906.777777777777
+      },
+      "sql": {
+        "used_q3": null,
+        "used_other": null,
+        "errors": 0,
+        "n_gold": 0,
+        "execution_accuracy": null,
+        "execution_accuracy_values": null
+      },
+      "uploads": {
+        "../demo_uploads/cluster_rules_medium.md": {
+          "n": 6,
+          "must_include": 1.0,
+          "correctness": 1.0,
+          "tokens": 1485.8333333333333,
+          "latency": {
+            "p50": 1.8725,
+            "p95": 2.3045
+          },
+          "routes": {
+            "index": 6
+          }
+        },
+        "../demo_uploads/contract_small.docx": {
+          "n": 6,
+          "must_include": 1.0,
+          "correctness": 0.9166666666666666,
+          "tokens": 1647.3333333333333,
+          "latency": {
+            "p50": 1.8335,
+            "p95": 2.19475
+          },
+          "routes": {
+            "whole": 6
+          }
+        },
+        "../demo_uploads/lab_journal_large.txt": {
+          "n": 6,
+          "must_include": 0.6666666666666666,
+          "correctness": 0.16666666666666666,
+          "tokens": 35587.166666666664,
+          "latency": {
+            "p50": 6.542999999999999,
+            "p95": 78.56975
+          },
+          "routes": {
+            "index": 4,
+            "index+parts": 2
+          }
+        }
+      },
+      "web": {
+        "used_q10": null,
+        "used_other": 0.0,
+        "unsupported_share": null,
+        "latency_web": {
+          "p50": null,
+          "p95": null
+        },
+        "gateway_errors": 0,
+        "pending": 0
+      },
+      "agent": {
+        "used": null,
+        "used_by_class": {
+          "Q7": 0.0
+        },
+        "mean_steps": null,
+        "stops": {},
+        "crag_refusals": 0,
+        "crag_refusals_q6": 0,
+        "wrong_rate": null,
+        "latency_direct": {
+          "p50": null,
+          "p95": null
+        },
+        "latency_agent": {
+          "p50": null,
+          "p95": null
+        },
+        "latency_q1": {
+          "p50": null,
+          "p95": null
+        }
+      },
+      "reasoning": {
+        "n": 18,
+        "reasoning_share": 0.1111111111111111,
+        "reasoning_tokens": 170.66666666666666,
+        "generated_tokens": 386.6666666666667,
+        "correctness": 0.6944444444444444,
+        "must_include": 0.8888888888888888,
+        "latency": {
+          "p50": 1.9365,
+          "p95": 68.92594999999997
+        },
+        "levels": {
+          "none": 16,
+          "deep": 2
+        },
+        "truncated_share": 1.0,
+        "escalated": 0,
+        "latency_reasoning": {
+          "p50": 74.5515,
+          "p95": 81.78434999999999
+        },
+        "by_class": {
+          "Q7": {
+            "n": 18,
+            "reasoning_share": 0.1111111111111111,
+            "reasoning_tokens": 170.66666666666666,
+            "generated_tokens": 386.6666666666667,
+            "correctness": 0.6944444444444444,
+            "must_include": 0.8888888888888888,
+            "latency": {
+              "p50": 1.9365,
+              "p95": 68.92594999999997
+            }
+          }
+        }
+      },
+      "index": {
+        "nodes": {
+          "cell_output": 31,
+          "class": 3,
+          "code_cell": 41,
+          "code_chunk": 16,
+          "comment": 1,
+          "figure": 2,
+          "file": 28,
+          "function": 6,
+          "log_chunk": 1,
+          "markdown_cell": 26,
+          "revision": 1,
+          "section": 16,
+          "summary": 1,
+          "table": 4
+        },
+        "vectors": 149
+      }
+    }
+  },
+  {
+    "name": "весь файл (большой — по частям)",
+    "overrides": {
+      "uploads": {
+        "route": "whole"
+      }
+    },
+    "summary": {
+      "n_items": 18,
+      "n_errors": 0,
+      "retrieval": {
+        "recall@1": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "recall@3": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "recall@5": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "recall@10": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "hit@5": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "mrr": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "ndcg@10": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        }
+      },
+      "retrieval_by_class": {},
+      "retrieval_latency": {
+        "p50": null,
+        "p95": null
+      },
+      "retrieval_by_file_type": {},
+      "routing": {
+        "accuracy": null,
+        "confusion": {}
+      },
+      "answers": {
+        "must_include": {
+          "mean": 0.8888888888888888,
+          "n": 18,
+          "ci": [
+            0.7222222222222222,
+            1.0
+          ]
+        },
+        "citation_precision_ref": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "grounded_rate": null
+      },
+      "judge": {
+        "correctness": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "correctness_general": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "faithfulness": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "relevance": {
+          "mean": 1.0,
+          "n": 18,
+          "ci": [
+            1.0,
+            1.0
+          ]
+        },
+        "citation_precision": null,
+        "n_judge_errors": 0
+      },
+      "judge_by_class": {
+        "Q7": {
+          "n": 18,
+          "correctness": 0.7222222222222222
+        }
+      },
+      "refusals": {
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "false_refusals": 0
+      },
+      "latency": {
+        "all": {
+          "p50": 4.041499999999999,
+          "p95": 56.63265
+        },
+        "corpus": {
+          "p50": null,
+          "p95": null
+        },
+        "general": {
+          "p50": null,
+          "p95": null
+        },
+        "mean_tokens": 29818.666666666668
+      },
+      "sql": {
+        "used_q3": null,
+        "used_other": null,
+        "errors": 0,
+        "n_gold": 0,
+        "execution_accuracy": null,
+        "execution_accuracy_values": null
+      },
+      "uploads": {
+        "../demo_uploads/cluster_rules_medium.md": {
+          "n": 6,
+          "must_include": 1.0,
+          "correctness": 1.0,
+          "tokens": 6388.833333333333,
+          "latency": {
+            "p50": 4.041499999999999,
+            "p95": 4.4795
+          },
+          "routes": {
+            "parts": 6
+          }
+        },
+        "../demo_uploads/contract_small.docx": {
+          "n": 6,
+          "must_include": 1.0,
+          "correctness": 1.0,
+          "tokens": 1649.0,
+          "latency": {
+            "p50": 1.8605,
+            "p95": 2.20275
+          },
+          "routes": {
+            "whole": 6
+          }
+        },
+        "../demo_uploads/lab_journal_large.txt": {
+          "n": 6,
+          "must_include": 0.6666666666666666,
+          "correctness": 0.16666666666666666,
+          "tokens": 81418.16666666667,
+          "latency": {
+            "p50": 38.3945,
+            "p95": 57.155249999999995
+          },
+          "routes": {
+            "parts": 6
+          }
+        }
+      },
+      "web": {
+        "used_q10": null,
+        "used_other": 0.0,
+        "unsupported_share": null,
+        "latency_web": {
+          "p50": null,
+          "p95": null
+        },
+        "gateway_errors": 0,
+        "pending": 0
+      },
+      "agent": {
+        "used": null,
+        "used_by_class": {
+          "Q7": 0.0
+        },
+        "mean_steps": null,
+        "stops": {},
+        "crag_refusals": 0,
+        "crag_refusals_q6": 0,
+        "wrong_rate": null,
+        "latency_direct": {
+          "p50": null,
+          "p95": null
+        },
+        "latency_agent": {
+          "p50": null,
+          "p95": null
+        },
+        "latency_q1": {
+          "p50": null,
+          "p95": null
+        }
+      },
+      "reasoning": {
+        "n": 18,
+        "reasoning_share": 0.1111111111111111,
+        "reasoning_tokens": 170.66666666666666,
+        "generated_tokens": 249.83333333333334,
+        "correctness": 0.7222222222222222,
+        "must_include": 0.8888888888888888,
+        "latency": {
+          "p50": 4.041499999999999,
+          "p95": 56.63265
+        },
+        "levels": {
+          "none": 16,
+          "deep": 2
+        },
+        "truncated_share": 1.0,
+        "escalated": 0,
+        "latency_reasoning": {
+          "p50": 56.9375,
+          "p95": 57.329449999999994
+        },
+        "by_class": {
+          "Q7": {
+            "n": 18,
+            "reasoning_share": 0.1111111111111111,
+            "reasoning_tokens": 170.66666666666666,
+            "generated_tokens": 249.83333333333334,
+            "correctness": 0.7222222222222222,
+            "must_include": 0.8888888888888888,
+            "latency": {
+              "p50": 4.041499999999999,
+              "p95": 56.63265
+            }
+          }
+        }
+      },
+      "index": {
+        "nodes": {
+          "cell_output": 31,
+          "class": 3,
+          "code_cell": 41,
+          "code_chunk": 16,
+          "comment": 1,
+          "figure": 2,
+          "file": 28,
+          "function": 6,
+          "log_chunk": 1,
+          "markdown_cell": 26,
+          "revision": 1,
+          "section": 16,
+          "summary": 1,
+          "table": 4
+        },
+        "vectors": 149
+      }
+    }
+  },
+  {
+    "name": "только временный индекс",
+    "overrides": {
+      "uploads": {
+        "route": "index"
+      }
+    },
+    "summary": {
+      "n_items": 18,
+      "n_errors": 0,
+      "retrieval": {
+        "recall@1": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "recall@3": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "recall@5": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "recall@10": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "hit@5": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "mrr": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "ndcg@10": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        }
+      },
+      "retrieval_by_class": {},
+      "retrieval_latency": {
+        "p50": null,
+        "p95": null
+      },
+      "retrieval_by_file_type": {},
+      "routing": {
+        "accuracy": null,
+        "confusion": {}
+      },
+      "answers": {
+        "must_include": {
+          "mean": 0.7777777777777778,
+          "n": 18,
+          "ci": [
+            0.6097222222222224,
+            0.9444444444444444
+          ]
+        },
+        "citation_precision_ref": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "grounded_rate": null
+      },
+      "judge": {
+        "correctness": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "correctness_general": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "faithfulness": {
+          "mean": null,
+          "n": 0,
+          "ci": null
+        },
+        "relevance": {
+          "mean": 1.0,
+          "n": 18,
+          "ci": [
+            1.0,
+            1.0
+          ]
+        },
+        "citation_precision": null,
+        "n_judge_errors": 0
+      },
+      "judge_by_class": {
+        "Q7": {
+          "n": 18,
+          "correctness": 0.6388888888888888
+        }
+      },
+      "refusals": {
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "false_refusals": 0
+      },
+      "latency": {
+        "all": {
+          "p50": 2.0775,
+          "p95": 11.366899999999976
+        },
+        "corpus": {
+          "p50": null,
+          "p95": null
+        },
+        "general": {
+          "p50": null,
+          "p95": null
+        },
+        "mean_tokens": 3464.0555555555557
+      },
+      "sql": {
+        "used_q3": null,
+        "used_other": null,
+        "errors": 0,
+        "n_gold": 0,
+        "execution_accuracy": null,
+        "execution_accuracy_values": null
+      },
+      "uploads": {
+        "../demo_uploads/cluster_rules_medium.md": {
+          "n": 6,
+          "must_include": 1.0,
+          "correctness": 1.0,
+          "tokens": 1485.8333333333333,
+          "latency": {
+            "p50": 1.8785,
+            "p95": 2.27475
+          },
+          "routes": {
+            "index": 6
+          }
+        },
+        "../demo_uploads/contract_small.docx": {
+          "n": 6,
+          "must_include": 1.0,
+          "correctness": 0.9166666666666666,
+          "tokens": 1528.6666666666667,
+          "latency": {
+            "p50": 1.945,
+            "p95": 2.3385000000000002
+          },
+          "routes": {
+            "index": 6
+          }
+        },
+        "../demo_uploads/lab_journal_large.txt": {
+          "n": 6,
+          "must_include": 0.3333333333333333,
+          "correctness": 0.0,
+          "tokens": 7377.666666666667,
+          "latency": {
+            "p50": 6.7485,
+            "p95": 21.594500000000004
+          },
+          "routes": {
+            "index": 6
+          }
+        }
+      },
+      "web": {
+        "used_q10": null,
+        "used_other": 0.0,
+        "unsupported_share": null,
+        "latency_web": {
+          "p50": null,
+          "p95": null
+        },
+        "gateway_errors": 0,
+        "pending": 0
+      },
+      "agent": {
+        "used": null,
+        "used_by_class": {
+          "Q7": 0.0
+        },
+        "mean_steps": null,
+        "stops": {},
+        "crag_refusals": 0,
+        "crag_refusals_q6": 0,
+        "wrong_rate": null,
+        "latency_direct": {
+          "p50": null,
+          "p95": null
+        },
+        "latency_agent": {
+          "p50": null,
+          "p95": null
+        },
+        "latency_q1": {
+          "p50": null,
+          "p95": null
+        }
+      },
+      "reasoning": {
+        "n": 18,
+        "reasoning_share": 0.1111111111111111,
+        "reasoning_tokens": 103.77777777777777,
+        "generated_tokens": 202.94444444444446,
+        "correctness": 0.6388888888888888,
+        "must_include": 0.7777777777777778,
+        "latency": {
+          "p50": 2.0775,
+          "p95": 11.366899999999976
+        },
+        "levels": {
+          "none": 16,
+          "deep": 2
+        },
+        "truncated_share": 0.5,
+        "escalated": 0,
+        "latency_reasoning": {
+          "p50": 17.333000000000002,
+          "p95": 25.003700000000002
+        },
+        "by_class": {
+          "Q7": {
+            "n": 18,
+            "reasoning_share": 0.1111111111111111,
+            "reasoning_tokens": 103.77777777777777,
+            "generated_tokens": 202.94444444444446,
+            "correctness": 0.6388888888888888,
+            "must_include": 0.7777777777777778,
+            "latency": {
+              "p50": 2.0775,
+              "p95": 11.366899999999976
+            }
+          }
+        }
+      },
+      "index": {
+        "nodes": {
+          "cell_output": 31,
+          "class": 3,
+          "code_cell": 41,
+          "code_chunk": 16,
+          "comment": 1,
+          "figure": 2,
+          "file": 28,
+          "function": 6,
+          "log_chunk": 1,
+          "markdown_cell": 26,
+          "revision": 1,
+          "section": 16,
+          "summary": 1,
+          "table": 4
+        },
+        "vectors": 149
+      }
+    }
+  }
+]

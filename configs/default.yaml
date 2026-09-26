@@ -101,6 +101,13 @@ agent:                                # ТЗ S7: ReAct agent + CRAG
   crag_lower: 0.1                     # < lower: rewrite the query; still low after the retries -> honest refusal
   crag_retries: 1
 
+uploads:                              # ТЗ ч.2 S16: files uploaded into a conversation
+  max_mb: 50
+  ttl_hours: 24                       # session scope; "add to corpus" is an explicit action
+  route: self_route                   # whole | index | self_route (whole if it fits, else retrieval, then the whole file in parts)
+  context_share: 0.33                 # a file up to a third of llm.num_ctx goes into the context whole
+  top_k: 8
+
 tracing:
   enabled: true
   log_prompts: true                   # traces stay local, inside storage.data_dir

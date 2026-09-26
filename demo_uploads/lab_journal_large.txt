@@ -1,0 +1,763 @@
+ЖУРНАЛ ЭКСПЕРИМЕНТОВ ЛАБОРАТОРИИ, 2025 г.
+Записи ведут дежурные исследователи; каждый запуск получает номер run-N.
+
+2025-01-09 | run-101 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=0.1, batch=128, epochs=30 | val accuracy 0.8802 | loss на валидации немного шумит после 15-й эпохи.
+2025-01-09 | run-102 | ViT-S/16 | digits-aug | AdamW, lr=5e-4, batch=64, epochs=50 | val accuracy 0.8231 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-01-09 | run-103 | ViT-S/16 | tabular-credit | AdamW, lr=1e-3, batch=256, epochs=30 | val accuracy 0.9483 | результат в пределах разброса предыдущих запусков.
+2025-01-09 | run-104 | ResNet-18 | tabular-credit | SGD+momentum, lr=5e-4, batch=64, epochs=50 | val accuracy 0.9008 | результат в пределах разброса предыдущих запусков.
+2025-01-10 | run-105 | LightGBM | cifar10-subset | AdamW, learning_rate=1e-3, batch=128, epochs=50 | val accuracy 0.9188 | без замечаний, кривые обучения ровные.
+2025-01-10 | run-106 | MLP-3x256 | tabular-credit | AdamW, lr=5e-4, batch=64, epochs=20 | val accuracy 0.9161 | время эпохи в норме, узел gpu-07.
+2025-01-10 | run-107 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=1e-3, batch=128, epochs=50 | val accuracy 0.8133 | результат в пределах разброса предыдущих запусков.
+2025-01-10 | run-108 | ResNet-18 | tabular-credit | SGD+momentum, lr=1e-3, batch=256, epochs=20 | val accuracy 0.8903 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-01-13 | run-109 | ResNet-18 | digits-aug | SGD+momentum, lr=5e-4, batch=128, epochs=20 | val accuracy 0.895 | время эпохи в норме, узел gpu-07.
+2025-01-13 | run-110 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=0.05, batch=256, epochs=20 | val accuracy 0.8114 | повторить с другим сидом для оценки разброса.
+2025-01-13 | run-111 | ResNet-18 | cifar10-subset | SGD+momentum, lr=0.1, batch=64, epochs=20 | val accuracy 0.8455 | ранняя остановка сработала раньше лимита эпох.
+2025-01-13 | run-112 | LightGBM | tabular-credit | SGD+momentum, learning_rate=5e-4, batch=256, epochs=20 | val accuracy 0.8136 | результат в пределах разброса предыдущих запусков.
+2025-01-14 | run-113 | ViT-S/16 | cifar10-subset | AdamW, lr=5e-4, batch=64, epochs=30 | val accuracy 0.8193 | повторить с другим сидом для оценки разброса.
+2025-01-14 | run-114 | LightGBM | tabular-credit | AdamW, learning_rate=1e-3, batch=256, epochs=20 | val accuracy 0.9292 | без замечаний, кривые обучения ровные.
+2025-01-14 | run-115 | ResNet-18 | cifar10-subset | AdamW, lr=3e-4, batch=256, epochs=20 | val accuracy 0.9 | ранняя остановка сработала раньше лимита эпох.
+2025-01-15 | run-116 | LightGBM | cifar10-subset | AdamW, learning_rate=0.1, batch=64, epochs=50 | val accuracy 0.8036 | валидация стабильна между эпохами, переобучения не видно.
+2025-01-15 | run-117 | MLP-3x256 | cifar10-subset | AdamW, lr=1e-3, batch=256, epochs=20 | val accuracy 0.8898 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-01-16 | run-118 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=5e-4, batch=64, epochs=50 | val accuracy 0.872 | результат в пределах разброса предыдущих запусков.
+2025-01-16 | run-119 | ResNet-18 | digits-aug | AdamW, lr=0.05, batch=128, epochs=50 | val accuracy 0.8329 | результат в пределах разброса предыдущих запусков.
+2025-01-17 | run-120 | ViT-S/16 | cifar10-subset | AdamW, lr=3e-4, batch=128, epochs=20 | val accuracy 0.8565 | результат в пределах разброса предыдущих запусков.
+2025-01-17 | run-121 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=0.05, batch=256, epochs=30 | val accuracy 0.9485 | loss на валидации немного шумит после 15-й эпохи.
+2025-01-17 | run-122 | MLP-3x256 | digits-aug | SGD+momentum, lr=3e-4, batch=64, epochs=30 | val accuracy 0.8925 | валидация стабильна между эпохами, переобучения не видно.
+2025-01-20 | run-123 | ResNet-18 | digits-aug | SGD+momentum, lr=3e-4, batch=128, epochs=30 | val accuracy 0.8396 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-01-20 | run-124 | LightGBM | digits-aug | AdamW, learning_rate=5e-4, batch=128, epochs=50 | val accuracy 0.864 | валидация стабильна между эпохами, переобучения не видно.
+2025-01-20 | run-125 | ResNet-18 | digits-aug | AdamW, lr=5e-4, batch=64, epochs=50 | val accuracy 0.8264 | результат в пределах разброса предыдущих запусков.
+2025-01-21 | run-126 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=0.1, batch=256, epochs=50 | val accuracy 0.869 | без замечаний, кривые обучения ровные.
+2025-01-21 | run-127 | ViT-S/16 | tabular-credit | AdamW, lr=5e-4, batch=128, epochs=50 | val accuracy 0.9158 | результат в пределах разброса предыдущих запусков.
+2025-01-21 | run-128 | ResNet-18 | cifar10-subset | SGD+momentum, lr=5e-4, batch=128, epochs=20 | val accuracy 0.8515 | ранняя остановка сработала раньше лимита эпох.
+2025-01-21 | run-129 | ViT-S/16 | digits-aug | AdamW, lr=3e-4, batch=128, epochs=50 | val accuracy 0.9628 | ранняя остановка сработала раньше лимита эпох.
+2025-01-22 | run-130 | ResNet-18 | cifar10-subset | AdamW, lr=1e-3, batch=256, epochs=50 | val accuracy 0.9617 | валидация стабильна между эпохами, переобучения не видно.
+2025-01-22 | run-131 | ViT-S/16 | cifar10-subset | AdamW, lr=5e-4, batch=64, epochs=20 | val accuracy 0.8462 | результат в пределах разброса предыдущих запусков.
+2025-01-22 | run-132 | MLP-3x256 | digits-aug | AdamW, lr=1e-3, batch=128, epochs=20 | val accuracy 0.8453 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-01-23 | run-133 | LightGBM | cifar10-subset | AdamW, learning_rate=5e-4, batch=64, epochs=20 | val accuracy 0.9405 | время эпохи в норме, узел gpu-07.
+2025-01-23 | run-134 | LightGBM | digits-aug | SGD+momentum, learning_rate=5e-4, batch=64, epochs=50 | val accuracy 0.9548 | результат в пределах разброса предыдущих запусков.
+2025-01-23 | run-135 | MLP-3x256 | digits-aug | SGD+momentum, lr=5e-4, batch=64, epochs=20 | val accuracy 0.9438 | ранняя остановка сработала раньше лимита эпох.
+2025-01-24 | run-136 | ResNet-18 | cifar10-subset | AdamW, lr=5e-4, batch=128, epochs=50 | val accuracy 0.855 | валидация стабильна между эпохами, переобучения не видно.
+2025-01-24 | run-137 | LightGBM | digits-aug | AdamW, learning_rate=1e-3, batch=64, epochs=50 | val accuracy 0.8445 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-01-24 | run-138 | LightGBM | tabular-credit | AdamW, learning_rate=5e-4, batch=256, epochs=20 | val accuracy 0.819 | без замечаний, кривые обучения ровные.
+2025-01-27 | run-139 | ViT-S/16 | digits-aug | AdamW, lr=5e-4, batch=128, epochs=30 | val accuracy 0.8665 | ранняя остановка сработала раньше лимита эпох.
+2025-01-27 | run-140 | ResNet-18 | cifar10-subset | SGD+momentum, lr=0.05, batch=128, epochs=20 | val accuracy 0.8556 | результат в пределах разброса предыдущих запусков.
+2025-01-27 | run-141 | ResNet-18 | digits-aug | SGD+momentum, lr=0.05, batch=128, epochs=50 | val accuracy 0.8062 | повторить с другим сидом для оценки разброса.
+2025-01-28 | run-142 | MLP-3x256 | digits-aug | AdamW, lr=1e-3, batch=64, epochs=50 | val accuracy 0.9333 | время эпохи в норме, узел gpu-07.
+2025-01-28 | run-143 | ResNet-18 | tabular-credit | AdamW, lr=1e-3, batch=256, epochs=30 | val accuracy 0.865 | результат в пределах разброса предыдущих запусков.
+2025-01-28 | run-144 | MLP-3x256 | digits-aug | AdamW, lr=0.05, batch=64, epochs=30 | val accuracy 0.8138 | повторить с другим сидом для оценки разброса.
+2025-01-29 | run-145 | ViT-S/16 | tabular-credit | AdamW, lr=1e-3, batch=256, epochs=20 | val accuracy 0.9356 | результат в пределах разброса предыдущих запусков.
+2025-01-29 | run-146 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=0.05, batch=256, epochs=20 | val accuracy 0.8423 | время эпохи в норме, узел gpu-07.
+2025-01-29 | run-147 | ViT-S/16 | cifar10-subset | AdamW, lr=0.05, batch=256, epochs=20 | val accuracy 0.8624 | валидация стабильна между эпохами, переобучения не видно.
+2025-01-29 | run-148 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=0.05, batch=128, epochs=50 | val accuracy 0.9448 | loss на валидации немного шумит после 15-й эпохи.
+2025-01-30 | run-149 | MLP-3x256 | digits-aug | AdamW, lr=0.1, batch=64, epochs=20 | val accuracy 0.9006 | loss на валидации немного шумит после 15-й эпохи.
+2025-01-30 | run-150 | LightGBM | tabular-credit | AdamW, learning_rate=0.1, batch=128, epochs=50 | val accuracy 0.8245 | повторить с другим сидом для оценки разброса.
+2025-01-30 | run-151 | MLP-3x256 | digits-aug | SGD+momentum, lr=0.05, batch=64, epochs=50 | val accuracy 0.8109 | без замечаний, кривые обучения ровные.
+2025-01-30 | run-152 | ResNet-18 | cifar10-subset | AdamW, lr=1e-3, batch=128, epochs=30 | val accuracy 0.8496 | повторить с другим сидом для оценки разброса.
+2025-01-31 | run-153 | MLP-3x256 | tabular-credit | SGD+momentum, lr=0.1, batch=256, epochs=20 | val accuracy 0.8829 | валидация стабильна между эпохами, переобучения не видно.
+2025-01-31 | run-154 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=0.1, batch=128, epochs=30 | val accuracy 0.9487 | ранняя остановка сработала раньше лимита эпох.
+2025-01-31 | run-155 | ViT-S/16 | cifar10-subset | AdamW, lr=3e-4, batch=256, epochs=30 | val accuracy 0.8499 | loss на валидации немного шумит после 15-й эпохи.
+2025-02-03 | run-156 | MLP-3x256 | tabular-credit | SGD+momentum, lr=0.05, batch=128, epochs=20 | val accuracy 0.8634 | повторить с другим сидом для оценки разброса.
+2025-02-03 | run-157 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=5e-4, batch=64, epochs=30 | val accuracy 0.8092 | ранняя остановка сработала раньше лимита эпох.
+2025-02-04 | run-158 | MLP-3x256 | digits-aug | AdamW, lr=3e-4, batch=128, epochs=30 | val accuracy 0.9337 | без замечаний, кривые обучения ровные.
+2025-02-04 | run-159 | MLP-3x256 | tabular-credit | SGD+momentum, lr=1e-3, batch=64, epochs=20 | val accuracy 0.8167 | без замечаний, кривые обучения ровные.
+2025-02-04 | run-160 | ViT-S/16 | digits-aug | SGD+momentum, lr=1e-3, batch=256, epochs=30 | val accuracy 0.9155 | время эпохи в норме, узел gpu-07.
+2025-02-05 | run-161 | MLP-3x256 | cifar10-subset | AdamW, lr=0.1, batch=256, epochs=50 | val accuracy 0.9156 | loss на валидации немного шумит после 15-й эпохи.
+2025-02-05 | run-162 | ResNet-18 | digits-aug | SGD+momentum, lr=3e-4, batch=128, epochs=30 | val accuracy 0.9581 | валидация стабильна между эпохами, переобучения не видно.
+2025-02-05 | run-163 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=0.05, batch=64, epochs=30 | val accuracy 0.8613 | loss на валидации немного шумит после 15-й эпохи.
+2025-02-05 | run-164 | ResNet-18 | cifar10-subset | AdamW, lr=0.05, batch=64, epochs=50 | val accuracy 0.8421 | время эпохи в норме, узел gpu-07.
+2025-02-06 | run-165 | ResNet-18 | digits-aug | SGD+momentum, lr=0.1, batch=64, epochs=20 | val accuracy 0.8504 | ранняя остановка сработала раньше лимита эпох.
+2025-02-06 | run-166 | MLP-3x256 | cifar10-subset | AdamW, lr=0.05, batch=128, epochs=20 | val accuracy 0.8104 | без замечаний, кривые обучения ровные.
+2025-02-06 | run-167 | MLP-3x256 | tabular-credit | SGD+momentum, lr=1e-3, batch=128, epochs=50 | val accuracy 0.8819 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-02-07 | run-168 | LightGBM | cifar10-subset | AdamW, learning_rate=5e-4, batch=128, epochs=30 | val accuracy 0.9141 | повторить с другим сидом для оценки разброса.
+2025-02-07 | run-169 | ResNet-18 | cifar10-subset | SGD+momentum, lr=1e-3, batch=64, epochs=20 | val accuracy 0.8984 | без замечаний, кривые обучения ровные.
+2025-02-10 | run-170 | ResNet-18 | digits-aug | AdamW, lr=5e-4, batch=64, epochs=50 | val accuracy 0.8609 | время эпохи в норме, узел gpu-07.
+2025-02-10 | run-171 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=1e-3, batch=256, epochs=30 | val accuracy 0.8787 | повторить с другим сидом для оценки разброса.
+2025-02-10 | run-172 | ResNet-18 | cifar10-subset | SGD+momentum, lr=5e-4, batch=128, epochs=30 | val accuracy 0.8781 | loss на валидации немного шумит после 15-й эпохи.
+2025-02-11 | run-173 | ResNet-18 | cifar10-subset | SGD+momentum, lr=3e-4, batch=64, epochs=20 | val accuracy 0.8621 | время эпохи в норме, узел gpu-07.
+2025-02-11 | run-174 | LightGBM | digits-aug | AdamW, learning_rate=3e-4, batch=128, epochs=30 | val accuracy 0.9246 | ранняя остановка сработала раньше лимита эпох.
+2025-02-11 | run-175 | ResNet-18 | cifar10-subset | AdamW, lr=0.05, batch=64, epochs=20 | val accuracy 0.8129 | ранняя остановка сработала раньше лимита эпох.
+2025-02-12 | run-176 | MLP-3x256 | digits-aug | AdamW, lr=0.1, batch=256, epochs=30 | val accuracy 0.8697 | валидация стабильна между эпохами, переобучения не видно.
+2025-02-12 | run-177 | ViT-S/16 | tabular-credit | SGD+momentum, lr=0.1, batch=128, epochs=20 | val accuracy 0.8095 | ранняя остановка сработала раньше лимита эпох.
+2025-02-12 | run-178 | LightGBM | tabular-credit | AdamW, learning_rate=5e-4, batch=128, epochs=20 | val accuracy 0.8484 | повторить с другим сидом для оценки разброса.
+2025-02-13 | run-179 | LightGBM | cifar10-subset | AdamW, learning_rate=0.05, batch=64, epochs=30 | val accuracy 0.9532 | ранняя остановка сработала раньше лимита эпох.
+2025-02-13 | run-180 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=5e-4, batch=64, epochs=30 | val accuracy 0.9546 | результат в пределах разброса предыдущих запусков.
+2025-02-14 | run-181 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=1e-3, batch=128, epochs=50 | val accuracy 0.937 | результат в пределах разброса предыдущих запусков.
+2025-02-14 | run-182 | ResNet-18 | cifar10-subset | SGD+momentum, lr=1e-3, batch=256, epochs=30 | val accuracy 0.9268 | повторить с другим сидом для оценки разброса.
+2025-02-17 | run-183 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=3e-4, batch=128, epochs=30 | val accuracy 0.8897 | без замечаний, кривые обучения ровные.
+2025-02-17 | run-184 | ResNet-18 | tabular-credit | AdamW, lr=1e-3, batch=256, epochs=50 | val accuracy 0.8423 | ранняя остановка сработала раньше лимита эпох.
+2025-02-17 | run-185 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=5e-4, batch=256, epochs=20 | val accuracy 0.8468 | валидация стабильна между эпохами, переобучения не видно.
+2025-02-17 | run-186 | ResNet-18 | cifar10-subset | SGD+momentum, lr=5e-4, batch=64, epochs=50 | val accuracy 0.8881 | время эпохи в норме, узел gpu-07.
+2025-02-18 | run-187 | ResNet-18 | tabular-credit | SGD+momentum, lr=5e-4, batch=256, epochs=50 | val accuracy 0.8858 | время эпохи в норме, узел gpu-07.
+2025-02-18 | run-188 | ResNet-18 | tabular-credit | SGD+momentum, lr=5e-4, batch=128, epochs=50 | val accuracy 0.8482 | повторить с другим сидом для оценки разброса.
+2025-02-18 | run-189 | ViT-S/16 | cifar10-subset | AdamW, lr=0.05, batch=128, epochs=20 | val accuracy 0.8662 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-02-19 | run-190 | MLP-3x256 | digits-aug | SGD+momentum, lr=3e-4, batch=256, epochs=50 | val accuracy 0.8787 | loss на валидации немного шумит после 15-й эпохи.
+2025-02-19 | run-191 | MLP-3x256 | digits-aug | AdamW, lr=0.05, batch=256, epochs=30 | val accuracy 0.8495 | без замечаний, кривые обучения ровные.
+2025-02-19 | run-192 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=0.05, batch=64, epochs=50 | val accuracy 0.8645 | валидация стабильна между эпохами, переобучения не видно.
+2025-02-20 | run-193 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=1e-3, batch=64, epochs=30 | val accuracy 0.8192 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-02-20 | run-194 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=3e-4, batch=128, epochs=50 | val accuracy 0.8174 | loss на валидации немного шумит после 15-й эпохи.
+2025-02-21 | run-195 | ViT-S/16 | tabular-credit | SGD+momentum, lr=0.05, batch=256, epochs=20 | val accuracy 0.8244 | loss на валидации немного шумит после 15-й эпохи.
+2025-02-21 | run-196 | ViT-S/16 | cifar10-subset | AdamW, lr=0.05, batch=128, epochs=30 | val accuracy 0.8576 | результат в пределах разброса предыдущих запусков.
+2025-02-21 | run-197 | MLP-3x256 | digits-aug | AdamW, lr=3e-4, batch=64, epochs=50 | val accuracy 0.8725 | без замечаний, кривые обучения ровные.
+2025-02-21 | run-198 | MLP-3x256 | cifar10-subset | AdamW, lr=1e-3, batch=128, epochs=20 | val accuracy 0.9437 | повторить с другим сидом для оценки разброса.
+2025-02-24 | run-199 | LightGBM | digits-aug | AdamW, learning_rate=0.1, batch=128, epochs=30 | val accuracy 0.924 | результат в пределах разброса предыдущих запусков.
+2025-02-24 | run-200 | ResNet-18 | digits-aug | SGD+momentum, lr=0.1, batch=128, epochs=50 | val accuracy 0.875 | результат в пределах разброса предыдущих запусков.
+2025-02-24 | run-201 | ViT-S/16 | tabular-credit | SGD+momentum, lr=1e-3, batch=64, epochs=30 | val accuracy 0.8072 | без замечаний, кривые обучения ровные.
+2025-02-25 | run-202 | ResNet-18 | cifar10-subset | AdamW, lr=0.05, batch=256, epochs=30 | val accuracy 0.9123 | время эпохи в норме, узел gpu-07.
+2025-02-25 | run-203 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=0.1, batch=64, epochs=30 | val accuracy 0.8169 | loss на валидации немного шумит после 15-й эпохи.
+2025-02-25 | run-204 | MLP-3x256 | tabular-credit | SGD+momentum, lr=1e-3, batch=64, epochs=30 | val accuracy 0.8861 | валидация стабильна между эпохами, переобучения не видно.
+2025-02-26 | run-205 | LightGBM | cifar10-subset | AdamW, learning_rate=5e-4, batch=256, epochs=30 | val accuracy 0.911 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-02-26 | run-206 | MLP-3x256 | tabular-credit | SGD+momentum, lr=5e-4, batch=64, epochs=20 | val accuracy 0.9439 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-02-26 | run-207 | ResNet-18 | cifar10-subset | SGD+momentum, lr=0.05, batch=64, epochs=30 | val accuracy 0.9196 | результат в пределах разброса предыдущих запусков.
+2025-02-27 | run-208 | MLP-3x256 | cifar10-subset | AdamW, lr=1e-3, batch=64, epochs=30 | val accuracy 0.8398 | время эпохи в норме, узел gpu-07.
+2025-02-27 | run-209 | MLP-3x256 | digits-aug | AdamW, lr=0.05, batch=128, epochs=20 | val accuracy 0.8922 | повторить с другим сидом для оценки разброса.
+2025-02-27 | run-210 | ViT-S/16 | tabular-credit | AdamW, lr=3e-4, batch=128, epochs=30 | val accuracy 0.9387 | loss на валидации немного шумит после 15-й эпохи.
+2025-02-27 | run-211 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=0.1, batch=64, epochs=50 | val accuracy 0.8893 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-02-28 | run-212 | MLP-3x256 | digits-aug | SGD+momentum, lr=5e-4, batch=64, epochs=50 | val accuracy 0.8382 | валидация стабильна между эпохами, переобучения не видно.
+2025-02-28 | run-213 | ViT-S/16 | digits-aug | SGD+momentum, lr=3e-4, batch=256, epochs=50 | val accuracy 0.836 | без замечаний, кривые обучения ровные.
+2025-02-28 | run-214 | MLP-3x256 | cifar10-subset | AdamW, lr=0.05, batch=64, epochs=50 | val accuracy 0.9065 | loss на валидации немного шумит после 15-й эпохи.
+2025-02-28 | run-215 | ViT-S/16 | digits-aug | SGD+momentum, lr=3e-4, batch=64, epochs=20 | val accuracy 0.9221 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-03-03 | run-216 | ViT-S/16 | tabular-credit | SGD+momentum, lr=5e-4, batch=64, epochs=20 | val accuracy 0.896 | loss на валидации немного шумит после 15-й эпохи.
+2025-03-03 | run-217 | LightGBM | digits-aug | AdamW, learning_rate=3e-4, batch=64, epochs=20 | val accuracy 0.9447 | валидация стабильна между эпохами, переобучения не видно.
+2025-03-03 | run-218 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=0.1, batch=64, epochs=20 | val accuracy 0.9266 | повторить с другим сидом для оценки разброса.
+2025-03-04 | run-219 | MLP-3x256 | tabular-credit | AdamW, lr=0.05, batch=64, epochs=50 | val accuracy 0.9486 | без замечаний, кривые обучения ровные.
+2025-03-04 | run-220 | LightGBM | tabular-credit | SGD+momentum, learning_rate=5e-4, batch=64, epochs=50 | val accuracy 0.8021 | повторить с другим сидом для оценки разброса.
+2025-03-04 | run-221 | MLP-3x256 | digits-aug | SGD+momentum, lr=0.1, batch=64, epochs=30 | val accuracy 0.8518 | повторить с другим сидом для оценки разброса.
+2025-03-05 | run-222 | ViT-S/16 | tabular-credit | SGD+momentum, lr=0.05, batch=64, epochs=20 | val accuracy 0.9557 | loss на валидации немного шумит после 15-й эпохи.
+2025-03-05 | run-223 | ViT-S/16 | tabular-credit | SGD+momentum, lr=3e-4, batch=256, epochs=20 | val accuracy 0.8429 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-03-05 | run-224 | ResNet-18 | tabular-credit | AdamW, lr=3e-4, batch=128, epochs=50 | val accuracy 0.8583 | без замечаний, кривые обучения ровные.
+2025-03-05 | run-225 | ResNet-18 | cifar10-subset | AdamW, lr=1e-3, batch=256, epochs=30 | val accuracy 0.8373 | валидация стабильна между эпохами, переобучения не видно.
+2025-03-06 | run-226 | LightGBM | digits-aug | SGD+momentum, learning_rate=3e-4, batch=64, epochs=30 | val accuracy 0.9473 | ранняя остановка сработала раньше лимита эпох.
+2025-03-06 | run-227 | ViT-S/16 | tabular-credit | SGD+momentum, lr=3e-4, batch=256, epochs=50 | val accuracy 0.9071 | ранняя остановка сработала раньше лимита эпох.
+2025-03-07 | run-228 | ResNet-18 | tabular-credit | SGD+momentum, lr=0.1, batch=256, epochs=50 | val accuracy 0.8877 | результат в пределах разброса предыдущих запусков.
+2025-03-07 | run-229 | ResNet-18 | digits-aug | AdamW, lr=0.05, batch=64, epochs=20 | val accuracy 0.9574 | повторить с другим сидом для оценки разброса.
+2025-03-07 | run-230 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=3e-4, batch=64, epochs=20 | val accuracy 0.9386 | без замечаний, кривые обучения ровные.
+2025-03-07 | run-231 | ViT-S/16 | digits-aug | AdamW, lr=1e-3, batch=256, epochs=20 | val accuracy 0.8705 | результат в пределах разброса предыдущих запусков.
+2025-03-10 | run-232 | ResNet-18 | tabular-credit | SGD+momentum, lr=0.05, batch=64, epochs=30 | val accuracy 0.8045 | валидация стабильна между эпохами, переобучения не видно.
+2025-03-10 | run-233 | LightGBM | tabular-credit | AdamW, learning_rate=0.05, batch=128, epochs=20 | val accuracy 0.839 | ранняя остановка сработала раньше лимита эпох.
+2025-03-10 | run-234 | LightGBM | tabular-credit | SGD+momentum, learning_rate=0.05, batch=256, epochs=30 | val accuracy 0.8024 | результат в пределах разброса предыдущих запусков.
+2025-03-11 | run-235 | LightGBM | digits-aug | AdamW, learning_rate=0.05, batch=64, epochs=30 | val accuracy 0.8652 | loss на валидации немного шумит после 15-й эпохи.
+2025-03-11 | run-236 | MLP-3x256 | cifar10-subset | AdamW, lr=5e-4, batch=64, epochs=30 | val accuracy 0.9221 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-03-12 | run-237 | LightGBM | tabular-credit | SGD+momentum, learning_rate=3e-4, batch=128, epochs=20 | val accuracy 0.8191 | loss на валидации немного шумит после 15-й эпохи.
+2025-03-12 | run-238 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=1e-3, batch=64, epochs=50 | val accuracy 0.8965 | повторить с другим сидом для оценки разброса.
+2025-03-12 | run-239 | LightGBM | tabular-credit | SGD+momentum, learning_rate=5e-4, batch=128, epochs=50 | val accuracy 0.8533 | ранняя остановка сработала раньше лимита эпох.
+2025-03-13 | run-240 | ResNet-18 | cifar10-subset | AdamW, lr=0.05, batch=64, epochs=50 | val accuracy 0.8208 | результат в пределах разброса предыдущих запусков.
+2025-03-13 | run-241 | LightGBM | digits-aug | AdamW, learning_rate=1e-3, batch=128, epochs=30 | val accuracy 0.8906 | повторить с другим сидом для оценки разброса.
+2025-03-13 | run-242 | ViT-S/16 | cifar10-subset | AdamW, lr=0.1, batch=256, epochs=50 | val accuracy 0.8182 | ранняя остановка сработала раньше лимита эпох.
+2025-03-14 | run-243 | LightGBM | tabular-credit | SGD+momentum, learning_rate=1e-3, batch=256, epochs=30 | val accuracy 0.8707 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-03-14 | run-244 | LightGBM | tabular-credit | AdamW, learning_rate=0.05, batch=64, epochs=50 | val accuracy 0.9306 | повторить с другим сидом для оценки разброса.
+2025-03-14 | run-245 | MLP-3x256 | tabular-credit | SGD+momentum, lr=1e-3, batch=128, epochs=50 | val accuracy 0.8927 | время эпохи в норме, узел gpu-07.
+2025-03-14 | run-246 | ResNet-18 | tabular-credit | AdamW, lr=3e-4, batch=256, epochs=50 | val accuracy 0.9041 | результат в пределах разброса предыдущих запусков.
+2025-03-14 | СОБЫТИЕ | Сбой питания в серверной в 02:40: задача прервана, потеряны чекпойнты run-246, перезапуск с нуля.
+2025-03-17 | run-247 | ViT-S/16 | digits-aug | AdamW, lr=5e-4, batch=128, epochs=20 | val accuracy 0.8305 | результат в пределах разброса предыдущих запусков.
+2025-03-17 | run-248 | ViT-S/16 | digits-aug | SGD+momentum, lr=0.1, batch=256, epochs=20 | val accuracy 0.9477 | время эпохи в норме, узел gpu-07.
+2025-03-18 | run-249 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=0.05, batch=128, epochs=30 | val accuracy 0.9552 | loss на валидации немного шумит после 15-й эпохи.
+2025-03-18 | run-250 | LightGBM | cifar10-subset | SGD+momentum, learning_rate=1e-3, batch=128, epochs=20 | val accuracy 0.8813 | ранняя остановка сработала раньше лимита эпох.
+2025-03-18 | run-251 | MLP-3x256 | tabular-credit | SGD+momentum, lr=1e-3, batch=128, epochs=50 | val accuracy 0.8961 | повторить с другим сидом для оценки разброса.
+2025-03-19 | run-252 | LightGBM | cifar10-subset | SGD+momentum, learning_rate=0.05, batch=64, epochs=20 | val accuracy 0.952 | валидация стабильна между эпохами, переобучения не видно.
+2025-03-19 | run-253 | LightGBM | tabular-credit | AdamW, learning_rate=1e-3, batch=64, epochs=50 | val accuracy 0.8315 | результат в пределах разброса предыдущих запусков.
+2025-03-19 | run-254 | ResNet-18 | tabular-credit | AdamW, lr=5e-4, batch=64, epochs=50 | val accuracy 0.8648 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-03-20 | run-255 | ViT-S/16 | digits-aug | AdamW, lr=0.05, batch=256, epochs=20 | val accuracy 0.943 | повторить с другим сидом для оценки разброса.
+2025-03-20 | run-256 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=1e-3, batch=256, epochs=20 | val accuracy 0.9204 | ранняя остановка сработала раньше лимита эпох.
+2025-03-20 | run-257 | ViT-S/16 | tabular-credit | AdamW, lr=1e-3, batch=128, epochs=20 | val accuracy 0.8924 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-03-20 | run-258 | LightGBM | digits-aug | SGD+momentum, learning_rate=5e-4, batch=128, epochs=20 | val accuracy 0.8854 | результат в пределах разброса предыдущих запусков.
+2025-03-21 | run-259 | ResNet-18 | digits-aug | AdamW, lr=0.1, batch=128, epochs=20 | val accuracy 0.8056 | время эпохи в норме, узел gpu-07.
+2025-03-21 | run-260 | MLP-3x256 | digits-aug | AdamW, lr=0.05, batch=256, epochs=30 | val accuracy 0.8862 | повторить с другим сидом для оценки разброса.
+2025-03-21 | run-261 | MLP-3x256 | digits-aug | AdamW, lr=0.1, batch=256, epochs=30 | val accuracy 0.8136 | без замечаний, кривые обучения ровные.
+2025-03-24 | run-262 | ResNet-18 | tabular-credit | SGD+momentum, lr=0.1, batch=128, epochs=50 | val accuracy 0.8745 | loss на валидации немного шумит после 15-й эпохи.
+2025-03-24 | run-263 | ResNet-18 | cifar10-subset | SGD+momentum, lr=1e-3, batch=64, epochs=20 | val accuracy 0.8301 | loss на валидации немного шумит после 15-й эпохи.
+2025-03-25 | run-264 | ResNet-18 | tabular-credit | AdamW, lr=5e-4, batch=64, epochs=50 | val accuracy 0.9315 | повторить с другим сидом для оценки разброса.
+2025-03-25 | run-265 | LightGBM | cifar10-subset | SGD+momentum, learning_rate=1e-3, batch=256, epochs=50 | val accuracy 0.8727 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-03-25 | run-266 | LightGBM | digits-aug | SGD+momentum, learning_rate=0.05, batch=128, epochs=30 | val accuracy 0.8298 | время эпохи в норме, узел gpu-07.
+2025-03-26 | run-267 | ResNet-18 | tabular-credit | AdamW, lr=1e-3, batch=64, epochs=20 | val accuracy 0.8043 | ранняя остановка сработала раньше лимита эпох.
+2025-03-26 | run-268 | ResNet-18 | tabular-credit | SGD+momentum, lr=0.1, batch=256, epochs=30 | val accuracy 0.9231 | результат в пределах разброса предыдущих запусков.
+2025-03-26 | run-269 | ResNet-18 | cifar10-subset | SGD+momentum, lr=5e-4, batch=256, epochs=20 | val accuracy 0.8046 | валидация стабильна между эпохами, переобучения не видно.
+2025-03-26 | run-270 | LightGBM | tabular-credit | AdamW, learning_rate=0.05, batch=64, epochs=50 | val accuracy 0.9597 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-03-27 | run-271 | ResNet-18 | tabular-credit | SGD+momentum, lr=3e-4, batch=256, epochs=20 | val accuracy 0.9558 | повторить с другим сидом для оценки разброса.
+2025-03-27 | run-272 | ViT-S/16 | cifar10-subset | AdamW, lr=0.1, batch=64, epochs=30 | val accuracy 0.8542 | ранняя остановка сработала раньше лимита эпох.
+2025-03-28 | run-273 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=5e-4, batch=64, epochs=30 | val accuracy 0.8281 | время эпохи в норме, узел gpu-07.
+2025-03-28 | run-274 | ViT-S/16 | tabular-credit | SGD+momentum, lr=5e-4, batch=64, epochs=30 | val accuracy 0.9446 | без замечаний, кривые обучения ровные.
+2025-03-31 | run-275 | ResNet-18 | digits-aug | SGD+momentum, lr=3e-4, batch=64, epochs=20 | val accuracy 0.965 | loss на валидации немного шумит после 15-й эпохи.
+2025-03-31 | run-276 | ResNet-18 | cifar10-subset | AdamW, lr=1e-3, batch=64, epochs=20 | val accuracy 0.8945 | ранняя остановка сработала раньше лимита эпох.
+2025-03-31 | run-277 | ResNet-18 | tabular-credit | SGD+momentum, lr=0.1, batch=128, epochs=50 | val accuracy 0.9508 | время эпохи в норме, узел gpu-07.
+2025-04-01 | run-278 | LightGBM | digits-aug | AdamW, learning_rate=0.1, batch=64, epochs=30 | val accuracy 0.8661 | loss на валидации немного шумит после 15-й эпохи.
+2025-04-01 | run-279 | ResNet-18 | tabular-credit | SGD+momentum, lr=3e-4, batch=64, epochs=30 | val accuracy 0.8777 | время эпохи в норме, узел gpu-07.
+2025-04-01 | run-280 | MLP-3x256 | tabular-credit | AdamW, lr=5e-4, batch=256, epochs=30 | val accuracy 0.9647 | без замечаний, кривые обучения ровные.
+2025-04-02 | run-281 | ViT-S/16 | tabular-credit | AdamW, lr=0.1, batch=128, epochs=50 | val accuracy 0.8531 | валидация стабильна между эпохами, переобучения не видно.
+2025-04-02 | run-282 | ResNet-18 | cifar10-subset | SGD+momentum, lr=1e-3, batch=256, epochs=30 | val accuracy 0.9267 | ранняя остановка сработала раньше лимита эпох.
+2025-04-02 | run-283 | ResNet-18 | digits-aug | SGD+momentum, lr=0.1, batch=64, epochs=30 | val accuracy 0.8762 | результат в пределах разброса предыдущих запусков.
+2025-04-02 | run-284 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=0.1, batch=128, epochs=30 | val accuracy 0.8186 | повторить с другим сидом для оценки разброса.
+2025-04-03 | run-285 | MLP-3x256 | digits-aug | AdamW, lr=3e-4, batch=128, epochs=20 | val accuracy 0.9447 | loss на валидации немного шумит после 15-й эпохи.
+2025-04-03 | run-286 | LightGBM | tabular-credit | AdamW, learning_rate=5e-4, batch=64, epochs=50 | val accuracy 0.891 | ранняя остановка сработала раньше лимита эпох.
+2025-04-03 | run-287 | LightGBM | tabular-credit | AdamW, learning_rate=5e-4, batch=64, epochs=50 | val accuracy 0.8221 | loss на валидации немного шумит после 15-й эпохи.
+2025-04-04 | run-288 | ResNet-18 | tabular-credit | SGD+momentum, lr=0.05, batch=256, epochs=50 | val accuracy 0.8126 | валидация стабильна между эпохами, переобучения не видно.
+2025-04-04 | run-289 | MLP-3x256 | digits-aug | AdamW, lr=3e-4, batch=64, epochs=20 | val accuracy 0.8252 | без замечаний, кривые обучения ровные.
+2025-04-04 | run-290 | ViT-S/16 | tabular-credit | SGD+momentum, lr=0.1, batch=256, epochs=30 | val accuracy 0.9214 | валидация стабильна между эпохами, переобучения не видно.
+2025-04-07 | run-291 | LightGBM | cifar10-subset | SGD+momentum, learning_rate=0.1, batch=256, epochs=50 | val accuracy 0.9598 | повторить с другим сидом для оценки разброса.
+2025-04-07 | run-292 | MLP-3x256 | digits-aug | SGD+momentum, lr=3e-4, batch=128, epochs=30 | val accuracy 0.9453 | ранняя остановка сработала раньше лимита эпох.
+2025-04-07 | run-293 | MLP-3x256 | digits-aug | SGD+momentum, lr=0.05, batch=64, epochs=50 | val accuracy 0.9643 | повторить с другим сидом для оценки разброса.
+2025-04-07 | run-294 | ViT-S/16 | cifar10-subset | AdamW, lr=3e-4, batch=256, epochs=50 | val accuracy 0.8983 | валидация стабильна между эпохами, переобучения не видно.
+2025-04-08 | run-295 | ViT-S/16 | tabular-credit | AdamW, lr=1e-3, batch=128, epochs=50 | val accuracy 0.8017 | результат в пределах разброса предыдущих запусков.
+2025-04-08 | run-296 | LightGBM | cifar10-subset | SGD+momentum, learning_rate=5e-4, batch=128, epochs=50 | val accuracy 0.8964 | результат в пределах разброса предыдущих запусков.
+2025-04-08 | run-297 | ViT-S/16 | cifar10-subset | AdamW, lr=0.1, batch=64, epochs=20 | val accuracy 0.9519 | повторить с другим сидом для оценки разброса.
+2025-04-09 | run-298 | ViT-S/16 | tabular-credit | SGD+momentum, lr=5e-4, batch=64, epochs=30 | val accuracy 0.8035 | повторить с другим сидом для оценки разброса.
+2025-04-09 | run-299 | MLP-3x256 | digits-aug | AdamW, lr=0.05, batch=64, epochs=50 | val accuracy 0.9534 | ранняя остановка сработала раньше лимита эпох.
+2025-04-09 | run-300 | LightGBM | cifar10-subset | SGD+momentum, learning_rate=1e-3, batch=64, epochs=30 | val accuracy 0.8792 | результат в пределах разброса предыдущих запусков.
+2025-04-09 | run-301 | MLP-3x256 | tabular-credit | SGD+momentum, lr=3e-4, batch=128, epochs=20 | val accuracy 0.8379 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-04-10 | run-302 | MLP-3x256 | cifar10-subset | AdamW, lr=0.05, batch=128, epochs=50 | val accuracy 0.8649 | валидация стабильна между эпохами, переобучения не видно.
+2025-04-10 | run-303 | LightGBM | tabular-credit | AdamW, learning_rate=1e-3, batch=128, epochs=20 | val accuracy 0.849 | повторить с другим сидом для оценки разброса.
+2025-04-10 | run-304 | ResNet-18 | digits-aug | AdamW, lr=0.1, batch=64, epochs=20 | val accuracy 0.8922 | ранняя остановка сработала раньше лимита эпох.
+2025-04-11 | run-305 | ResNet-18 | tabular-credit | SGD+momentum, lr=5e-4, batch=256, epochs=20 | val accuracy 0.944 | время эпохи в норме, узел gpu-07.
+2025-04-11 | run-306 | ViT-S/16 | tabular-credit | SGD+momentum, lr=5e-4, batch=128, epochs=30 | val accuracy 0.8371 | loss на валидации немного шумит после 15-й эпохи.
+2025-04-11 | run-307 | ResNet-18 | cifar10-subset | SGD+momentum, lr=0.1, batch=256, epochs=30 | val accuracy 0.8697 | ранняя остановка сработала раньше лимита эпох.
+2025-04-11 | run-308 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=3e-4, batch=128, epochs=50 | val accuracy 0.9225 | loss на валидации немного шумит после 15-й эпохи.
+2025-04-14 | run-309 | MLP-3x256 | digits-aug | AdamW, lr=1e-3, batch=256, epochs=30 | val accuracy 0.8662 | время эпохи в норме, узел gpu-07.
+2025-04-14 | run-310 | LightGBM | digits-aug | SGD+momentum, learning_rate=0.05, batch=128, epochs=50 | val accuracy 0.8458 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-04-14 | run-311 | ResNet-18 | tabular-credit | SGD+momentum, lr=1e-3, batch=128, epochs=20 | val accuracy 0.8736 | повторить с другим сидом для оценки разброса.
+2025-04-15 | run-312 | MLP-3x256 | cifar10-subset | AdamW, lr=0.05, batch=128, epochs=50 | val accuracy 0.9609 | результат в пределах разброса предыдущих запусков.
+2025-04-15 | run-313 | ViT-S/16 | digits-aug | SGD+momentum, lr=0.1, batch=64, epochs=30 | val accuracy 0.8513 | без замечаний, кривые обучения ровные.
+2025-04-15 | run-314 | ResNet-18 | tabular-credit | SGD+momentum, lr=0.05, batch=64, epochs=30 | val accuracy 0.947 | без замечаний, кривые обучения ровные.
+2025-04-16 | run-315 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=3e-4, batch=64, epochs=20 | val accuracy 0.9197 | повторить с другим сидом для оценки разброса.
+2025-04-16 | run-316 | LightGBM | cifar10-subset | AdamW, learning_rate=1e-3, batch=256, epochs=20 | val accuracy 0.8013 | повторить с другим сидом для оценки разброса.
+2025-04-17 | run-317 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=3e-4, batch=256, epochs=50 | val accuracy 0.9399 | ранняя остановка сработала раньше лимита эпох.
+2025-04-17 | run-318 | ResNet-18 | digits-aug | AdamW, lr=3e-4, batch=128, epochs=30 | val accuracy 0.8374 | результат в пределах разброса предыдущих запусков.
+2025-04-18 | run-319 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=1e-3, batch=128, epochs=20 | val accuracy 0.9016 | loss на валидации немного шумит после 15-й эпохи.
+2025-04-18 | run-320 | LightGBM | tabular-credit | SGD+momentum, learning_rate=3e-4, batch=64, epochs=30 | val accuracy 0.8983 | валидация стабильна между эпохами, переобучения не видно.
+2025-04-21 | run-321 | LightGBM | cifar10-subset | AdamW, learning_rate=0.1, batch=64, epochs=30 | val accuracy 0.9274 | время эпохи в норме, узел gpu-07.
+2025-04-21 | run-322 | LightGBM | cifar10-subset | SGD+momentum, learning_rate=0.1, batch=256, epochs=20 | val accuracy 0.8826 | результат в пределах разброса предыдущих запусков.
+2025-04-22 | run-323 | MLP-3x256 | tabular-credit | AdamW, lr=0.05, batch=64, epochs=30 | val accuracy 0.8904 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-04-22 | run-324 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=3e-4, batch=128, epochs=30 | val accuracy 0.8749 | ранняя остановка сработала раньше лимита эпох.
+2025-04-23 | run-325 | MLP-3x256 | digits-aug | AdamW, lr=0.1, batch=128, epochs=20 | val accuracy 0.8668 | ранняя остановка сработала раньше лимита эпох.
+2025-04-23 | run-326 | ViT-S/16 | tabular-credit | SGD+momentum, lr=0.05, batch=128, epochs=30 | val accuracy 0.8233 | loss на валидации немного шумит после 15-й эпохи.
+2025-04-24 | run-327 | ViT-S/16 | digits-aug | AdamW, lr=3e-4, batch=256, epochs=50 | val accuracy 0.8495 | валидация стабильна между эпохами, переобучения не видно.
+2025-04-24 | run-328 | ResNet-18 | cifar10-subset | SGD+momentum, lr=1e-3, batch=256, epochs=20 | val accuracy 0.8552 | результат в пределах разброса предыдущих запусков.
+2025-04-24 | run-329 | MLP-3x256 | digits-aug | AdamW, lr=0.05, batch=64, epochs=30 | val accuracy 0.8819 | без замечаний, кривые обучения ровные.
+2025-04-24 | run-330 | LightGBM | digits-aug | AdamW, learning_rate=5e-4, batch=256, epochs=50 | val accuracy 0.8302 | ранняя остановка сработала раньше лимита эпох.
+2025-04-25 | run-331 | MLP-3x256 | digits-aug | AdamW, lr=0.1, batch=64, epochs=30 | val accuracy 0.8728 | loss на валидации немного шумит после 15-й эпохи.
+2025-04-25 | run-332 | ViT-S/16 | cifar10-subset | AdamW, lr=1e-3, batch=128, epochs=50 | val accuracy 0.8221 | время эпохи в норме, узел gpu-07.
+2025-04-25 | run-333 | ResNet-18 | digits-aug | SGD+momentum, lr=5e-4, batch=128, epochs=30 | val accuracy 0.9461 | время эпохи в норме, узел gpu-07.
+2025-04-28 | run-334 | LightGBM | digits-aug | SGD+momentum, learning_rate=0.05, batch=256, epochs=30 | val accuracy 0.8645 | результат в пределах разброса предыдущих запусков.
+2025-04-28 | run-335 | ResNet-18 | cifar10-subset | AdamW, lr=1e-3, batch=128, epochs=30 | val accuracy 0.924 | время эпохи в норме, узел gpu-07.
+2025-04-28 | run-336 | LightGBM | digits-aug | AdamW, learning_rate=1e-3, batch=64, epochs=30 | val accuracy 0.867 | ранняя остановка сработала раньше лимита эпох.
+2025-04-29 | run-337 | ResNet-18 | digits-aug | AdamW, lr=0.1, batch=128, epochs=30 | val accuracy 0.9061 | ранняя остановка сработала раньше лимита эпох.
+2025-04-29 | run-338 | ResNet-18 | cifar10-subset | SGD+momentum, lr=1e-3, batch=256, epochs=30 | val accuracy 0.8337 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-04-29 | run-339 | ResNet-18 | digits-aug | AdamW, lr=3e-4, batch=64, epochs=50 | val accuracy 0.9013 | loss на валидации немного шумит после 15-й эпохи.
+2025-04-30 | run-340 | MLP-3x256 | tabular-credit | AdamW, lr=0.1, batch=64, epochs=30 | val accuracy 0.8738 | ранняя остановка сработала раньше лимита эпох.
+2025-04-30 | run-341 | LightGBM | cifar10-subset | SGD+momentum, learning_rate=1e-3, batch=128, epochs=50 | val accuracy 0.8073 | результат в пределах разброса предыдущих запусков.
+2025-04-30 | run-342 | ResNet-18 | digits-aug | SGD+momentum, lr=0.05, batch=256, epochs=20 | val accuracy 0.8527 | валидация стабильна между эпохами, переобучения не видно.
+2025-05-01 | run-343 | ViT-S/16 | cifar10-subset | AdamW, lr=1e-3, batch=64, epochs=20 | val accuracy 0.9164 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-05-01 | run-344 | LightGBM | tabular-credit | AdamW, learning_rate=5e-4, batch=256, epochs=50 | val accuracy 0.8481 | время эпохи в норме, узел gpu-07.
+2025-05-01 | run-345 | ResNet-18 | tabular-credit | AdamW, lr=3e-4, batch=64, epochs=50 | val accuracy 0.9498 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-05-01 | run-346 | LightGBM | cifar10-subset | SGD+momentum, learning_rate=1e-3, batch=128, epochs=20 | val accuracy 0.9012 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-05-02 | run-347 | ResNet-18 | digits-aug | AdamW, lr=0.05, batch=64, epochs=30 | val accuracy 0.8057 | валидация стабильна между эпохами, переобучения не видно.
+2025-05-02 | run-348 | ViT-S/16 | cifar10-subset | AdamW, lr=0.05, batch=256, epochs=50 | val accuracy 0.8332 | результат в пределах разброса предыдущих запусков.
+2025-05-05 | run-349 | ViT-S/16 | tabular-credit | SGD+momentum, lr=0.1, batch=64, epochs=30 | val accuracy 0.9406 | loss на валидации немного шумит после 15-й эпохи.
+2025-05-05 | run-350 | ViT-S/16 | tabular-credit | AdamW, lr=1e-3, batch=128, epochs=30 | val accuracy 0.9089 | loss на валидации немного шумит после 15-й эпохи.
+2025-05-05 | run-351 | ResNet-18 | cifar10-subset | AdamW, lr=5e-4, batch=64, epochs=50 | val accuracy 0.9326 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-05-06 | run-352 | LightGBM | tabular-credit | AdamW, learning_rate=0.05, batch=128, epochs=20 | val accuracy 0.883 | валидация стабильна между эпохами, переобучения не видно.
+2025-05-06 | run-353 | MLP-3x256 | tabular-credit | AdamW, lr=5e-4, batch=128, epochs=50 | val accuracy 0.8398 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-05-06 | run-354 | ResNet-18 | cifar10-subset | AdamW, lr=5e-4, batch=256, epochs=30 | val accuracy 0.8126 | loss на валидации немного шумит после 15-й эпохи.
+2025-05-07 | run-355 | ResNet-18 | digits-aug | AdamW, lr=0.1, batch=256, epochs=20 | val accuracy 0.8231 | ранняя остановка сработала раньше лимита эпох.
+2025-05-07 | run-356 | MLP-3x256 | tabular-credit | AdamW, lr=5e-4, batch=256, epochs=30 | val accuracy 0.9569 | результат в пределах разброса предыдущих запусков.
+2025-05-07 | run-357 | ResNet-18 | tabular-credit | SGD+momentum, lr=3e-4, batch=64, epochs=50 | val accuracy 0.8859 | результат в пределах разброса предыдущих запусков.
+2025-05-08 | run-358 | ResNet-18 | cifar10-subset | AdamW, lr=5e-4, batch=64, epochs=20 | val accuracy 0.8162 | результат в пределах разброса предыдущих запусков.
+2025-05-08 | run-359 | ResNet-18 | tabular-credit | SGD+momentum, lr=1e-3, batch=128, epochs=30 | val accuracy 0.887 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-05-08 | run-360 | MLP-3x256 | tabular-credit | SGD+momentum, lr=1e-3, batch=256, epochs=30 | val accuracy 0.8271 | время эпохи в норме, узел gpu-07.
+2025-05-08 | run-361 | ViT-S/16 | cifar10-subset | AdamW, lr=5e-4, batch=64, epochs=50 | val accuracy 0.9302 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-05-09 | run-362 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=3e-4, batch=256, epochs=20 | val accuracy 0.8402 | повторить с другим сидом для оценки разброса.
+2025-05-09 | run-363 | ViT-S/16 | digits-aug | SGD+momentum, lr=1e-3, batch=64, epochs=20 | val accuracy 0.9191 | ранняя остановка сработала раньше лимита эпох.
+2025-05-12 | run-364 | MLP-3x256 | digits-aug | SGD+momentum, lr=3e-4, batch=256, epochs=30 | val accuracy 0.8635 | валидация стабильна между эпохами, переобучения не видно.
+2025-05-12 | run-365 | ViT-S/16 | cifar10-subset | AdamW, lr=1e-3, batch=256, epochs=20 | val accuracy 0.8017 | ранняя остановка сработала раньше лимита эпох.
+2025-05-12 | run-366 | MLP-3x256 | digits-aug | SGD+momentum, lr=0.05, batch=256, epochs=30 | val accuracy 0.9605 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-05-13 | run-367 | ViT-S/16 | digits-aug | AdamW, lr=3e-4, batch=64, epochs=50 | val accuracy 0.9416 | валидация стабильна между эпохами, переобучения не видно.
+2025-05-13 | run-368 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=3e-4, batch=256, epochs=30 | val accuracy 0.899 | без замечаний, кривые обучения ровные.
+2025-05-14 | run-369 | LightGBM | digits-aug | SGD+momentum, learning_rate=5e-4, batch=128, epochs=50 | val accuracy 0.9369 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-05-14 | run-370 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=3e-4, batch=128, epochs=30 | val accuracy 0.9004 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-05-14 | run-371 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=5e-4, batch=256, epochs=30 | val accuracy 0.9547 | loss на валидации немного шумит после 15-й эпохи.
+2025-05-15 | run-372 | MLP-3x256 | digits-aug | SGD+momentum, lr=0.1, batch=256, epochs=20 | val accuracy 0.8492 | время эпохи в норме, узел gpu-07.
+2025-05-15 | run-373 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=0.1, batch=64, epochs=50 | val accuracy 0.8276 | результат в пределах разброса предыдущих запусков.
+2025-05-15 | run-374 | LightGBM | tabular-credit | SGD+momentum, learning_rate=5e-4, batch=256, epochs=50 | val accuracy 0.8753 | без замечаний, кривые обучения ровные.
+2025-05-15 | run-375 | ViT-S/16 | tabular-credit | SGD+momentum, lr=1e-3, batch=256, epochs=20 | val accuracy 0.803 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-05-16 | run-376 | ViT-S/16 | cifar10-subset | AdamW, lr=5e-4, batch=128, epochs=20 | val accuracy 0.9006 | без замечаний, кривые обучения ровные.
+2025-05-16 | run-377 | ResNet-18 | digits-aug | AdamW, lr=5e-4, batch=64, epochs=30 | val accuracy 0.9588 | результат в пределах разброса предыдущих запусков.
+2025-05-19 | run-378 | LightGBM | cifar10-subset | SGD+momentum, learning_rate=1e-3, batch=64, epochs=20 | val accuracy 0.9154 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-05-19 | run-379 | LightGBM | digits-aug | AdamW, learning_rate=0.05, batch=64, epochs=20 | val accuracy 0.8325 | результат в пределах разброса предыдущих запусков.
+2025-05-19 | run-380 | ViT-S/16 | digits-aug | SGD+momentum, lr=0.1, batch=64, epochs=20 | val accuracy 0.9035 | без замечаний, кривые обучения ровные.
+2025-05-20 | run-381 | ResNet-18 | digits-aug | AdamW, lr=0.1, batch=128, epochs=30 | val accuracy 0.8141 | время эпохи в норме, узел gpu-07.
+2025-05-20 | run-382 | ResNet-18 | tabular-credit | AdamW, lr=5e-4, batch=256, epochs=50 | val accuracy 0.9615 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-05-20 | run-383 | MLP-3x256 | tabular-credit | SGD+momentum, lr=5e-4, batch=64, epochs=30 | val accuracy 0.9478 | повторить с другим сидом для оценки разброса.
+2025-05-20 | run-384 | ResNet-18 | digits-aug | SGD+momentum, lr=0.1, batch=256, epochs=30 | val accuracy 0.9179 | ранняя остановка сработала раньше лимита эпох.
+2025-05-21 | run-385 | MLP-3x256 | cifar10-subset | AdamW, lr=0.1, batch=64, epochs=50 | val accuracy 0.9276 | результат в пределах разброса предыдущих запусков.
+2025-05-21 | run-386 | LightGBM | digits-aug | AdamW, learning_rate=0.05, batch=64, epochs=50 | val accuracy 0.8433 | loss на валидации немного шумит после 15-й эпохи.
+2025-05-21 | run-387 | ResNet-18 | cifar10-subset | AdamW, lr=0.1, batch=64, epochs=20 | val accuracy 0.8024 | ранняя остановка сработала раньше лимита эпох.
+2025-05-22 | run-388 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=3e-4, batch=128, epochs=50 | val accuracy 0.814 | время эпохи в норме, узел gpu-07.
+2025-05-22 | run-389 | ResNet-18 | cifar10-subset | SGD+momentum, lr=1e-3, batch=128, epochs=20 | val accuracy 0.8078 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-05-22 | run-390 | MLP-3x256 | tabular-credit | AdamW, lr=0.05, batch=64, epochs=50 | val accuracy 0.9449 | повторить с другим сидом для оценки разброса.
+2025-05-22 | run-391 | ViT-S/16 | digits-aug | AdamW, lr=1e-3, batch=128, epochs=30 | val accuracy 0.8951 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-05-23 | run-392 | MLP-3x256 | digits-aug | AdamW, lr=1e-3, batch=64, epochs=20 | val accuracy 0.8864 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-05-23 | run-393 | ViT-S/16 | cifar10-subset | AdamW, lr=1e-3, batch=64, epochs=50 | val accuracy 0.9573 | loss на валидации немного шумит после 15-й эпохи.
+2025-05-23 | run-394 | ViT-S/16 | tabular-credit | AdamW, lr=1e-3, batch=128, epochs=30 | val accuracy 0.8615 | loss на валидации немного шумит после 15-й эпохи.
+2025-05-26 | run-395 | MLP-3x256 | digits-aug | AdamW, lr=1e-3, batch=128, epochs=30 | val accuracy 0.8521 | результат в пределах разброса предыдущих запусков.
+2025-05-26 | run-396 | MLP-3x256 | digits-aug | AdamW, lr=3e-4, batch=128, epochs=50 | val accuracy 0.8237 | loss на валидации немного шумит после 15-й эпохи.
+2025-05-26 | run-397 | ViT-S/16 | cifar10-subset | AdamW, lr=3e-4, batch=256, epochs=50 | val accuracy 0.8057 | валидация стабильна между эпохами, переобучения не видно.
+2025-05-26 | run-398 | ResNet-18 | digits-aug | SGD+momentum, lr=0.1, batch=256, epochs=50 | val accuracy 0.8499 | результат в пределах разброса предыдущих запусков.
+2025-05-27 | run-399 | LightGBM | digits-aug | SGD+momentum, learning_rate=0.1, batch=256, epochs=20 | val accuracy 0.857 | ранняя остановка сработала раньше лимита эпох.
+2025-05-27 | run-400 | LightGBM | tabular-credit | AdamW, learning_rate=3e-4, batch=128, epochs=20 | val accuracy 0.8948 | loss на валидации немного шумит после 15-й эпохи.
+2025-05-27 | run-401 | MLP-3x256 | digits-aug | AdamW, lr=0.1, batch=256, epochs=20 | val accuracy 0.804 | без замечаний, кривые обучения ровные.
+2025-05-27 | run-402 | LightGBM | cifar10-subset | SGD+momentum, learning_rate=3e-4, batch=128, epochs=30 | val accuracy 0.8563 | ранняя остановка сработала раньше лимита эпох.
+2025-05-28 | run-403 | ViT-S/16 | digits-aug | SGD+momentum, lr=5e-4, batch=256, epochs=20 | val accuracy 0.9128 | без замечаний, кривые обучения ровные.
+2025-05-28 | run-404 | MLP-3x256 | digits-aug | AdamW, lr=0.05, batch=256, epochs=50 | val accuracy 0.9147 | результат в пределах разброса предыдущих запусков.
+2025-05-29 | run-405 | ResNet-18 | digits-aug | SGD+momentum, lr=0.1, batch=256, epochs=20 | val accuracy 0.899 | результат в пределах разброса предыдущих запусков.
+2025-05-29 | run-406 | LightGBM | digits-aug | SGD+momentum, learning_rate=0.05, batch=256, epochs=20 | val accuracy 0.8937 | ранняя остановка сработала раньше лимита эпох.
+2025-05-29 | run-407 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=0.05, batch=64, epochs=30 | val accuracy 0.8487 | время эпохи в норме, узел gpu-07.
+2025-05-30 | run-408 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=0.1, batch=128, epochs=20 | val accuracy 0.9045 | повторить с другим сидом для оценки разброса.
+2025-05-30 | run-409 | LightGBM | digits-aug | AdamW, learning_rate=0.1, batch=256, epochs=20 | val accuracy 0.9163 | результат в пределах разброса предыдущих запусков.
+2025-05-30 | run-410 | MLP-3x256 | cifar10-subset | AdamW, lr=0.1, batch=64, epochs=50 | val accuracy 0.8591 | валидация стабильна между эпохами, переобучения не видно.
+2025-06-02 | run-411 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=0.1, batch=128, epochs=30 | val accuracy 0.8333 | без замечаний, кривые обучения ровные.
+2025-06-02 | run-412 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=0.1, batch=256, epochs=30 | val accuracy 0.9372 | валидация стабильна между эпохами, переобучения не видно.
+2025-06-02 | run-413 | LightGBM | digits-aug | SGD+momentum, learning_rate=0.05, batch=256, epochs=50 | val accuracy 0.9343 | ранняя остановка сработала раньше лимита эпох.
+2025-06-02 | run-414 | ResNet-18 | cifar10-subset | AdamW, lr=5e-4, batch=128, epochs=50 | val accuracy 0.9622 | результат в пределах разброса предыдущих запусков.
+2025-06-02 | СОБЫТИЕ | С сегодняшнего дня половина запусков идёт на датасете cifar10-subset-v2 (исправлена разметка 312 изображений).
+2025-06-03 | run-415 | MLP-3x256 | tabular-credit | SGD+momentum, lr=3e-4, batch=64, epochs=50 | val accuracy 0.9561 | валидация стабильна между эпохами, переобучения не видно.
+2025-06-03 | run-416 | ResNet-18 | cifar10-subset | SGD+momentum, lr=0.1, batch=256, epochs=20 | val accuracy 0.9641 | без замечаний, кривые обучения ровные.
+2025-06-03 | run-417 | ResNet-18 | digits-aug | SGD+momentum, lr=1e-3, batch=128, epochs=50 | val accuracy 0.9346 | повторить с другим сидом для оценки разброса.
+2025-06-04 | run-418 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=0.1, batch=64, epochs=20 | val accuracy 0.9569 | время эпохи в норме, узел gpu-07.
+2025-06-04 | run-419 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=3e-4, batch=128, epochs=20 | val accuracy 0.9212 | валидация стабильна между эпохами, переобучения не видно.
+2025-06-04 | run-420 | ViT-S/16 | digits-aug | SGD+momentum, lr=3e-4, batch=256, epochs=20 | val accuracy 0.8328 | loss на валидации немного шумит после 15-й эпохи.
+2025-06-05 | run-421 | ViT-S/16 | digits-aug | SGD+momentum, lr=1e-3, batch=256, epochs=50 | val accuracy 0.9482 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-06-05 | run-422 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=3e-4, batch=256, epochs=20 | val accuracy 0.9222 | ранняя остановка сработала раньше лимита эпох.
+2025-06-05 | run-423 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=0.1, batch=64, epochs=50 | val accuracy 0.8526 | повторить с другим сидом для оценки разброса.
+2025-06-05 | run-424 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=3e-4, batch=256, epochs=50 | val accuracy 0.9552 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-06-06 | run-425 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=128, epochs=20 | val accuracy 0.8889 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-06-06 | run-426 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=1e-3, batch=256, epochs=20 | val accuracy 0.9574 | повторить с другим сидом для оценки разброса.
+2025-06-06 | run-427 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=0.1, batch=64, epochs=50 | val accuracy 0.8322 | валидация стабильна между эпохами, переобучения не видно.
+2025-06-09 | run-428 | MLP-3x256 | tabular-credit | AdamW, lr=5e-4, batch=128, epochs=50 | val accuracy 0.9375 | ранняя остановка сработала раньше лимита эпох.
+2025-06-09 | run-429 | ViT-S/16 | digits-aug | AdamW, lr=1e-3, batch=128, epochs=50 | val accuracy 0.8504 | ранняя остановка сработала раньше лимита эпох.
+2025-06-09 | run-430 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=1e-3, batch=128, epochs=20 | val accuracy 0.8161 | результат в пределах разброса предыдущих запусков.
+2025-06-10 | run-431 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=1e-3, batch=256, epochs=30 | val accuracy 0.9731 | ранняя остановка сработала раньше лимита эпох.
+2025-06-10 | run-432 | ResNet-18 | digits-aug | AdamW, lr=0.1, batch=128, epochs=20 | val accuracy 0.8328 | время эпохи в норме, узел gpu-07.
+2025-06-10 | run-433 | ResNet-18 | digits-aug | AdamW, lr=0.1, batch=256, epochs=50 | val accuracy 0.8952 | ранняя остановка сработала раньше лимита эпох.
+2025-06-11 | run-434 | LightGBM | tabular-credit | AdamW, learning_rate=5e-4, batch=64, epochs=50 | val accuracy 0.857 | без замечаний, кривые обучения ровные.
+2025-06-11 | run-435 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=1e-3, batch=128, epochs=30 | val accuracy 0.8237 | валидация стабильна между эпохами, переобучения не видно.
+2025-06-11 | run-436 | LightGBM | tabular-credit | SGD+momentum, learning_rate=5e-4, batch=256, epochs=50 | val accuracy 0.9218 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-06-11 | run-437 | ResNet-18 | tabular-credit | SGD+momentum, lr=0.1, batch=64, epochs=20 | val accuracy 0.9025 | повторить с другим сидом для оценки разброса.
+2025-06-12 | run-438 | ViT-S/16 | tabular-credit | SGD+momentum, lr=3e-4, batch=256, epochs=30 | val accuracy 0.8853 | повторить с другим сидом для оценки разброса.
+2025-06-12 | run-439 | ResNet-18 | tabular-credit | AdamW, lr=5e-4, batch=64, epochs=20 | val accuracy 0.9491 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-06-12 | run-440 | MLP-3x256 | digits-aug | SGD+momentum, lr=0.05, batch=128, epochs=20 | val accuracy 0.8059 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-06-12 | run-441 | ViT-S/16 | digits-aug | SGD+momentum, lr=5e-4, batch=64, epochs=50 | val accuracy 0.8256 | ранняя остановка сработала раньше лимита эпох.
+2025-06-13 | run-442 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=3e-4, batch=256, epochs=30 | val accuracy 0.8728 | повторить с другим сидом для оценки разброса.
+2025-06-13 | run-443 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=0.1, batch=128, epochs=50 | val accuracy 0.8141 | валидация стабильна между эпохами, переобучения не видно.
+2025-06-13 | run-444 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=1e-3, batch=256, epochs=50 | val accuracy 0.942 | валидация стабильна между эпохами, переобучения не видно.
+2025-06-16 | run-445 | LightGBM | tabular-credit | SGD+momentum, learning_rate=3e-4, batch=64, epochs=50 | val accuracy 0.8392 | повторить с другим сидом для оценки разброса.
+2025-06-16 | run-446 | MLP-3x256 | digits-aug | AdamW, lr=1e-3, batch=256, epochs=50 | val accuracy 0.8374 | повторить с другим сидом для оценки разброса.
+2025-06-16 | run-447 | ViT-S/16 | digits-aug | AdamW, lr=1e-3, batch=64, epochs=30 | val accuracy 0.8174 | результат в пределах разброса предыдущих запусков.
+2025-06-16 | run-448 | LightGBM | cifar10-subset | AdamW, learning_rate=3e-4, batch=128, epochs=20 | val accuracy 0.9365 | loss на валидации немного шумит после 15-й эпохи.
+2025-06-17 | run-449 | LightGBM | tabular-credit | AdamW, learning_rate=5e-4, batch=64, epochs=20 | val accuracy 0.9077 | повторить с другим сидом для оценки разброса.
+2025-06-17 | run-450 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=5e-4, batch=64, epochs=30 | val accuracy 0.9607 | ранняя остановка сработала раньше лимита эпох.
+2025-06-17 | run-451 | ViT-S/16 | digits-aug | SGD+momentum, lr=3e-4, batch=128, epochs=50 | val accuracy 0.8492 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-06-18 | run-452 | LightGBM | tabular-credit | AdamW, learning_rate=5e-4, batch=64, epochs=30 | val accuracy 0.8239 | результат в пределах разброса предыдущих запусков.
+2025-06-18 | run-453 | ResNet-18 | tabular-credit | SGD+momentum, lr=0.05, batch=256, epochs=50 | val accuracy 0.9009 | время эпохи в норме, узел gpu-07.
+2025-06-18 | run-454 | ViT-S/16 | tabular-credit | AdamW, lr=0.05, batch=64, epochs=30 | val accuracy 0.9168 | результат в пределах разброса предыдущих запусков.
+2025-06-19 | run-455 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=64, epochs=50 | val accuracy 0.9568 | без замечаний, кривые обучения ровные.
+2025-06-19 | run-456 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=1e-3, batch=128, epochs=50 | val accuracy 0.872 | время эпохи в норме, узел gpu-07.
+2025-06-19 | run-457 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=1e-3, batch=256, epochs=30 | val accuracy 0.8412 | результат в пределах разброса предыдущих запусков.
+2025-06-20 | run-458 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=0.05, batch=64, epochs=20 | val accuracy 0.8602 | результат в пределах разброса предыдущих запусков.
+2025-06-20 | run-459 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=0.05, batch=256, epochs=50 | val accuracy 0.8392 | валидация стабильна между эпохами, переобучения не видно.
+2025-06-20 | run-460 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=0.1, batch=128, epochs=50 | val accuracy 0.8281 | валидация стабильна между эпохами, переобучения не видно.
+2025-06-23 | run-461 | ResNet-18 | cifar10-subset | AdamW, lr=5e-4, batch=128, epochs=20 | val accuracy 0.9243 | время эпохи в норме, узел gpu-07.
+2025-06-23 | run-462 | LightGBM | digits-aug | SGD+momentum, learning_rate=5e-4, batch=128, epochs=30 | val accuracy 0.8901 | без замечаний, кривые обучения ровные.
+2025-06-23 | run-463 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=3e-4, batch=64, epochs=50 | val accuracy 0.8516 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-06-24 | run-464 | ResNet-18 | tabular-credit | AdamW, lr=3e-4, batch=64, epochs=50 | val accuracy 0.952 | повторить с другим сидом для оценки разброса.
+2025-06-24 | run-465 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=256, epochs=20 | val accuracy 0.9492 | результат в пределах разброса предыдущих запусков.
+2025-06-25 | run-466 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=1e-3, batch=256, epochs=30 | val accuracy 0.8511 | время эпохи в норме, узел gpu-07.
+2025-06-25 | run-467 | LightGBM | cifar10-subset | SGD+momentum, learning_rate=0.1, batch=128, epochs=20 | val accuracy 0.8833 | ранняя остановка сработала раньше лимита эпох.
+2025-06-26 | run-468 | MLP-3x256 | digits-aug | AdamW, lr=5e-4, batch=128, epochs=30 | val accuracy 0.8572 | результат в пределах разброса предыдущих запусков.
+2025-06-26 | run-469 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=3e-4, batch=128, epochs=30 | val accuracy 0.945 | без замечаний, кривые обучения ровные.
+2025-06-27 | run-470 | MLP-3x256 | digits-aug | SGD+momentum, lr=3e-4, batch=64, epochs=30 | val accuracy 0.8035 | повторить с другим сидом для оценки разброса.
+2025-06-27 | run-471 | ViT-S/16 | digits-aug | SGD+momentum, lr=0.1, batch=128, epochs=30 | val accuracy 0.8219 | результат в пределах разброса предыдущих запусков.
+2025-06-27 | run-472 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=0.1, batch=128, epochs=20 | val accuracy 0.8337 | валидация стабильна между эпохами, переобучения не видно.
+2025-06-30 | run-473 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=1e-3, batch=256, epochs=50 | val accuracy 0.8899 | loss на валидации немного шумит после 15-й эпохи.
+2025-06-30 | run-474 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=0.05, batch=256, epochs=50 | val accuracy 0.8741 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-06-30 | run-475 | ResNet-18 | cifar10-subset | SGD+momentum, lr=0.05, batch=128, epochs=50 | val accuracy 0.9062 | время эпохи в норме, узел gpu-07.
+2025-06-30 | run-476 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=0.1, batch=128, epochs=50 | val accuracy 0.8001 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-07-01 | run-477 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=0.05, batch=256, epochs=50 | val accuracy 0.9178 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-07-01 | run-478 | MLP-3x256 | tabular-credit | SGD+momentum, lr=0.1, batch=64, epochs=30 | val accuracy 0.9066 | без замечаний, кривые обучения ровные.
+2025-07-01 | run-479 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=64, epochs=30 | val accuracy 0.8109 | время эпохи в норме, узел gpu-07.
+2025-07-01 | run-480 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=3e-4, batch=128, epochs=20 | val accuracy 0.8302 | валидация стабильна между эпохами, переобучения не видно.
+2025-07-02 | run-481 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=1e-3, batch=256, epochs=30 | val accuracy 0.9079 | ранняя остановка сработала раньше лимита эпох.
+2025-07-02 | run-482 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=64, epochs=20 | val accuracy 0.9581 | результат в пределах разброса предыдущих запусков.
+2025-07-02 | run-483 | ViT-S/16 | cifar10-subset | AdamW, lr=0.05, batch=128, epochs=50 | val accuracy 0.9344 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-07-03 | run-484 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=64, epochs=20 | val accuracy 0.9254 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-07-03 | run-485 | ViT-S/16 | tabular-credit | SGD+momentum, lr=0.1, batch=128, epochs=20 | val accuracy 0.953 | ранняя остановка сработала раньше лимита эпох.
+2025-07-03 | run-486 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=5e-4, batch=128, epochs=20 | val accuracy 0.8012 | без замечаний, кривые обучения ровные.
+2025-07-04 | run-487 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=0.05, batch=256, epochs=20 | val accuracy 0.9071 | без замечаний, кривые обучения ровные.
+2025-07-04 | run-488 | ViT-S/16 | cifar10-subset | AdamW, lr=0.1, batch=64, epochs=20 | val accuracy 0.9282 | валидация стабильна между эпохами, переобучения не видно.
+2025-07-07 | run-489 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=0.05, batch=256, epochs=20 | val accuracy 0.9629 | валидация стабильна между эпохами, переобучения не видно.
+2025-07-07 | run-490 | ViT-S/16 | digits-aug | SGD+momentum, lr=0.1, batch=256, epochs=50 | val accuracy 0.8215 | без замечаний, кривые обучения ровные.
+2025-07-07 | run-491 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=128, epochs=50 | val accuracy 0.8872 | ранняя остановка сработала раньше лимита эпох.
+2025-07-07 | run-492 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=3e-4, batch=128, epochs=50 | val accuracy 0.8998 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-07-08 | run-493 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=3e-4, batch=256, epochs=50 | val accuracy 0.8425 | время эпохи в норме, узел gpu-07.
+2025-07-08 | run-494 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=0.05, batch=128, epochs=30 | val accuracy 0.91 | повторить с другим сидом для оценки разброса.
+2025-07-08 | run-495 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=256, epochs=20 | val accuracy 0.833 | результат в пределах разброса предыдущих запусков.
+2025-07-09 | run-496 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=0.1, batch=64, epochs=30 | val accuracy 0.9107 | ранняя остановка сработала раньше лимита эпох.
+2025-07-09 | run-497 | ResNet-18 | tabular-credit | SGD+momentum, lr=1e-3, batch=64, epochs=30 | val accuracy 0.9052 | без замечаний, кривые обучения ровные.
+2025-07-09 | run-498 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=1e-3, batch=128, epochs=50 | val accuracy 0.9228 | валидация стабильна между эпохами, переобучения не видно.
+2025-07-10 | run-499 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=3e-4, batch=256, epochs=20 | val accuracy 0.9082 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-07-10 | run-500 | LightGBM | digits-aug | AdamW, learning_rate=3e-4, batch=256, epochs=50 | val accuracy 0.8821 | валидация стабильна между эпохами, переобучения не видно.
+2025-07-10 | run-501 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=5e-4, batch=256, epochs=20 | val accuracy 0.8009 | loss на валидации немного шумит после 15-й эпохи.
+2025-07-11 | run-502 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=1e-3, batch=64, epochs=30 | val accuracy 0.9061 | результат в пределах разброса предыдущих запусков.
+2025-07-11 | run-503 | LightGBM | tabular-credit | SGD+momentum, learning_rate=1e-3, batch=64, epochs=30 | val accuracy 0.9273 | loss на валидации немного шумит после 15-й эпохи.
+2025-07-11 | run-504 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=0.05, batch=64, epochs=50 | val accuracy 0.9261 | время эпохи в норме, узел gpu-07.
+2025-07-14 | run-505 | MLP-3x256 | cifar10-subset | AdamW, lr=0.05, batch=128, epochs=50 | val accuracy 0.8629 | время эпохи в норме, узел gpu-07.
+2025-07-14 | run-506 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=0.1, batch=256, epochs=20 | val accuracy 0.8004 | валидация стабильна между эпохами, переобучения не видно.
+2025-07-14 | run-507 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=256, epochs=30 | val accuracy 0.8861 | loss на валидации немного шумит после 15-й эпохи.
+2025-07-14 | run-508 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=5e-4, batch=128, epochs=30 | val accuracy 0.8999 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-07-15 | run-509 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=0.05, batch=256, epochs=30 | val accuracy 0.8449 | без замечаний, кривые обучения ровные.
+2025-07-15 | run-510 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=5e-4, batch=64, epochs=20 | val accuracy 0.9176 | результат в пределах разброса предыдущих запусков.
+2025-07-15 | run-511 | MLP-3x256 | tabular-credit | SGD+momentum, lr=0.1, batch=256, epochs=50 | val accuracy 0.8734 | результат в пределах разброса предыдущих запусков.
+2025-07-15 | run-512 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=3e-4, batch=64, epochs=20 | val accuracy 0.8508 | валидация стабильна между эпохами, переобучения не видно.
+2025-07-16 | run-513 | MLP-3x256 | tabular-credit | SGD+momentum, lr=0.05, batch=64, epochs=30 | val accuracy 0.9419 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-07-16 | run-514 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=1e-3, batch=256, epochs=30 | val accuracy 0.8595 | ранняя остановка сработала раньше лимита эпох.
+2025-07-16 | run-515 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=0.1, batch=64, epochs=30 | val accuracy 0.823 | время эпохи в норме, узел gpu-07.
+2025-07-17 | run-516 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=0.1, batch=64, epochs=50 | val accuracy 0.8864 | результат в пределах разброса предыдущих запусков.
+2025-07-17 | run-517 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=5e-4, batch=128, epochs=30 | val accuracy 0.9518 | без замечаний, кривые обучения ровные.
+2025-07-18 | run-518 | ResNet-18 | digits-aug | AdamW, lr=5e-4, batch=256, epochs=30 | val accuracy 0.9085 | повторить с другим сидом для оценки разброса.
+2025-07-18 | run-519 | ResNet-18 | tabular-credit | SGD+momentum, lr=0.05, batch=64, epochs=30 | val accuracy 0.9044 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-07-18 | run-520 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=0.05, batch=64, epochs=30 | val accuracy 0.824 | время эпохи в норме, узел gpu-07.
+2025-07-21 | run-521 | ResNet-18 | tabular-credit | SGD+momentum, lr=5e-4, batch=128, epochs=30 | val accuracy 0.8481 | время эпохи в норме, узел gpu-07.
+2025-07-21 | run-522 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=5e-4, batch=128, epochs=20 | val accuracy 0.9325 | валидация стабильна между эпохами, переобучения не видно.
+2025-07-21 | run-523 | MLP-3x256 | cifar10-subset | AdamW, lr=5e-4, batch=128, epochs=50 | val accuracy 0.8269 | валидация стабильна между эпохами, переобучения не видно.
+2025-07-22 | run-524 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=64, epochs=20 | val accuracy 0.855 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-07-22 | run-525 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=0.05, batch=64, epochs=50 | val accuracy 0.9582 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-07-23 | run-526 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=0.05, batch=256, epochs=20 | val accuracy 0.8765 | повторить с другим сидом для оценки разброса.
+2025-07-23 | run-527 | ResNet-18 | cifar10-subset | AdamW, lr=0.05, batch=64, epochs=30 | val accuracy 0.9002 | валидация стабильна между эпохами, переобучения не видно.
+2025-07-24 | run-528 | ViT-S/16 | tabular-credit | SGD+momentum, lr=3e-4, batch=256, epochs=30 | val accuracy 0.8876 | loss на валидации немного шумит после 15-й эпохи.
+2025-07-24 | run-529 | ViT-S/16 | tabular-credit | SGD+momentum, lr=3e-4, batch=256, epochs=20 | val accuracy 0.9512 | время эпохи в норме, узел gpu-07.
+2025-07-25 | run-530 | MLP-3x256 | digits-aug | AdamW, lr=5e-4, batch=128, epochs=30 | val accuracy 0.8852 | без замечаний, кривые обучения ровные.
+2025-07-25 | run-531 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=3e-4, batch=64, epochs=20 | val accuracy 0.9534 | результат в пределах разброса предыдущих запусков.
+2025-07-25 | run-532 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=1e-3, batch=64, epochs=20 | val accuracy 0.8532 | loss на валидации немного шумит после 15-й эпохи.
+2025-07-28 | run-533 | LightGBM | digits-aug | SGD+momentum, learning_rate=0.1, batch=128, epochs=30 | val accuracy 0.9627 | без замечаний, кривые обучения ровные.
+2025-07-28 | run-534 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=5e-4, batch=64, epochs=20 | val accuracy 0.8726 | результат в пределах разброса предыдущих запусков.
+2025-07-28 | run-535 | MLP-3x256 | tabular-credit | SGD+momentum, lr=3e-4, batch=128, epochs=20 | val accuracy 0.9648 | без замечаний, кривые обучения ровные.
+2025-07-28 | run-536 | MLP-3x256 | cifar10-subset | AdamW, lr=0.1, batch=64, epochs=20 | val accuracy 0.9402 | без замечаний, кривые обучения ровные.
+2025-07-29 | run-537 | LightGBM | cifar10-subset | AdamW, learning_rate=3e-4, batch=128, epochs=30 | val accuracy 0.9208 | loss на валидации немного шумит после 15-й эпохи.
+2025-07-29 | run-538 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=0.1, batch=256, epochs=20 | val accuracy 0.9216 | результат в пределах разброса предыдущих запусков.
+2025-07-29 | run-539 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=1e-3, batch=64, epochs=30 | val accuracy 0.8955 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-07-30 | run-540 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=0.05, batch=128, epochs=50 | val accuracy 0.8544 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-07-30 | run-541 | MLP-3x256 | tabular-credit | SGD+momentum, lr=5e-4, batch=128, epochs=50 | val accuracy 0.9534 | без замечаний, кривые обучения ровные.
+2025-07-30 | run-542 | ViT-S/16 | digits-aug | SGD+momentum, lr=5e-4, batch=256, epochs=50 | val accuracy 0.8665 | повторить с другим сидом для оценки разброса.
+2025-07-31 | run-543 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=0.1, batch=64, epochs=20 | val accuracy 0.9553 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-07-31 | run-544 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=1e-3, batch=64, epochs=30 | val accuracy 0.8794 | повторить с другим сидом для оценки разброса.
+2025-07-31 | run-545 | ResNet-18 | cifar10-subset | AdamW, lr=1e-3, batch=256, epochs=20 | val accuracy 0.9303 | повторить с другим сидом для оценки разброса.
+2025-08-01 | run-546 | ViT-S/16 | tabular-credit | AdamW, lr=1e-3, batch=64, epochs=30 | val accuracy 0.8621 | время эпохи в норме, узел gpu-07.
+2025-08-01 | run-547 | ViT-S/16 | digits-aug | SGD+momentum, lr=0.1, batch=64, epochs=30 | val accuracy 0.8474 | валидация стабильна между эпохами, переобучения не видно.
+2025-08-01 | run-548 | ViT-S/16 | cifar10-subset | AdamW, lr=5e-4, batch=256, epochs=30 | val accuracy 0.8455 | повторить с другим сидом для оценки разброса.
+2025-08-04 | run-549 | LightGBM | cifar10-subset | SGD+momentum, learning_rate=1e-3, batch=128, epochs=30 | val accuracy 0.8103 | время эпохи в норме, узел gpu-07.
+2025-08-04 | run-550 | LightGBM | digits-aug | AdamW, learning_rate=5e-4, batch=256, epochs=30 | val accuracy 0.8108 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-08-04 | run-551 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=5e-4, batch=64, epochs=50 | val accuracy 0.8547 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-08-04 | run-552 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=3e-4, batch=256, epochs=30 | val accuracy 0.9212 | результат в пределах разброса предыдущих запусков.
+2025-08-05 | run-553 | MLP-3x256 | tabular-credit | SGD+momentum, lr=5e-4, batch=64, epochs=30 | val accuracy 0.8048 | валидация стабильна между эпохами, переобучения не видно.
+2025-08-05 | run-554 | ViT-S/16 | tabular-credit | SGD+momentum, lr=5e-4, batch=128, epochs=30 | val accuracy 0.9001 | без замечаний, кривые обучения ровные.
+2025-08-06 | run-555 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=5e-4, batch=256, epochs=20 | val accuracy 0.9405 | валидация стабильна между эпохами, переобучения не видно.
+2025-08-06 | run-556 | MLP-3x256 | digits-aug | SGD+momentum, lr=0.1, batch=64, epochs=30 | val accuracy 0.9059 | loss на валидации немного шумит после 15-й эпохи.
+2025-08-06 | run-557 | ViT-S/16 | digits-aug | SGD+momentum, lr=0.1, batch=64, epochs=20 | val accuracy 0.8278 | время эпохи в норме, узел gpu-07.
+2025-08-07 | run-558 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=1e-3, batch=128, epochs=30 | val accuracy 0.9309 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-08-07 | run-559 | LightGBM | tabular-credit | AdamW, learning_rate=5e-4, batch=128, epochs=20 | val accuracy 0.9441 | результат в пределах разброса предыдущих запусков.
+2025-08-08 | run-560 | MLP-3x256 | tabular-credit | AdamW, lr=0.1, batch=64, epochs=20 | val accuracy 0.8576 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-08-08 | run-561 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=0.05, batch=128, epochs=50 | val accuracy 0.8255 | повторить с другим сидом для оценки разброса.
+2025-08-11 | run-562 | ResNet-18 | cifar10-subset | AdamW, lr=0.05, batch=64, epochs=50 | val accuracy 0.8679 | время эпохи в норме, узел gpu-07.
+2025-08-11 | run-563 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=0.1, batch=64, epochs=20 | val accuracy 0.9182 | повторить с другим сидом для оценки разброса.
+2025-08-11 | run-564 | ResNet-18 | tabular-credit | SGD+momentum, lr=3e-4, batch=128, epochs=20 | val accuracy 0.8885 | без замечаний, кривые обучения ровные.
+2025-08-11 | run-565 | ResNet-18 | cifar10-subset | SGD+momentum, lr=3e-4, batch=256, epochs=50 | val accuracy 0.886 | валидация стабильна между эпохами, переобучения не видно.
+2025-08-12 | run-566 | LightGBM | cifar10-subset | SGD+momentum, learning_rate=5e-4, batch=64, epochs=50 | val accuracy 0.9476 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-08-12 | run-567 | ResNet-18 | tabular-credit | AdamW, lr=5e-4, batch=128, epochs=20 | val accuracy 0.9589 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-08-12 | run-568 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=0.1, batch=128, epochs=20 | val accuracy 0.95 | ранняя остановка сработала раньше лимита эпох.
+2025-08-13 | run-569 | MLP-3x256 | tabular-credit | AdamW, lr=3e-4, batch=128, epochs=50 | val accuracy 0.9138 | валидация стабильна между эпохами, переобучения не видно.
+2025-08-13 | run-570 | ResNet-18 | cifar10-subset | AdamW, lr=0.05, batch=64, epochs=50 | val accuracy 0.8633 | время эпохи в норме, узел gpu-07.
+2025-08-13 | run-571 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=0.05, batch=128, epochs=20 | val accuracy 0.8669 | ранняя остановка сработала раньше лимита эпох.
+2025-08-14 | run-572 | LightGBM | digits-aug | AdamW, learning_rate=0.1, batch=256, epochs=20 | val accuracy 0.9339 | без замечаний, кривые обучения ровные.
+2025-08-14 | run-573 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=3e-4, batch=256, epochs=20 | val accuracy 0.8558 | время эпохи в норме, узел gpu-07.
+2025-08-15 | run-574 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=128, epochs=20 | val accuracy 0.8544 | повторить с другим сидом для оценки разброса.
+2025-08-15 | run-575 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=1e-3, batch=128, epochs=20 | val accuracy 0.9249 | ранняя остановка сработала раньше лимита эпох.
+2025-08-15 | run-576 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=3e-4, batch=128, epochs=50 | val accuracy 0.8924 | loss на валидации немного шумит после 15-й эпохи.
+2025-08-18 | run-577 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=0.05, batch=256, epochs=20 | val accuracy 0.837 | валидация стабильна между эпохами, переобучения не видно.
+2025-08-18 | run-578 | ViT-S/16 | tabular-credit | AdamW, lr=5e-4, batch=256, epochs=50 | val accuracy 0.8188 | повторить с другим сидом для оценки разброса.
+2025-08-19 | run-579 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=3e-4, batch=64, epochs=50 | val accuracy 0.8073 | результат в пределах разброса предыдущих запусков.
+2025-08-19 | run-580 | LightGBM | cifar10-subset | AdamW, learning_rate=0.1, batch=128, epochs=50 | val accuracy 0.8439 | валидация стабильна между эпохами, переобучения не видно.
+2025-08-19 | run-581 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=1e-3, batch=256, epochs=20 | val accuracy 0.9643 | loss на валидации немного шумит после 15-й эпохи.
+2025-08-19 | run-582 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=3e-4, batch=64, epochs=20 | val accuracy 0.8398 | ранняя остановка сработала раньше лимита эпох.
+2025-08-19 | СОБЫТИЕ | Обнаружена утечка данных: в tabular-credit пересекались train и test по client_id; результаты всех запусков на tabular-credit с 1 по 19 августа недействительны.
+2025-08-20 | run-583 | LightGBM | tabular-credit | SGD+momentum, learning_rate=1e-3, batch=256, epochs=20 | val accuracy 0.9448 | ранняя остановка сработала раньше лимита эпох.
+2025-08-20 | run-584 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=0.1, batch=64, epochs=20 | val accuracy 0.8496 | ранняя остановка сработала раньше лимита эпох.
+2025-08-21 | run-585 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=5e-4, batch=256, epochs=30 | val accuracy 0.9207 | повторить с другим сидом для оценки разброса.
+2025-08-21 | run-586 | MLP-3x256 | cifar10-subset | AdamW, lr=1e-3, batch=64, epochs=30 | val accuracy 0.8788 | ранняя остановка сработала раньше лимита эпох.
+2025-08-21 | run-587 | LightGBM | cifar10-subset | AdamW, learning_rate=0.05, batch=128, epochs=50 | val accuracy 0.9348 | повторить с другим сидом для оценки разброса.
+2025-08-22 | run-588 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=128, epochs=30 | val accuracy 0.9356 | повторить с другим сидом для оценки разброса.
+2025-08-22 | run-589 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=0.05, batch=64, epochs=20 | val accuracy 0.8979 | ранняя остановка сработала раньше лимита эпох.
+2025-08-25 | run-590 | LightGBM | tabular-credit | SGD+momentum, learning_rate=0.1, batch=256, epochs=20 | val accuracy 0.9501 | ранняя остановка сработала раньше лимита эпох.
+2025-08-25 | run-591 | MLP-3x256 | cifar10-subset | AdamW, lr=3e-4, batch=64, epochs=20 | val accuracy 0.9078 | повторить с другим сидом для оценки разброса.
+2025-08-25 | run-592 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=0.05, batch=256, epochs=50 | val accuracy 0.9283 | повторить с другим сидом для оценки разброса.
+2025-08-26 | run-593 | ViT-S/16 | cifar10-subset | SGD+momentum, lr=3e-4, batch=128, epochs=50 | val accuracy 0.817 | время эпохи в норме, узел gpu-07.
+2025-08-26 | run-594 | ResNet-18 | digits-aug | AdamW, lr=0.05, batch=256, epochs=30 | val accuracy 0.8863 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-08-26 | run-595 | LightGBM | cifar10-subset | AdamW, learning_rate=1e-3, batch=128, epochs=30 | val accuracy 0.9046 | loss на валидации немного шумит после 15-й эпохи.
+2025-08-27 | run-596 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=0.05, batch=64, epochs=50 | val accuracy 0.9318 | валидация стабильна между эпохами, переобучения не видно.
+2025-08-27 | run-597 | MLP-3x256 | tabular-credit | SGD+momentum, lr=5e-4, batch=128, epochs=50 | val accuracy 0.8732 | loss на валидации немного шумит после 15-й эпохи.
+2025-08-27 | run-598 | ViT-S/16 | digits-aug | SGD+momentum, lr=5e-4, batch=256, epochs=30 | val accuracy 0.9501 | время эпохи в норме, узел gpu-07.
+2025-08-28 | run-599 | MLP-3x256 | digits-aug | SGD+momentum, lr=0.05, batch=64, epochs=50 | val accuracy 0.931 | валидация стабильна между эпохами, переобучения не видно.
+2025-08-28 | run-600 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=1e-3, batch=64, epochs=50 | val accuracy 0.9378 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-08-29 | run-601 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=3e-4, batch=128, epochs=50 | val accuracy 0.9102 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-08-29 | run-602 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=0.05, batch=256, epochs=30 | val accuracy 0.8353 | без замечаний, кривые обучения ровные.
+2025-08-29 | run-603 | ViT-S/16 | cifar10-subset | AdamW, lr=1e-3, batch=64, epochs=50 | val accuracy 0.861 | время эпохи в норме, узел gpu-07.
+2025-09-01 | run-604 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=0.1, batch=256, epochs=50 | val accuracy 0.8517 | результат в пределах разброса предыдущих запусков.
+2025-09-01 | run-605 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=3e-4, batch=64, epochs=20 | val accuracy 0.8162 | валидация стабильна между эпохами, переобучения не видно.
+2025-09-01 | run-606 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=0.05, batch=256, epochs=50 | val accuracy 0.8023 | loss на валидации немного шумит после 15-й эпохи.
+2025-09-02 | run-607 | ViT-S/16 | digits-aug | SGD+momentum, lr=0.05, batch=64, epochs=30 | val accuracy 0.8981 | время эпохи в норме, узел gpu-07.
+2025-09-02 | run-608 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=1e-3, batch=256, epochs=50 | val accuracy 0.9355 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-09-02 | run-609 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=0.1, batch=128, epochs=50 | val accuracy 0.9347 | валидация стабильна между эпохами, переобучения не видно.
+2025-09-03 | run-610 | LightGBM | cifar10-subset | SGD+momentum, learning_rate=0.1, batch=64, epochs=50 | val accuracy 0.8174 | без замечаний, кривые обучения ровные.
+2025-09-03 | run-611 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=1e-3, batch=64, epochs=30 | val accuracy 0.8853 | время эпохи в норме, узел gpu-07.
+2025-09-03 | run-612 | LightGBM | digits-aug | SGD+momentum, learning_rate=5e-4, batch=256, epochs=30 | val accuracy 0.8331 | результат в пределах разброса предыдущих запусков.
+2025-09-03 | run-613 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=0.1, batch=256, epochs=30 | val accuracy 0.928 | валидация стабильна между эпохами, переобучения не видно.
+2025-09-04 | run-614 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=128, epochs=50 | val accuracy 0.9343 | время эпохи в норме, узел gpu-07.
+2025-09-04 | run-615 | ViT-S/16 | tabular-credit | SGD+momentum, lr=5e-4, batch=64, epochs=50 | val accuracy 0.8785 | повторить с другим сидом для оценки разброса.
+2025-09-04 | run-616 | ResNet-18 | tabular-credit | SGD+momentum, lr=5e-4, batch=256, epochs=30 | val accuracy 0.8094 | повторить с другим сидом для оценки разброса.
+2025-09-05 | run-617 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=256, epochs=50 | val accuracy 0.9526 | loss на валидации немного шумит после 15-й эпохи.
+2025-09-05 | run-618 | ResNet-18 | tabular-credit | AdamW, lr=0.05, batch=64, epochs=30 | val accuracy 0.9371 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-09-05 | run-619 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=3e-4, batch=64, epochs=20 | val accuracy 0.8403 | без замечаний, кривые обучения ровные.
+2025-09-08 | run-620 | MLP-3x256 | digits-aug | AdamW, lr=5e-4, batch=64, epochs=30 | val accuracy 0.8042 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-09-08 | run-621 | ViT-S/16 | tabular-credit | AdamW, lr=0.05, batch=128, epochs=20 | val accuracy 0.8927 | повторить с другим сидом для оценки разброса.
+2025-09-08 | run-622 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=0.1, batch=256, epochs=30 | val accuracy 0.909 | валидация стабильна между эпохами, переобучения не видно.
+2025-09-08 | run-623 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=5e-4, batch=64, epochs=50 | val accuracy 0.8552 | время эпохи в норме, узел gpu-07.
+2025-09-09 | run-624 | ResNet-18 | tabular-credit | SGD+momentum, lr=1e-3, batch=64, epochs=50 | val accuracy 0.8865 | валидация стабильна между эпохами, переобучения не видно.
+2025-09-09 | run-625 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=3e-4, batch=64, epochs=50 | val accuracy 0.9317 | результат в пределах разброса предыдущих запусков.
+2025-09-09 | run-626 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=128, epochs=50 | val accuracy 0.8284 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-09-09 | run-627 | LightGBM | cifar10-subset | SGD+momentum, learning_rate=1e-3, batch=256, epochs=20 | val accuracy 0.8098 | повторить с другим сидом для оценки разброса.
+2025-09-10 | run-628 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=0.1, batch=64, epochs=20 | val accuracy 0.8256 | повторить с другим сидом для оценки разброса.
+2025-09-10 | run-629 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=256, epochs=20 | val accuracy 0.8568 | время эпохи в норме, узел gpu-07.
+2025-09-10 | run-630 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=256, epochs=50 | val accuracy 0.8142 | loss на валидации немного шумит после 15-й эпохи.
+2025-09-11 | run-631 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=0.1, batch=64, epochs=20 | val accuracy 0.8416 | повторить с другим сидом для оценки разброса.
+2025-09-11 | run-632 | ViT-S/16 | digits-aug | AdamW, lr=5e-4, batch=256, epochs=50 | val accuracy 0.896 | валидация стабильна между эпохами, переобучения не видно.
+2025-09-11 | run-633 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=128, epochs=30 | val accuracy 0.8737 | loss на валидации немного шумит после 15-й эпохи.
+2025-09-12 | run-634 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=5e-4, batch=64, epochs=30 | val accuracy 0.8739 | loss на валидации немного шумит после 15-й эпохи.
+2025-09-12 | run-635 | LightGBM | tabular-credit | AdamW, learning_rate=0.05, batch=64, epochs=20 | val accuracy 0.9595 | результат в пределах разброса предыдущих запусков.
+2025-09-15 | run-636 | ViT-S/16 | tabular-credit | AdamW, lr=1e-3, batch=256, epochs=20 | val accuracy 0.8728 | без замечаний, кривые обучения ровные.
+2025-09-15 | run-637 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=0.05, batch=256, epochs=50 | val accuracy 0.8005 | время эпохи в норме, узел gpu-07.
+2025-09-15 | run-638 | MLP-3x256 | tabular-credit | SGD+momentum, lr=0.1, batch=128, epochs=30 | val accuracy 0.8702 | без замечаний, кривые обучения ровные.
+2025-09-15 | run-639 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=1e-3, batch=128, epochs=20 | val accuracy 0.8832 | ранняя остановка сработала раньше лимита эпох.
+2025-09-16 | run-640 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=128, epochs=50 | val accuracy 0.8792 | время эпохи в норме, узел gpu-07.
+2025-09-16 | run-641 | LightGBM | cifar10-subset | SGD+momentum, learning_rate=3e-4, batch=128, epochs=20 | val accuracy 0.8448 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-09-16 | run-642 | MLP-3x256 | cifar10-subset | AdamW, lr=3e-4, batch=256, epochs=30 | val accuracy 0.9406 | повторить с другим сидом для оценки разброса.
+2025-09-17 | run-643 | ViT-S/16 | tabular-credit | SGD+momentum, lr=5e-4, batch=256, epochs=30 | val accuracy 0.9473 | повторить с другим сидом для оценки разброса.
+2025-09-17 | run-644 | ResNet-18 | tabular-credit | SGD+momentum, lr=5e-4, batch=64, epochs=30 | val accuracy 0.8511 | результат в пределах разброса предыдущих запусков.
+2025-09-17 | run-645 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=0.05, batch=64, epochs=50 | val accuracy 0.9333 | повторить с другим сидом для оценки разброса.
+2025-09-18 | run-646 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=3e-4, batch=256, epochs=30 | val accuracy 0.8869 | валидация стабильна между эпохами, переобучения не видно.
+2025-09-18 | run-647 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=3e-4, batch=64, epochs=30 | val accuracy 0.8507 | время эпохи в норме, узел gpu-07.
+2025-09-18 | run-648 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=5e-4, batch=128, epochs=20 | val accuracy 0.8948 | без замечаний, кривые обучения ровные.
+2025-09-18 | run-649 | LightGBM | tabular-credit | AdamW, learning_rate=0.05, batch=256, epochs=50 | val accuracy 0.843 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-09-19 | run-650 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=0.1, batch=128, epochs=50 | val accuracy 0.8798 | время эпохи в норме, узел gpu-07.
+2025-09-19 | run-651 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=0.1, batch=128, epochs=50 | val accuracy 0.9627 | loss на валидации немного шумит после 15-й эпохи.
+2025-09-22 | run-652 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=128, epochs=30 | val accuracy 0.9338 | ранняя остановка сработала раньше лимита эпох.
+2025-09-22 | run-653 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=3e-4, batch=256, epochs=30 | val accuracy 0.8533 | повторить с другим сидом для оценки разброса.
+2025-09-22 | run-654 | ResNet-18 | cifar10-subset | AdamW, lr=5e-4, batch=128, epochs=50 | val accuracy 0.8343 | валидация стабильна между эпохами, переобучения не видно.
+2025-09-23 | run-655 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=3e-4, batch=256, epochs=50 | val accuracy 0.8451 | повторить с другим сидом для оценки разброса.
+2025-09-23 | run-656 | ViT-S/16 | tabular-credit | SGD+momentum, lr=3e-4, batch=64, epochs=50 | val accuracy 0.9415 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-09-23 | run-657 | MLP-3x256 | cifar10-subset | AdamW, lr=0.1, batch=256, epochs=30 | val accuracy 0.8599 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-09-23 | run-658 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=0.1, batch=256, epochs=20 | val accuracy 0.8084 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-09-24 | run-659 | ResNet-18 | cifar10-subset | SGD+momentum, lr=5e-4, batch=128, epochs=20 | val accuracy 0.8189 | время эпохи в норме, узел gpu-07.
+2025-09-24 | run-660 | LightGBM | cifar10-subset | AdamW, learning_rate=0.05, batch=128, epochs=20 | val accuracy 0.8792 | повторить с другим сидом для оценки разброса.
+2025-09-24 | run-661 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=0.05, batch=256, epochs=20 | val accuracy 0.8786 | ранняя остановка сработала раньше лимита эпох.
+2025-09-24 | run-662 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=5e-4, batch=128, epochs=20 | val accuracy 0.8288 | результат в пределах разброса предыдущих запусков.
+2025-09-25 | run-663 | ViT-S/16 | tabular-credit | SGD+momentum, lr=0.05, batch=128, epochs=50 | val accuracy 0.8315 | повторить с другим сидом для оценки разброса.
+2025-09-25 | run-664 | ViT-S/16 | tabular-credit | SGD+momentum, lr=0.05, batch=64, epochs=20 | val accuracy 0.8433 | результат в пределах разброса предыдущих запусков.
+2025-09-25 | run-665 | ResNet-18 | digits-aug | SGD+momentum, lr=0.1, batch=128, epochs=30 | val accuracy 0.8456 | время эпохи в норме, узел gpu-07.
+2025-09-25 | run-666 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=1e-3, batch=64, epochs=30 | val accuracy 0.8595 | без замечаний, кривые обучения ровные.
+2025-09-26 | run-667 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=0.05, batch=64, epochs=50 | val accuracy 0.8547 | ранняя остановка сработала раньше лимита эпох.
+2025-09-26 | run-668 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=5e-4, batch=128, epochs=50 | val accuracy 0.8073 | валидация стабильна между эпохами, переобучения не видно.
+2025-09-29 | run-669 | ResNet-18 | digits-aug | AdamW, lr=3e-4, batch=128, epochs=30 | val accuracy 0.8977 | валидация стабильна между эпохами, переобучения не видно.
+2025-09-29 | run-670 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=0.1, batch=128, epochs=50 | val accuracy 0.8395 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-09-30 | run-671 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=1e-3, batch=64, epochs=30 | val accuracy 0.9438 | результат в пределах разброса предыдущих запусков.
+2025-09-30 | run-672 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=3e-4, batch=256, epochs=30 | val accuracy 0.8716 | ранняя остановка сработала раньше лимита эпох.
+2025-09-30 | run-673 | LightGBM | cifar10-subset | AdamW, learning_rate=0.1, batch=256, epochs=30 | val accuracy 0.9642 | повторить с другим сидом для оценки разброса.
+2025-09-30 | run-674 | MLP-3x256 | cifar10-subset | AdamW, lr=5e-4, batch=128, epochs=50 | val accuracy 0.8637 | результат в пределах разброса предыдущих запусков.
+2025-10-01 | run-675 | LightGBM | digits-aug | AdamW, learning_rate=1e-3, batch=256, epochs=50 | val accuracy 0.8493 | время эпохи в норме, узел gpu-07.
+2025-10-01 | run-676 | LightGBM | digits-aug | SGD+momentum, learning_rate=3e-4, batch=128, epochs=30 | val accuracy 0.9423 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-10-01 | run-677 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=3e-4, batch=128, epochs=30 | val accuracy 0.9391 | время эпохи в норме, узел gpu-07.
+2025-10-01 | run-678 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=5e-4, batch=128, epochs=20 | val accuracy 0.8351 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-10-02 | run-679 | MLP-3x256 | digits-aug | SGD+momentum, lr=0.05, batch=64, epochs=50 | val accuracy 0.9121 | валидация стабильна между эпохами, переобучения не видно.
+2025-10-02 | run-680 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=0.05, batch=256, epochs=20 | val accuracy 0.8328 | без замечаний, кривые обучения ровные.
+2025-10-02 | run-681 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=0.05, batch=128, epochs=50 | val accuracy 0.8067 | без замечаний, кривые обучения ровные.
+2025-10-03 | run-682 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=3e-4, batch=256, epochs=30 | val accuracy 0.9484 | ранняя остановка сработала раньше лимита эпох.
+2025-10-03 | run-683 | ViT-S/16 | tabular-credit | AdamW, lr=1e-3, batch=256, epochs=20 | val accuracy 0.8445 | время эпохи в норме, узел gpu-07.
+2025-10-06 | run-684 | ResNet-18 | cifar10-subset | SGD+momentum, lr=5e-4, batch=256, epochs=20 | val accuracy 0.8498 | ранняя остановка сработала раньше лимита эпох.
+2025-10-06 | run-685 | MLP-3x256 | digits-aug | AdamW, lr=1e-3, batch=64, epochs=50 | val accuracy 0.8276 | ранняя остановка сработала раньше лимита эпох.
+2025-10-06 | run-686 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=1e-3, batch=128, epochs=50 | val accuracy 0.9571 | время эпохи в норме, узел gpu-07.
+2025-10-07 | run-687 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=0.05, batch=64, epochs=50 | val accuracy 0.8273 | валидация стабильна между эпохами, переобучения не видно.
+2025-10-07 | run-688 | ResNet-18 | digits-aug | SGD+momentum, lr=5e-4, batch=256, epochs=50 | val accuracy 0.8458 | без замечаний, кривые обучения ровные.
+2025-10-07 | run-689 | LightGBM | tabular-credit | AdamW, learning_rate=0.1, batch=64, epochs=20 | val accuracy 0.8966 | результат в пределах разброса предыдущих запусков.
+2025-10-08 | run-690 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=3e-4, batch=256, epochs=20 | val accuracy 0.8061 | повторить с другим сидом для оценки разброса.
+2025-10-08 | run-691 | MLP-3x256 | digits-aug | AdamW, lr=5e-4, batch=256, epochs=50 | val accuracy 0.8999 | без замечаний, кривые обучения ровные.
+2025-10-09 | run-692 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=256, epochs=50 | val accuracy 0.875 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-10-09 | run-693 | LightGBM | tabular-credit | AdamW, learning_rate=1e-3, batch=256, epochs=20 | val accuracy 0.9061 | валидация стабильна между эпохами, переобучения не видно.
+2025-10-10 | run-694 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=0.1, batch=128, epochs=50 | val accuracy 0.8414 | loss на валидации немного шумит после 15-й эпохи.
+2025-10-10 | run-695 | LightGBM | digits-aug | AdamW, learning_rate=0.1, batch=64, epochs=50 | val accuracy 0.9327 | ранняя остановка сработала раньше лимита эпох.
+2025-10-10 | run-696 | ResNet-18 | digits-aug | SGD+momentum, lr=0.05, batch=256, epochs=20 | val accuracy 0.9304 | результат в пределах разброса предыдущих запусков.
+2025-10-13 | run-697 | MLP-3x256 | tabular-credit | AdamW, lr=5e-4, batch=128, epochs=20 | val accuracy 0.8702 | валидация стабильна между эпохами, переобучения не видно.
+2025-10-13 | run-698 | MLP-3x256 | tabular-credit | AdamW, lr=0.1, batch=256, epochs=50 | val accuracy 0.9099 | без замечаний, кривые обучения ровные.
+2025-10-13 | run-699 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=3e-4, batch=64, epochs=50 | val accuracy 0.8914 | время эпохи в норме, узел gpu-07.
+2025-10-14 | run-700 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=64, epochs=20 | val accuracy 0.8634 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-10-14 | run-701 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=1e-3, batch=256, epochs=50 | val accuracy 0.8707 | без замечаний, кривые обучения ровные.
+2025-10-14 | run-702 | ViT-S/16 | tabular-credit | SGD+momentum, lr=3e-4, batch=128, epochs=30 | val accuracy 0.9443 | loss на валидации немного шумит после 15-й эпохи.
+2025-10-15 | run-703 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=0.05, batch=128, epochs=30 | val accuracy 0.9443 | loss на валидации немного шумит после 15-й эпохи.
+2025-10-15 | run-704 | ViT-S/16 | cifar10-subset | AdamW, lr=0.05, batch=64, epochs=30 | val accuracy 0.9294 | повторить с другим сидом для оценки разброса.
+2025-10-15 | run-705 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=1e-3, batch=128, epochs=30 | val accuracy 0.9642 | ранняя остановка сработала раньше лимита эпох.
+2025-10-16 | run-706 | ViT-S/16 | digits-aug | SGD+momentum, lr=1e-3, batch=128, epochs=30 | val accuracy 0.8936 | ранняя остановка сработала раньше лимита эпох.
+2025-10-16 | run-707 | ResNet-18 | digits-aug | SGD+momentum, lr=1e-3, batch=128, epochs=20 | val accuracy 0.9099 | без замечаний, кривые обучения ровные.
+2025-10-17 | run-708 | LightGBM | cifar10-subset | SGD+momentum, learning_rate=5e-4, batch=64, epochs=20 | val accuracy 0.9222 | ранняя остановка сработала раньше лимита эпох.
+2025-10-17 | run-709 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=0.1, batch=128, epochs=50 | val accuracy 0.9117 | результат в пределах разброса предыдущих запусков.
+2025-10-20 | run-710 | ViT-S/16 | digits-aug | SGD+momentum, lr=1e-3, batch=256, epochs=50 | val accuracy 0.9418 | loss на валидации немного шумит после 15-й эпохи.
+2025-10-20 | run-711 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=0.05, batch=256, epochs=30 | val accuracy 0.9022 | ранняя остановка сработала раньше лимита эпох.
+2025-10-20 | run-712 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=0.1, batch=256, epochs=30 | val accuracy 0.8486 | без замечаний, кривые обучения ровные.
+2025-10-21 | run-713 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=0.1, batch=128, epochs=50 | val accuracy 0.8605 | валидация стабильна между эпохами, переобучения не видно.
+2025-10-21 | run-714 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=0.05, batch=256, epochs=20 | val accuracy 0.858 | результат в пределах разброса предыдущих запусков.
+2025-10-21 | run-715 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=0.1, batch=256, epochs=50 | val accuracy 0.8223 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-10-21 | run-716 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=0.1, batch=256, epochs=50 | val accuracy 0.8964 | результат в пределах разброса предыдущих запусков.
+2025-10-22 | run-717 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=5e-4, batch=64, epochs=50 | val accuracy 0.8498 | без замечаний, кривые обучения ровные.
+2025-10-22 | run-718 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=1e-3, batch=128, epochs=50 | val accuracy 0.9598 | время эпохи в норме, узел gpu-07.
+2025-10-22 | run-719 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=3e-4, batch=64, epochs=20 | val accuracy 0.8782 | без замечаний, кривые обучения ровные.
+2025-10-22 | run-720 | LightGBM | tabular-credit | AdamW, learning_rate=3e-4, batch=64, epochs=50 | val accuracy 0.8395 | без замечаний, кривые обучения ровные.
+2025-10-23 | run-721 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=1e-3, batch=256, epochs=50 | val accuracy 0.8102 | без замечаний, кривые обучения ровные.
+2025-10-23 | run-722 | ResNet-18 | tabular-credit | SGD+momentum, lr=1e-3, batch=64, epochs=50 | val accuracy 0.8816 | повторить с другим сидом для оценки разброса.
+2025-10-24 | run-723 | LightGBM | digits-aug | AdamW, learning_rate=0.1, batch=256, epochs=20 | val accuracy 0.912 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-10-24 | run-724 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=1e-3, batch=128, epochs=30 | val accuracy 0.8167 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-10-27 | run-725 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=1e-3, batch=64, epochs=20 | val accuracy 0.9353 | ранняя остановка сработала раньше лимита эпох.
+2025-10-27 | run-726 | ResNet-18 | digits-aug | SGD+momentum, lr=3e-4, batch=64, epochs=20 | val accuracy 0.9241 | без замечаний, кривые обучения ровные.
+2025-10-27 | run-727 | ViT-S/16 | tabular-credit | AdamW, lr=1e-3, batch=128, epochs=20 | val accuracy 0.847 | валидация стабильна между эпохами, переобучения не видно.
+2025-10-28 | run-728 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=3e-4, batch=128, epochs=30 | val accuracy 0.8898 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-10-28 | run-729 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=5e-4, batch=128, epochs=30 | val accuracy 0.9554 | без замечаний, кривые обучения ровные.
+2025-10-28 | run-730 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=3e-4, batch=128, epochs=50 | val accuracy 0.8125 | валидация стабильна между эпохами, переобучения не видно.
+2025-10-28 | run-731 | ViT-S/16 | cifar10-subset-v2 | AdamW, lr=0.1, batch=256, epochs=50 | val accuracy 0.8147 | ранняя остановка сработала раньше лимита эпох.
+2025-10-29 | run-732 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=0.05, batch=128, epochs=20 | val accuracy 0.8834 | loss на валидации немного шумит после 15-й эпохи.
+2025-10-29 | run-733 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=0.05, batch=256, epochs=50 | val accuracy 0.9241 | валидация стабильна между эпохами, переобучения не видно.
+2025-10-30 | run-734 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=3e-4, batch=128, epochs=30 | val accuracy 0.9404 | ранняя остановка сработала раньше лимита эпох.
+2025-10-30 | run-735 | LightGBM | digits-aug | AdamW, learning_rate=3e-4, batch=128, epochs=20 | val accuracy 0.8113 | повторить с другим сидом для оценки разброса.
+2025-10-30 | run-736 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=1e-3, batch=64, epochs=50 | val accuracy 0.9495 | без замечаний, кривые обучения ровные.
+2025-10-31 | run-737 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=0.05, batch=128, epochs=30 | val accuracy 0.856 | ранняя остановка сработала раньше лимита эпох.
+2025-10-31 | run-738 | ViT-S/16 | digits-aug | AdamW, lr=0.05, batch=256, epochs=50 | val accuracy 0.823 | loss на валидации немного шумит после 15-й эпохи.
+2025-10-31 | run-739 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=5e-4, batch=64, epochs=20 | val accuracy 0.8537 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-11-03 | run-740 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=0.1, batch=256, epochs=20 | val accuracy 0.9442 | без замечаний, кривые обучения ровные.
+2025-11-03 | run-741 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=1e-3, batch=256, epochs=50 | val accuracy 0.8338 | время эпохи в норме, узел gpu-07.
+2025-11-03 | run-742 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=5e-4, batch=64, epochs=30 | val accuracy 0.9403 | без замечаний, кривые обучения ровные.
+2025-11-04 | run-743 | ViT-S/16 | cifar10-subset-v2 | SGD+momentum, lr=0.1, batch=64, epochs=50 | val accuracy 0.9477 | результат в пределах разброса предыдущих запусков.
+2025-11-04 | run-744 | MLP-3x256 | digits-aug | SGD+momentum, lr=1e-3, batch=64, epochs=30 | val accuracy 0.8618 | результат в пределах разброса предыдущих запусков.
+2025-11-04 | run-745 | ResNet-18 | digits-aug | AdamW, lr=1e-3, batch=64, epochs=30 | val accuracy 0.952 | повторить с другим сидом для оценки разброса.
+2025-11-05 | run-746 | LightGBM | cifar10-subset | AdamW, learning_rate=0.1, batch=64, epochs=50 | val accuracy 0.8358 | повторить с другим сидом для оценки разброса.
+2025-11-05 | run-747 | MLP-3x256 | tabular-credit | AdamW, lr=1e-3, batch=64, epochs=50 | val accuracy 0.8834 | результат в пределах разброса предыдущих запусков.
+2025-11-05 | run-748 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=256, epochs=50 | val accuracy 0.9015 | валидация стабильна между эпохами, переобучения не видно.
+2025-11-05 | run-749 | ViT-S/16 | digits-aug | Lion, lr=1e-3, batch=128, epochs=30 | val accuracy 0.8738 | ранняя остановка сработала раньше лимита эпох.
+2025-11-05 | СОБЫТИЕ | Переход с AdamW на Lion для ViT-S/16 по итогам сравнения: +0.6 п.п. accuracy при той же скорости.
+2025-11-06 | run-750 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=0.05, batch=256, epochs=50 | val accuracy 0.8802 | без замечаний, кривые обучения ровные.
+2025-11-06 | run-751 | ViT-S/16 | tabular-credit | Lion, lr=3e-4, batch=128, epochs=50 | val accuracy 0.9142 | повторить с другим сидом для оценки разброса.
+2025-11-06 | run-752 | MLP-3x256 | digits-aug | AdamW, lr=5e-4, batch=64, epochs=50 | val accuracy 0.8633 | loss на валидации немного шумит после 15-й эпохи.
+2025-11-07 | run-753 | ViT-S/16 | digits-aug | Lion, lr=0.05, batch=128, epochs=20 | val accuracy 0.9334 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-11-07 | run-754 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=0.05, batch=128, epochs=50 | val accuracy 0.8587 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-11-07 | run-755 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=128, epochs=20 | val accuracy 0.8354 | ранняя остановка сработала раньше лимита эпох.
+2025-11-07 | run-756 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=3e-4, batch=256, epochs=50 | val accuracy 0.9543 | ранняя остановка сработала раньше лимита эпох.
+2025-11-10 | run-757 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=1e-3, batch=64, epochs=20 | val accuracy 0.8353 | повторить с другим сидом для оценки разброса.
+2025-11-10 | run-758 | ViT-S/16 | tabular-credit | Lion, lr=5e-4, batch=64, epochs=20 | val accuracy 0.8484 | результат в пределах разброса предыдущих запусков.
+2025-11-10 | run-759 | ResNet-18 | tabular-credit | AdamW, lr=1e-3, batch=128, epochs=50 | val accuracy 0.8508 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-11-11 | run-760 | ViT-S/16 | digits-aug | Lion, lr=5e-4, batch=64, epochs=30 | val accuracy 0.8503 | ранняя остановка сработала раньше лимита эпох.
+2025-11-11 | run-761 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=0.05, batch=128, epochs=20 | val accuracy 0.8293 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-11-11 | run-762 | MLP-3x256 | tabular-credit | SGD+momentum, lr=1e-3, batch=128, epochs=30 | val accuracy 0.8566 | без замечаний, кривые обучения ровные.
+2025-11-12 | run-763 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=1e-3, batch=256, epochs=50 | val accuracy 0.9647 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-11-12 | run-764 | LightGBM | tabular-credit | SGD+momentum, learning_rate=1e-3, batch=128, epochs=50 | val accuracy 0.8572 | ранняя остановка сработала раньше лимита эпох.
+2025-11-12 | run-765 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=1e-3, batch=64, epochs=50 | val accuracy 0.8585 | результат в пределах разброса предыдущих запусков.
+2025-11-13 | run-766 | ViT-S/16 | cifar10-subset | Lion, lr=5e-4, batch=256, epochs=20 | val accuracy 0.885 | время эпохи в норме, узел gpu-07.
+2025-11-13 | run-767 | ResNet-18 | cifar10-subset | AdamW, lr=5e-4, batch=64, epochs=30 | val accuracy 0.8526 | повторить с другим сидом для оценки разброса.
+2025-11-13 | run-768 | ResNet-18 | digits-aug | SGD+momentum, lr=5e-4, batch=256, epochs=50 | val accuracy 0.8796 | время эпохи в норме, узел gpu-07.
+2025-11-13 | run-769 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=0.05, batch=64, epochs=30 | val accuracy 0.922 | loss на валидации немного шумит после 15-й эпохи.
+2025-11-14 | run-770 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=3e-4, batch=256, epochs=50 | val accuracy 0.9257 | время эпохи в норме, узел gpu-07.
+2025-11-14 | run-771 | MLP-3x256 | tabular-credit | SGD+momentum, lr=0.1, batch=256, epochs=20 | val accuracy 0.8131 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-11-14 | run-772 | ViT-S/16 | cifar10-subset-v2 | Lion, lr=5e-4, batch=128, epochs=30 | val accuracy 0.8144 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-11-17 | run-773 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=0.1, batch=64, epochs=50 | val accuracy 0.9526 | loss на валидации немного шумит после 15-й эпохи.
+2025-11-17 | run-774 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=0.1, batch=256, epochs=30 | val accuracy 0.8784 | loss на валидации немного шумит после 15-й эпохи.
+2025-11-17 | run-775 | LightGBM | digits-aug | AdamW, learning_rate=1e-3, batch=128, epochs=20 | val accuracy 0.8253 | время эпохи в норме, узел gpu-07.
+2025-11-17 | run-776 | LightGBM | digits-aug | SGD+momentum, learning_rate=1e-3, batch=256, epochs=50 | val accuracy 0.9153 | результат в пределах разброса предыдущих запусков.
+2025-11-18 | run-777 | ViT-S/16 | tabular-credit | Lion, lr=1e-3, batch=128, epochs=50 | val accuracy 0.868 | время эпохи в норме, узел gpu-07.
+2025-11-18 | run-778 | ResNet-18 | tabular-credit | SGD+momentum, lr=0.1, batch=64, epochs=30 | val accuracy 0.8506 | результат в пределах разброса предыдущих запусков.
+2025-11-19 | run-779 | LightGBM | tabular-credit | SGD+momentum, learning_rate=1e-3, batch=256, epochs=20 | val accuracy 0.9378 | loss на валидации немного шумит после 15-й эпохи.
+2025-11-19 | run-780 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=1e-3, batch=128, epochs=20 | val accuracy 0.8103 | результат в пределах разброса предыдущих запусков.
+2025-11-19 | run-781 | LightGBM | cifar10-subset | AdamW, learning_rate=0.1, batch=64, epochs=50 | val accuracy 0.8116 | повторить с другим сидом для оценки разброса.
+2025-11-20 | run-782 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=5e-4, batch=64, epochs=20 | val accuracy 0.8705 | ранняя остановка сработала раньше лимита эпох.
+2025-11-20 | run-783 | MLP-3x256 | digits-aug | AdamW, lr=0.1, batch=256, epochs=30 | val accuracy 0.8993 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-11-20 | run-784 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=1e-3, batch=256, epochs=50 | val accuracy 0.9087 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-11-20 | run-785 | ResNet-18 | tabular-credit | AdamW, lr=0.1, batch=128, epochs=50 | val accuracy 0.926 | повторить с другим сидом для оценки разброса.
+2025-11-21 | run-786 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=0.1, batch=128, epochs=30 | val accuracy 0.9353 | результат в пределах разброса предыдущих запусков.
+2025-11-21 | run-787 | ViT-S/16 | cifar10-subset-v2 | Lion, lr=0.1, batch=256, epochs=30 | val accuracy 0.9222 | ранняя остановка сработала раньше лимита эпох.
+2025-11-21 | run-788 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=0.05, batch=64, epochs=20 | val accuracy 0.8084 | результат в пределах разброса предыдущих запусков.
+2025-11-24 | run-789 | ViT-S/16 | cifar10-subset-v2 | Lion, lr=0.1, batch=256, epochs=20 | val accuracy 0.835 | валидация стабильна между эпохами, переобучения не видно.
+2025-11-24 | run-790 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=3e-4, batch=64, epochs=30 | val accuracy 0.8623 | loss на валидации немного шумит после 15-й эпохи.
+2025-11-25 | run-791 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=3e-4, batch=64, epochs=50 | val accuracy 0.8866 | валидация стабильна между эпохами, переобучения не видно.
+2025-11-25 | run-792 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=5e-4, batch=256, epochs=50 | val accuracy 0.9546 | повторить с другим сидом для оценки разброса.
+2025-11-25 | run-793 | LightGBM | tabular-credit | AdamW, learning_rate=5e-4, batch=64, epochs=50 | val accuracy 0.8459 | результат в пределах разброса предыдущих запусков.
+2025-11-26 | run-794 | LightGBM | digits-aug | AdamW, learning_rate=3e-4, batch=256, epochs=30 | val accuracy 0.8209 | результат в пределах разброса предыдущих запусков.
+2025-11-26 | run-795 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=0.1, batch=128, epochs=20 | val accuracy 0.9305 | без замечаний, кривые обучения ровные.
+2025-11-26 | run-796 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=5e-4, batch=64, epochs=20 | val accuracy 0.8126 | результат в пределах разброса предыдущих запусков.
+2025-11-27 | run-797 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=1e-3, batch=128, epochs=30 | val accuracy 0.9178 | loss на валидации немного шумит после 15-й эпохи.
+2025-11-27 | run-798 | ResNet-18 | cifar10-subset | SGD+momentum, lr=0.05, batch=128, epochs=50 | val accuracy 0.8323 | без замечаний, кривые обучения ровные.
+2025-11-27 | run-799 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=5e-4, batch=256, epochs=30 | val accuracy 0.9303 | без замечаний, кривые обучения ровные.
+2025-11-27 | run-800 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=3e-4, batch=64, epochs=30 | val accuracy 0.9545 | без замечаний, кривые обучения ровные.
+2025-11-28 | run-801 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=0.1, batch=256, epochs=30 | val accuracy 0.9192 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-11-28 | run-802 | ViT-S/16 | tabular-credit | Lion, lr=0.05, batch=256, epochs=20 | val accuracy 0.8757 | повторить с другим сидом для оценки разброса.
+2025-12-01 | run-803 | LightGBM | cifar10-subset | AdamW, learning_rate=5e-4, batch=128, epochs=30 | val accuracy 0.9178 | время эпохи в норме, узел gpu-07.
+2025-12-01 | run-804 | ViT-S/16 | digits-aug | Lion, lr=3e-4, batch=256, epochs=20 | val accuracy 0.9523 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-12-02 | run-805 | ResNet-18 | cifar10-subset | SGD+momentum, lr=5e-4, batch=64, epochs=20 | val accuracy 0.9166 | время эпохи в норме, узел gpu-07.
+2025-12-02 | run-806 | ViT-S/16 | cifar10-subset-v2 | Lion, lr=0.05, batch=256, epochs=30 | val accuracy 0.8326 | валидация стабильна между эпохами, переобучения не видно.
+2025-12-02 | run-807 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=1e-3, batch=256, epochs=50 | val accuracy 0.8676 | повторить с другим сидом для оценки разброса.
+2025-12-03 | run-808 | MLP-3x256 | digits-aug | AdamW, lr=3e-4, batch=64, epochs=50 | val accuracy 0.9529 | результат в пределах разброса предыдущих запусков.
+2025-12-03 | run-809 | ResNet-18 | digits-aug | SGD+momentum, lr=1e-3, batch=64, epochs=30 | val accuracy 0.8892 | повторить с другим сидом для оценки разброса.
+2025-12-03 | run-810 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=1e-3, batch=256, epochs=30 | val accuracy 0.8919 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-12-04 | run-811 | ViT-S/16 | tabular-credit | Lion, lr=1e-3, batch=64, epochs=30 | val accuracy 0.9153 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-12-04 | run-812 | LightGBM | cifar10-subset | SGD+momentum, learning_rate=5e-4, batch=64, epochs=50 | val accuracy 0.9098 | без замечаний, кривые обучения ровные.
+2025-12-04 | run-813 | MLP-3x256 | cifar10-subset | AdamW, lr=1e-3, batch=128, epochs=30 | val accuracy 0.809 | валидация стабильна между эпохами, переобучения не видно.
+2025-12-05 | run-814 | ResNet-18 | digits-aug | AdamW, lr=5e-4, batch=256, epochs=30 | val accuracy 0.8551 | без замечаний, кривые обучения ровные.
+2025-12-05 | run-815 | MLP-3x256 | tabular-credit | SGD+momentum, lr=0.1, batch=128, epochs=30 | val accuracy 0.8043 | loss на валидации немного шумит после 15-й эпохи.
+2025-12-08 | run-816 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=1e-3, batch=256, epochs=50 | val accuracy 0.8442 | время эпохи в норме, узел gpu-07.
+2025-12-08 | run-817 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=0.05, batch=128, epochs=20 | val accuracy 0.9351 | без замечаний, кривые обучения ровные.
+2025-12-08 | run-818 | ResNet-18 | digits-aug | SGD+momentum, lr=0.1, batch=64, epochs=50 | val accuracy 0.8246 | loss на валидации немного шумит после 15-й эпохи.
+2025-12-09 | run-819 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=3e-4, batch=64, epochs=30 | val accuracy 0.8442 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-12-09 | run-820 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=5e-4, batch=128, epochs=30 | val accuracy 0.8866 | ранняя остановка сработала раньше лимита эпох.
+2025-12-09 | run-821 | MLP-3x256 | cifar10-subset-v2 | AdamW, lr=0.05, batch=256, epochs=20 | val accuracy 0.8325 | время эпохи в норме, узел gpu-07.
+2025-12-10 | run-822 | LightGBM | digits-aug | SGD+momentum, learning_rate=0.05, batch=128, epochs=20 | val accuracy 0.9159 | результат в пределах разброса предыдущих запусков.
+2025-12-10 | run-823 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=0.1, batch=256, epochs=20 | val accuracy 0.8788 | без замечаний, кривые обучения ровные.
+2025-12-10 | run-824 | ResNet-18 | digits-aug | AdamW, lr=0.1, batch=128, epochs=50 | val accuracy 0.8697 | валидация стабильна между эпохами, переобучения не видно.
+2025-12-11 | run-825 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=0.05, batch=64, epochs=30 | val accuracy 0.9454 | результат в пределах разброса предыдущих запусков.
+2025-12-11 | run-826 | LightGBM | cifar10-subset | AdamW, learning_rate=1e-3, batch=64, epochs=20 | val accuracy 0.8742 | время эпохи в норме, узел gpu-07.
+2025-12-12 | run-827 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=0.05, batch=256, epochs=30 | val accuracy 0.857 | результат в пределах разброса предыдущих запусков.
+2025-12-12 | run-828 | ViT-S/16 | cifar10-subset-v2 | Lion, lr=3e-4, batch=128, epochs=50 | val accuracy 0.8063 | результат в пределах разброса предыдущих запусков.
+2025-12-15 | run-829 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=5e-4, batch=64, epochs=50 | val accuracy 0.806 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-12-15 | run-830 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=1e-3, batch=128, epochs=50 | val accuracy 0.9571 | loss на валидации немного шумит после 15-й эпохи.
+2025-12-16 | run-831 | LightGBM | cifar10-subset | AdamW, learning_rate=3e-4, batch=64, epochs=30 | val accuracy 0.8599 | loss на валидации немного шумит после 15-й эпохи.
+2025-12-16 | run-832 | ViT-S/16 | cifar10-subset-v2 | Lion, lr=0.1, batch=64, epochs=50 | val accuracy 0.9253 | ранняя остановка сработала раньше лимита эпох.
+2025-12-16 | run-833 | LightGBM | cifar10-subset-v2 | SGD+momentum, learning_rate=1e-3, batch=64, epochs=50 | val accuracy 0.9033 | повторить с другим сидом для оценки разброса.
+2025-12-17 | run-834 | ResNet-18 | cifar10-subset | SGD+momentum, lr=3e-4, batch=128, epochs=20 | val accuracy 0.8265 | результат в пределах разброса предыдущих запусков.
+2025-12-17 | run-835 | LightGBM | cifar10-subset | SGD+momentum, learning_rate=1e-3, batch=64, epochs=20 | val accuracy 0.9321 | повторить с другим сидом для оценки разброса.
+2025-12-17 | run-836 | LightGBM | tabular-credit | SGD+momentum, learning_rate=5e-4, batch=64, epochs=20 | val accuracy 0.8318 | результат в пределах разброса предыдущих запусков.
+2025-12-18 | run-837 | ViT-S/16 | tabular-credit | Lion, lr=0.05, batch=64, epochs=30 | val accuracy 0.8457 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-12-18 | run-838 | MLP-3x256 | digits-aug | SGD+momentum, lr=0.05, batch=256, epochs=20 | val accuracy 0.8741 | без замечаний, кривые обучения ровные.
+2025-12-18 | run-839 | LightGBM | digits-aug | AdamW, learning_rate=0.05, batch=64, epochs=30 | val accuracy 0.8951 | повторить с другим сидом для оценки разброса.
+2025-12-18 | run-840 | ResNet-18 | cifar10-subset-v2 | SGD+momentum, lr=3e-4, batch=64, epochs=30 | val accuracy 0.8114 | loss на валидации немного шумит после 15-й эпохи.
+2025-12-19 | run-841 | LightGBM | cifar10-subset | SGD+momentum, learning_rate=0.05, batch=64, epochs=50 | val accuracy 0.9216 | время эпохи в норме, узел gpu-07.
+2025-12-19 | run-842 | ViT-S/16 | tabular-credit | Lion, lr=0.05, batch=128, epochs=50 | val accuracy 0.8518 | повторить с другим сидом для оценки разброса.
+2025-12-22 | run-843 | LightGBM | cifar10-subset-v2 | AdamW, learning_rate=3e-4, batch=256, epochs=20 | val accuracy 0.9298 | loss на валидации немного шумит после 15-й эпохи.
+2025-12-22 | run-844 | MLP-3x256 | tabular-credit | AdamW, lr=5e-4, batch=64, epochs=20 | val accuracy 0.8813 | повторить с другим сидом для оценки разброса.
+2025-12-23 | run-845 | LightGBM | cifar10-subset | AdamW, learning_rate=5e-4, batch=256, epochs=20 | val accuracy 0.8563 | время эпохи в норме, узел gpu-07.
+2025-12-23 | run-846 | ResNet-18 | digits-aug | AdamW, lr=0.1, batch=128, epochs=20 | val accuracy 0.8806 | ранняя остановка сработала раньше лимита эпох.
+2025-12-23 | run-847 | MLP-3x256 | cifar10-subset-v2 | SGD+momentum, lr=0.1, batch=128, epochs=20 | val accuracy 0.8634 | валидация стабильна между эпохами, переобучения не видно.
+2025-12-24 | run-848 | MLP-3x256 | digits-aug | SGD+momentum, lr=5e-4, batch=64, epochs=50 | val accuracy 0.8142 | время эпохи в норме, узел gpu-07.
+2025-12-24 | run-849 | MLP-3x256 | cifar10-subset | SGD+momentum, lr=3e-4, batch=128, epochs=20 | val accuracy 0.8868 | без замечаний, кривые обучения ровные.
+2025-12-24 | run-850 | ViT-S/16 | cifar10-subset-v2 | Lion, lr=0.1, batch=128, epochs=30 | val accuracy 0.8052 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-12-24 | run-851 | LightGBM | tabular-credit | AdamW, learning_rate=5e-4, batch=64, epochs=50 | val accuracy 0.9049 | результат в пределах разброса предыдущих запусков.
+2025-12-25 | run-852 | LightGBM | cifar10-subset | AdamW, learning_rate=1e-3, batch=256, epochs=30 | val accuracy 0.8253 | время эпохи в норме, узел gpu-07.
+2025-12-25 | run-853 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=5e-4, batch=128, epochs=30 | val accuracy 0.8703 | результат в пределах разброса предыдущих запусков.
+2025-12-25 | run-854 | ResNet-18 | cifar10-subset | SGD+momentum, lr=5e-4, batch=128, epochs=20 | val accuracy 0.8683 | валидация стабильна между эпохами, переобучения не видно.
+2025-12-26 | run-855 | ResNet-18 | cifar10-subset-v2 | AdamW, lr=1e-3, batch=128, epochs=50 | val accuracy 0.9453 | памяти GPU хватает с запасом, можно увеличить batch.
+2025-12-26 | run-856 | ViT-S/16 | tabular-credit | Lion, lr=0.1, batch=64, epochs=20 | val accuracy 0.8354 | результат в пределах разброса предыдущих запусков.

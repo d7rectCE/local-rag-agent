@@ -157,6 +157,9 @@ class FakeLLM(BaseLLM):
         elif "action" in props:
             self.kinds.append("agent")
             reply = self.agent.pop(0) if self.agent else {"thought": "достаточно", "action": "answer", "args": {}}
+        elif set(props) == {"relevant", "notes"}:
+            self.kinds.append("map")
+            reply = {"relevant": [1], "notes": ""}
         elif set(props) == {"query"}:
             self.kinds.append("rewrite")
             reply = {"query": "learning rate lr"}

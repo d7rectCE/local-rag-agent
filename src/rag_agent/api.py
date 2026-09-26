@@ -6,7 +6,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from rag_agent.engine import Engine, IndexingBusyError, NoCorpusError
@@ -14,6 +14,7 @@ from rag_agent.generation import Answer
 from rag_agent.index.indexer import IndexProgress
 from rag_agent.llm import LLMError
 from rag_agent.structured.sql import SQLResult
+from rag_agent.uploads import UploadError, UploadInfo
 
 
 class IndexRequest(BaseModel):
@@ -46,6 +47,8 @@ class AskRequest(BaseModel):
     symbols: bool | None = None
     reasoning: Literal["off", "on", "auto"] | None = None
     agent: Literal["off", "auto", "always"] | None = None
+    uploads: list[str] = []  # ids of files uploaded into this session: the question is about them
+    session: str | None = None
 
 
 def create_app(engine: Engine | None = None) -> FastAPI:
@@ -143,6 +146,40 @@ def create_app(engine: Engine | None = None) -> FastAPI:
         except NoCorpusError as exc:
             raise HTTPException(404, "Сначала проиндексируйте папку") from exc
 
+    @app.post("/uploads")
+    def upload(session: str, file: UploadFile) -> UploadInfo:
+        try:
+            return eng().upload(session, file.filename or "file", file.file.read())
+        except UploadError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.get("/uploads")
+    def uploads(session: str) -> list[UploadInfo]:
+        try:
+            return eng().uploads.list(session)
+        except UploadError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.delete("/uploads/{upload_id}")
+    def delete_upload(upload_id: str, session: str) -> dict:
+        try:
+            eng().uploads.delete(session, upload_id)
+        except UploadError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {"deleted": upload_id}
+
+    @app.post("/uploads/{upload_id}/corpus")
+    def upload_to_corpus(upload_id: str, session: str) -> dict:
+        """Explicit user action: copy the upload into the corpus folder and index it."""
+        try:
+            return eng().add_upload_to_corpus(session, upload_id)
+        except UploadError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except NoCorpusError as exc:
+            raise HTTPException(404, "Сначала выберите и проиндексируйте папку") from exc
+        except IndexingBusyError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
     @app.post("/ask")
     def ask(req: AskRequest) -> Answer:
         try:
@@ -156,10 +193,12 @@ def create_app(engine: Engine | None = None) -> FastAPI:
                 symbols=req.symbols,
                 reasoning=req.reasoning,
                 agent=req.agent,
+                uploads=req.uploads,
+                session=req.session,
             )
         except NoCorpusError as exc:
             raise HTTPException(404, "Сначала проиндексируйте папку") from exc
-        except ValueError as exc:
+        except (ValueError, UploadError) as exc:
             raise HTTPException(400, str(exc)) from exc
         except LLMError as exc:
             logging.getLogger(__name__).exception("LLM failure")

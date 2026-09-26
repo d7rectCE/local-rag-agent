@@ -168,6 +168,21 @@ class AgentConfig(BaseModel):
     crag_retries: int = 1
 
 
+class UploadsConfig(BaseModel):
+    """Files uploaded into a conversation (ТЗ ч.2 S16, Э13)."""
+
+    max_mb: float = 50.0
+    ttl_hours: float = 24.0  # session scope: uploads and their index are deleted after this
+    parse_timeout_s: float = 600.0  # parsing runs in a separate process
+    # routing: whole (always the whole file, in parts when it does not fit), index (retrieval only),
+    # self_route (whole when it fits, otherwise retrieval, and the whole file in parts when the model
+    # says the retrieved fragments are not enough)
+    route: Literal["self_route", "whole", "index"] = "self_route"
+    context_share: float = 0.33  # effective context budget: a third of llm.num_ctx (RULER)
+    chars_per_token: float = 3.0  # rough size estimate before tokenization
+    top_k: int = 8
+
+
 class Settings(BaseModel):
     corpus: CorpusConfig = CorpusConfig()
     storage: StorageConfig = StorageConfig()
@@ -180,6 +195,7 @@ class Settings(BaseModel):
     reasoning: ReasoningConfig = ReasoningConfig()
     catalog: CatalogConfig = CatalogConfig()
     agent: AgentConfig = AgentConfig()
+    uploads: UploadsConfig = UploadsConfig()
     tracing: TracingConfig = TracingConfig()
     evaluation: EvaluationConfig = EvaluationConfig()
     api: ApiConfig = ApiConfig()

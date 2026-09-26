@@ -74,6 +74,9 @@ class ItemResult(BaseModel):
     agent_stop: str | None = None
     crag_verdict: str | None = None  # of the direct path's check, or of the agent's evidence
     crag_refused: bool = False
+    # uploads (Э13)
+    upload: str | None = None
+    upload_route: str | None = None
     judge: Verdict | None = None
     error: str | None = None
 
@@ -109,8 +112,20 @@ def run_config(engine: Engine, es: EvalSet, *, top_k: int, mode: str, route: str
     }
 
 
+EVAL_SESSION = "eval"
+
+
+def _upload(engine: Engine, es_dir, rel: str):
+    """Each eval upload is parsed and indexed once per engine (the session scope of a run)."""
+    cache = engine.__dict__.setdefault("_eval_uploads", {})
+    if rel not in cache:
+        path = es_dir / rel
+        cache[rel] = engine.upload(EVAL_SESSION, path.name, path.read_bytes())
+    return cache[rel]
+
+
 def evaluate_item(engine: Engine, item: EvalItem, *, retrieval_k: int, top_k: int, mode: str, route: str, generate: bool,
-                  reasoning: str | None = None) -> ItemResult:
+                  reasoning: str | None = None, es_dir=None) -> ItemResult:
     r = ItemResult(
         id=item.id, cls=item.cls, question=item.question, expected_route=item.expected_route, file_types=item.file_types
     )
@@ -127,7 +142,12 @@ def evaluate_item(engine: Engine, item: EvalItem, *, retrieval_k: int, top_k: in
                 r.retrieval = retrieval_metrics(nodes, item.sources)
         if not generate:
             return r
-        ans = engine.ask(item.question, history=item.history, top_k=top_k, mode=mode, route=route, reasoning=reasoning)
+        uploads = [_upload(engine, es_dir, item.upload).id] if item.upload else None
+        ans = engine.ask(item.question, history=item.history, top_k=top_k, mode=mode, route=route, reasoning=reasoning,
+                         uploads=uploads, session=EVAL_SESSION if uploads else None)
+        if item.upload:
+            r.upload = item.upload
+            r.upload_route = next((s.detail.get("route") for s in ans.trace if s.name == "upload"), None)
         r.route = ans.route
         r.route_ok = ans.route == item.expected_route
         r.standalone_question = ans.standalone_question
@@ -226,7 +246,7 @@ def run_eval(
     results = []
     for item in es.items[:limit] if limit else es.items:
         r = evaluate_item(engine, item, retrieval_k=retrieval_k, top_k=top_k, mode=mode, route=route, generate=generate,
-                          reasoning=reasoning)
+                          reasoning=reasoning, es_dir=es.path.parent if es.path else None)
         results.append(r)
         if on_item:
             on_item(r)
@@ -282,9 +302,10 @@ def summarize(results: list[ItemResult], es: EvalSet, n_boot: int = 1000) -> dic
         return summary
 
     # --- routing ---
-    confusion = Counter((r.expected_route, r.route) for r in answered)
+    routed = [r for r in answered if not r.upload]  # questions with an upload do not go through the router's choice
+    confusion = Counter((r.expected_route, r.route) for r in routed)
     summary["routing"] = {
-        "accuracy": mean_ci([float(r.route_ok) for r in answered], n_boot),
+        "accuracy": mean_ci([float(r.route_ok) for r in routed], n_boot) if routed else None,
         "confusion": {f"{e}->{g}": n for (e, g), n in sorted(confusion.items())},
     }
 
@@ -337,6 +358,19 @@ def summarize(results: list[ItemResult], es: EvalSet, n_boot: int = 1000) -> dic
         "errors": sum(1 for r in answered if r.sql_used and r.sql_error),
         "n_gold": len(gold),
         "execution_accuracy": mean_ci([float(r.sql_ex) for r in gold], n_boot) if gold else None,
+    }
+
+    # --- uploads (Э13, H12): accuracy and cost by file ---
+    by_upload: dict[str, list[ItemResult]] = defaultdict(list)
+    for r in answered:
+        if r.upload:
+            by_upload[r.upload].append(r)
+    summary["uploads"] = {
+        f: {"n": len(rs), "must_include": _mean(float(r.must_include_ok) for r in rs if r.must_include_ok is not None),
+            "correctness": _mean(r.judge.score for r in rs if r.judge is not None and r.judge.error is None),
+            "tokens": _mean(r.tokens for r in rs), "latency": percentiles([r.latency_s for r in rs]),
+            "routes": dict(Counter(r.upload_route for r in rs))}
+        for f, rs in sorted(by_upload.items())
     }
 
     # --- agent and CRAG (Э7, H6, NFR2) ---

@@ -156,13 +156,15 @@ def to_sources(hits: list[Hit], cited: list[int], max_chars: int) -> list[Source
 
 
 def generate_answer(
-    question: str, hits: list[Hit], llm: BaseLLM, max_source_chars: int, reasoning_budget: int | None = None
+    question: str, hits: list[Hit], llm: BaseLLM, max_source_chars: int, reasoning_budget: int | None = None,
+    note: str | None = None,
 ) -> Answer:
+    """``note`` is appended to the system prompt (e.g. that the sources come from an untrusted upload)."""
     if not hits:
         return Answer(question=question, answer=NO_SOURCES_ANSWER, answerable=False, grounded=True)
 
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": SYSTEM_PROMPT + (f"\n\n{note}" if note else "")},
         {"role": "user", "content": f"<sources>\n{build_context(hits, max_source_chars)}\n</sources>\n\nВопрос: {question}"},
     ]
     resp = _call(llm, messages, ANSWER_SCHEMA, "answer", reasoning_budget)

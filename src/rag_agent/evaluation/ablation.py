@@ -245,6 +245,26 @@ def _sql_section(rows: list[dict], per_item: list[dict[str, ItemResult]]) -> lis
     return out
 
 
+def _uploads_section(rows: list[dict]) -> list[str]:
+    """H12: Self-Route vs the whole file vs retrieval only, per file size: accuracy and cost."""
+    files = sorted({f for row in rows for f in row["summary"].get("uploads", {})})
+    out = ["", "## Загруженные файлы (H12)", "",
+           "В ячейке: точность (судья; без судьи — обязательные фрагменты) / токенов на вопрос (промпт + ответ) / "
+           "p95 латентности, с; ниже — какими путями шли ответы.", "",
+           "| # | Конфигурация | " + " | ".join(files) + " |", "|---|---|" + "---|" * len(files)]
+    for k, row in enumerate(rows, start=1):
+        up = row["summary"].get("uploads", {})
+        cells = []
+        for f in files:
+            u = up.get(f, {})
+            acc = u.get("correctness") if u.get("correctness") is not None else u.get("must_include")
+            routes = ", ".join(f"{r}: {n}" for r, n in sorted((u.get("routes") or {}).items(), key=lambda kv: str(kv[0])))
+            cells.append(f"{_fmt(acc, 2)} / {_fmt(u.get('tokens'), 0)} / {_fmt((u.get('latency') or {}).get('p95'), 1)}"
+                         f"<br>{routes}")
+        out.append(f"| {k} | {row['run'].name} | " + " | ".join(cells) + " |")
+    return out
+
+
 def _agent_section(rows: list[dict]) -> list[str]:
     """H6 (CRAG lowers the share of wrong answers, keeps correct refusals on Q6) and NFR2 latency."""
     out = ["", "## Агент и проверка релевантности (H6, NFR2)", "",
@@ -320,6 +340,8 @@ def render_ablation(spec: AblationSpec, es: EvalSet, rows: list[dict], per_item:
         out += _reasoning_section(rows, per_item)
     if any((row["summary"].get("sql") or {}).get("used_q3") for row in rows):
         out += _sql_section(rows, per_item)
+    if any(row["summary"].get("uploads") for row in rows):
+        out += _uploads_section(rows)
     if any((row["summary"].get("agent") or {}).get("used") or (row["summary"].get("agent") or {}).get("crag_refusals")
            for row in rows):
         out += _agent_section(rows)

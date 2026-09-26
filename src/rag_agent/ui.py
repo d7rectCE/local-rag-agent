@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import uuid
 
 import httpx
 import streamlit as st
@@ -195,6 +196,9 @@ def sidebar(status: dict) -> None:
                              "ячейка": m["cell"]} for e in data["experiments"] for m in e["metrics"]]
                     st.dataframe(rows, hide_index=True)
 
+    st.divider()
+    uploads_panel()
+
     known = [c["root"] for c in status.get("corpora", [])]
     if len(known) > 1:
         st.divider()
@@ -231,6 +235,56 @@ def sidebar(status: dict) -> None:
               help="Кросс-энкодер переупорядочивает кандидатов первой стадии: точнее, но медленнее")
     st.toggle("Точный поиск имён", value=status["retrieval"]["symbols"], key="symbols",
               help="Для имён функций и классов из вопроса добавляет их определения и места вызова")
+
+
+def session_id() -> str:
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = uuid.uuid4().hex
+    return st.session_state.session_id
+
+
+def uploads_panel() -> None:
+    """Files uploaded into the conversation (ТЗ ч.2 S16): session scope, explicit "add to corpus"."""
+    st.subheader("Файлы в разговоре")
+    key = f"uploader_{st.session_state.get('uploader_n', 0)}"
+    file = st.file_uploader("Загрузить файл", type=[t.lstrip(".") for t in SUPPORTED_TYPES if t != ".doc"], key=key,
+                            help="Файл доступен только в этом разговоре и удаляется через сутки. В корпус он попадает "
+                            "только по кнопке «В корпус». Содержимое загрузки считается недоверенным.")
+    if file is not None:
+        with st.spinner(f"Разбираю {file.name}…"):
+            info, err = api("POST", "/uploads", params={"session": session_id()},
+                            files={"file": (file.name, file.getvalue())})
+        st.session_state.uploader_n = st.session_state.get("uploader_n", 0) + 1  # reset the widget
+        if err:
+            st.session_state.upload_error = err
+        else:
+            st.session_state.setdefault("uploads", []).append(info)
+            st.session_state.ask_uploads = True
+        st.rerun()
+    if st.session_state.get("upload_error"):
+        st.error(st.session_state.pop("upload_error"))
+    uploads = st.session_state.get("uploads", [])
+    for u in list(uploads):
+        size = "целиком в контекст" if u["fits_context"] else "поиск по временному индексу"
+        st.markdown(f"**{u['name']}** · {u['size'] / 1024:.0f} КБ · {u['n_fragments']} фрагм. · {size}")
+        if u.get("duplicate_of"):
+            st.caption(f":material/content_copy: уже есть в корпусе: `{u['duplicate_of']}`")
+        c1, c2 = st.columns(2)
+        if c1.button("В корпус", key=f"add_{u['id']}", use_container_width=True, disabled=bool(u.get("duplicate_of")),
+                     help="Скопировать файл в рабочую папку (подпапка uploads) и проиндексировать"):
+            res, err = api("POST", f"/uploads/{u['id']}/corpus", params={"session": session_id()})
+            if err:
+                st.error(err)
+            else:
+                st.success(f"Добавлен как `{res['path']}`, идёт индексация")
+                st.session_state.was_running = True
+        if c2.button("Удалить", key=f"del_{u['id']}", use_container_width=True):
+            api("DELETE", f"/uploads/{u['id']}", params={"session": session_id()})
+            uploads.remove(u)
+            st.rerun()
+    if uploads:
+        st.toggle("Спрашивать по загруженным файлам", key="ask_uploads",
+                  help="Вкл — вопросы задаются по загруженным файлам, выкл — по рабочей папке")
 
 
 def answer_text(ans: dict) -> str:
@@ -362,6 +416,9 @@ def main() -> None:
                     "agent": st.session_state.get("agent") or "auto",
                     "rerank": st.session_state.rerank,
                     "symbols": st.session_state.symbols,
+                    "uploads": [u["id"] for u in st.session_state.get("uploads", [])]
+                    if st.session_state.get("ask_uploads") else [],
+                    "session": session_id(),
                 })
             if err:
                 st.error(err)

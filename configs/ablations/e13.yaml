@@ -1,0 +1,14 @@
+# Э13, H12 (ТЗ ч.2): Self-Route для загрузок сопоставим по точности с подачей файла целиком при меньшей
+# стоимости. Три пути на файлах трёх размеров (evalsets/uploads_v1.yaml): Self-Route (по умолчанию),
+# всегда весь файл (большой — по частям), только временный индекс.
+name: e13-uploads
+evalset: ../../evalsets/uploads_v1.yaml
+retrieval_only: false
+judge: true
+runs:
+  - name: "Self-Route (по умолчанию)"
+    overrides: {uploads: {route: self_route}}
+  - name: "весь файл (большой — по частям)"
+    overrides: {uploads: {route: whole}}
+  - name: "только временный индекс"
+    overrides: {uploads: {route: index}}

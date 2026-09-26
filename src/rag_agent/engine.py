@@ -23,6 +23,7 @@ from rag_agent.structured.analytics import ANALYTICS_FILE, build_analytics
 from rag_agent.structured.extract import update_catalog
 from rag_agent.structured.sql import SQLResult, SQLTool
 from rag_agent.tracing import NULL_TRACER, Tracer
+from rag_agent.uploads import UploadError, UploadInfo, UploadStore, answer_from_uploads
 
 log = logging.getLogger(__name__)
 
@@ -96,6 +97,11 @@ class Engine:
         self._lock = threading.RLock()
         self._cancel = threading.Event()
         self._thread: threading.Thread | None = None
+        self.uploads = UploadStore(self.settings, self.embedder)
+        try:
+            self.uploads.cleanup()  # expired session uploads
+        except OSError:
+            log.warning("could not clean up expired uploads", exc_info=True)
 
     # --- corpus management ------------------------------------------------
     @property
@@ -236,6 +242,35 @@ class Engine:
                 hits.append(Hit(node=src, score=0.5, rank=len(hits) + 1))
         return hits
 
+    # --- uploads (ТЗ ч.2 S16) ------------------------------------------------------
+    def upload(self, session: str, name: str, data: bytes) -> UploadInfo:
+        known = {}
+        if self._index is not None:
+            known = {r["content_hash"]: r["path"] for r in self._index.catalog.query("SELECT path, content_hash FROM files")}
+        info = self.uploads.add(session, name, data, known)
+        self.tracer.log("upload", session=session, name=name if self.tracer.log_prompts else None,
+                        file_type=info.file_type, size=info.size, fragments=info.n_fragments,
+                        fits_context=info.fits_context, duplicate=bool(info.duplicate_of), parse_s=info.parse_s)
+        return info
+
+    def add_upload_to_corpus(self, session: str, upload_id: str, subdir: str = "uploads") -> dict:
+        """The explicit "add to corpus" action: the file is copied into the corpus folder (never
+        overwriting a file there) and goes through the usual incremental indexing."""
+        info = self.uploads.get(session, upload_id)
+        index = self.index
+        target_dir = (index.root / subdir).resolve()
+        if index.root not in target_dir.parents and target_dir != index.root:
+            raise UploadError("папка назначения вне корпуса")
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / info.name
+        k = 1
+        while target.exists():
+            target = target_dir / f"{Path(info.name).stem} ({k}){Path(info.name).suffix}"
+            k += 1
+        target.write_bytes(self.uploads.file_path(info).read_bytes())
+        progress = self.index_folder(index.root, background=True)
+        return {"path": target.relative_to(index.root).as_posix(), "progress": progress.model_dump()}
+
     def cancel_indexing(self) -> None:
         self._cancel.set()
 
@@ -344,6 +379,8 @@ class Engine:
         symbols: bool | None = None,
         reasoning: str | None = None,
         agent: str | None = None,
+        uploads: list[str] | None = None,
+        session: str | None = None,
     ) -> Answer:
         """Route the question, then answer it from the user's files (with citations)
         or from general knowledge. ``history`` is the previous chat turns
@@ -360,7 +397,7 @@ class Engine:
         try:
             index = self.index
         except NoCorpusError:
-            if route == "corpus":
+            if route == "corpus" and not uploads:
                 raise
 
         standalone = question
@@ -390,11 +427,22 @@ class Engine:
             steps.append(TraceStep(name="route", duration_s=round(decision.latency_s, 3), detail=detail))
 
         notice = None
-        if chosen == "corpus" and index is None:
+        if chosen == "corpus" and index is None and not uploads:
             chosen, notice = "general", "Папка ещё не проиндексирована, поэтому ответ дан из общих знаний модели."
 
         budget = rcfg.budget(level) if level != "none" else None
-        if chosen == "general":
+        if uploads:  # Э13: the question is about files uploaded into this conversation
+            infos = [self.uploads.get(session or "", u) for u in uploads]
+            use_rerank = self.settings.retrieval.rerank if rerank is None else rerank
+            answer = answer_from_uploads(self.uploads, infos, standalone, self.llm,
+                                         reranker=self.reranker if use_rerank else None,
+                                         max_source_chars=self.settings.generation.max_source_chars,
+                                         reasoning_budget=budget)
+            answer.question = question
+            dups = [f"{i.name} = {i.duplicate_of}" for i in infos if i.duplicate_of]
+            if dups:
+                notice = "Загруженный файл уже есть в корпусе: " + "; ".join(dups)
+        elif chosen == "general":
             answer = generate_general(question, turns, self.llm, reasoning_budget=budget)
         else:
             top_k = top_k or self.settings.retrieval.top_k

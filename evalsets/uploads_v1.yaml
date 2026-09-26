@@ -1,0 +1,142 @@
+# Вопросы по загруженным в разговор файлам (ТЗ ч.2: класс Q7, 15–20 вопросов, S16, H12).
+# Файлы трёх размеров относительно эффективного бюджета контекста (треть окна 16k токенов ≈ 16 000 символов),
+# собираются скриптом scripts/build_demo_uploads.py:
+#   contract_small.docx      — договор НИР, ~2 500 символов: помещается целиком;
+#   cluster_rules_medium.md  — регламент кластера, ~16 600 символов: на границе бюджета;
+#   lab_journal_large.txt    — журнал экспериментов за год, ~126 000 символов (756 запусков и 4 уникальных события):
+#                              в 7–8 раз больше бюджета.
+# Формат как в demo_v1 (см. шапку), вместо sources — upload: путь к файлу относительно этого набора.
+
+version: 1
+name: uploads_v1
+corpus: ../demo_corpus
+
+items:
+  # ---------------------------------------------------------------- маленький файл
+  - id: u-s-01
+    class: Q7
+    upload: ../demo_uploads/contract_small.docx
+    question: Какой срок сдачи второго этапа по договору?
+    answer: 30 апреля 2026 г. (этап 2 — разработка прототипа системы поиска).
+    must_include: ['30 апреля']
+
+  - id: u-s-02
+    class: Q7
+    upload: ../demo_uploads/contract_small.docx
+    question: Какова общая стоимость работ по договору?
+    answer: 400 000 рублей, НДС не облагается.
+    must_include: ['400[  ]?000']
+
+  - id: u-s-03
+    class: Q7
+    upload: ../demo_uploads/contract_small.docx
+    question: Какая неустойка предусмотрена за просрочку сдачи этапа?
+    answer: 0,1 % от стоимости просроченного этапа за каждый день просрочки, но не более 10 % стоимости этапа.
+    must_include: ['0[.,]1', '10[  ]?%']
+
+  - id: u-s-04
+    class: Q7
+    upload: ../demo_uploads/contract_small.docx
+    question: Сколько времени у заказчика на подписание акта сдачи-приёмки?
+    answer: 10 рабочих дней (или мотивированный отказ в тот же срок).
+    must_include: ['10 рабоч']
+
+  - id: u-s-05
+    class: Q7
+    upload: ../demo_uploads/contract_small.docx
+    question: Какой этап самый дорогой и сколько он стоит?
+    answer: Этап 2 «Разработка прототипа системы поиска» — 180 000 рублей.
+    must_include: ['180[  ]?000']
+
+  - id: u-s-06
+    class: Q7
+    upload: ../demo_uploads/contract_small.docx
+    question: Как долго действует обязательство о конфиденциальности?
+    answer: 3 года после окончания действия договора.
+    must_include: ['3 \(тр[её]х\) лет|3 год|тр[её]х лет|три года']
+
+  # ---------------------------------------------------------------- файл на границе бюджета
+  - id: u-m-01
+    class: Q7
+    upload: ../demo_uploads/cluster_rules_medium.md
+    question: Какое максимальное время задачи в очереди long?
+    answer: 7 суток (очередь long — после согласования с администратором, до 8 GPU).
+    must_include: ['7 сут']
+
+  - id: u-m-02
+    class: Q7
+    upload: ../demo_uploads/cluster_rules_medium.md
+    question: Через сколько дней удаляются файлы из /scratch?
+    answer: Файлы, к которым не обращались 30 дней, удаляются автоматически.
+    must_include: ['30']
+
+  - id: u-m-03
+    class: Q7
+    upload: ../demo_uploads/cluster_rules_medium.md
+    question: Когда проводится плановое обслуживание кластера?
+    answer: В первый вторник каждого месяца с 9:00 до 13:00.
+    must_include: ['вторник']
+
+  - id: u-m-04
+    class: Q7
+    upload: ../demo_uploads/cluster_rules_medium.md
+    question: Сколько GPU можно запросить на одну задачу в очереди normal?
+    answer: 4 GPU (время — до 24 часов, не более 4 задач на пользователя).
+    must_include: ['\b4\b|четыр']
+
+  - id: u-m-05
+    class: Q7
+    upload: ../demo_uploads/cluster_rules_medium.md
+    question: Сколько хранятся резервные копии домашнего каталога?
+    answer: 14 дней; копии создаются ежедневно в 03:00.
+    must_include: ['14']
+
+  - id: u-m-06
+    class: Q7
+    upload: ../demo_uploads/cluster_rules_medium.md
+    question: По какому номеру связаться с дежурным администратором?
+    answer: По внутреннему номеру 4417 (в рабочее время).
+    must_include: ['4417']
+
+  # ---------------------------------------------------------------- большой файл
+  - id: u-l-01
+    class: Q7
+    upload: ../demo_uploads/lab_journal_large.txt
+    question: Что произошло в лаборатории 14 марта 2025 года?
+    answer: Сбой питания в серверной в 02:40 — задача прервана, потеряны чекпойнты run-246, перезапуск с нуля.
+    must_include: ['питани', 'run-246']
+
+  - id: u-l-02
+    class: Q7
+    upload: ../demo_uploads/lab_journal_large.txt
+    question: С какой даты часть запусков идёт на датасете cifar10-subset-v2 и почему?
+    answer: Со 2 июня 2025 г.; в новой версии исправлена разметка 312 изображений.
+    must_include: ['2 июня|06-02|02\.06', '312']
+
+  - id: u-l-03
+    class: Q7
+    upload: ../demo_uploads/lab_journal_large.txt
+    question: Какие результаты в журнале признаны недействительными и из-за чего?
+    answer: Все запуски на tabular-credit с 1 по 19 августа 2025 г. — из-за утечки данных (train и test пересекались по client_id).
+    must_include: ['tabular-credit', 'client_id|утечк']
+
+  - id: u-l-04
+    class: Q7
+    upload: ../demo_uploads/lab_journal_large.txt
+    question: Какие параметры и результат были у запуска run-431?
+    answer: 10 июня 2025 г., ResNet-18 на cifar10-subset-v2, AdamW, lr=1e-3, batch 256, 30 эпох; val accuracy 0.9731.
+    must_include: ['0[.,]9731', 'ResNet']
+
+  - id: u-l-05
+    class: Q7
+    upload: ../demo_uploads/lab_journal_large.txt
+    question: На какой оптимизатор перешли для ViT-S/16 в ноябре и почему?
+    answer: С AdamW на Lion (с 5 ноября 2025 г.) — по итогам сравнения +0.6 п.п. accuracy при той же скорости.
+    must_include: ['Lion']
+
+  - id: u-l-06
+    class: Q7
+    upload: ../demo_uploads/lab_journal_large.txt
+    question: Какой запуск за год показал лучшую val accuracy?
+    answer: run-431 (10 июня 2025 г., ResNet-18) — val accuracy 0.9731; остальные запуски не выше 0.965.
+    must_include: ['run-431|0[.,]9731']

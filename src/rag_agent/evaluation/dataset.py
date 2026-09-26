@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rag_agent.schema import Node
 
-QuestionClass = Literal["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q8", "G"]
+QuestionClass = Literal["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "G"]
 
 CLASS_NAMES = {
     "Q1": "фактологический",
@@ -21,6 +21,7 @@ CLASS_NAMES = {
     "Q4": "визуальный",
     "Q5": "многошаговый",
     "Q6": "неотвечаемый",
+    "Q7": "по загруженному файлу",
     "Q8": "требующий рассуждения",
     "G": "общий (без файлов)",
 }
@@ -92,11 +93,13 @@ class EvalItem(BaseModel):
     # Э6: reference SQL over the catalog of experiments; its result is compared with the result
     # of the query the system ran (execution accuracy, as in BIRD)
     sql: str | None = None
+    # Э13: the question is about this file (relative to the eval set), uploaded into the conversation
+    upload: str | None = None
     notes: str | None = None
 
     @property
     def expected_route(self) -> str:
-        return "general" if self.cls == "G" else "corpus"
+        return "general" if self.cls == "G" else "upload" if self.upload else "corpus"
 
     @property
     def expects_refusal(self) -> bool:
@@ -148,10 +151,12 @@ def validate_evalset(es: EvalSet, catalog) -> list[str]:
     problems: list[str] = []
     cache: dict[str, list[Node]] = {}
     for item in es.items:
-        if item.cls in ("Q6", "G") and item.sources:
+        if item.cls in ("Q6", "G", "Q7") and item.sources:
             problems.append(f"{item.id}: class {item.cls} must not have sources")
-        if item.cls not in ("Q6", "G") and not item.sources:
+        if item.cls not in ("Q6", "G", "Q7") and not item.sources:
             problems.append(f"{item.id}: class {item.cls} needs at least one source")
+        if item.cls == "Q7" and not (item.upload and es.path and (es.path.parent / item.upload).exists()):
+            problems.append(f"{item.id}: class Q7 needs an existing upload file")
         if item.cls != "Q6" and not item.answer:
             problems.append(f"{item.id}: reference answer is missing")
         for ref in item.sources:

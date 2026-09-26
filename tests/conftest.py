@@ -114,6 +114,7 @@ class FakeLLM(BaseLLM):
         self.general = general
         self.calls: list[list[dict]] = []
         self.kinds: list[str] = []
+        self.budgets: list[int] = []  # reasoning budgets of chat_reasoning calls
 
     def _chat(self, messages, json_schema, tools, temperature, max_tokens, think) -> LLMResponse:
         self.calls.append(messages)
@@ -138,8 +139,10 @@ class FakeLLM(BaseLLM):
     def chat_reasoning(self, messages, *, budget_tokens, json_schema=None, purpose="chat") -> LLMResponse:
         resp = self._chat(messages, json_schema, None, None, None, True)
         self.kinds[-1] += "+reasoning"
+        self.budgets.append(budget_tokens)
         resp.thinking = "draft " * min(budget_tokens, 3)
         resp.usage["thinking_tokens"] = min(budget_tokens, 3)
+        resp.usage["completion_tokens"] += resp.usage["thinking_tokens"]  # as in Ollama: eval_count includes thinking
         resp.thinking_truncated = budget_tokens < 3
         return resp
 

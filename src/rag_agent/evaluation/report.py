@@ -83,7 +83,7 @@ def render_report(summary: dict, results: list[ItemResult], es: EvalSet, config:
         j = summary.get("judge")
         if j:
             out += [
-                f"| Корректность, Q1–Q6 (судья) | {_ci(j['correctness'])} |",
+                f"| Корректность, вопросы по файлам (судья) | {_ci(j['correctness'])} |",
                 f"| Корректность, общие вопросы (судья) | {_ci(j['correctness_general'])} |",
                 f"| Верность контексту (faithfulness) | {_ci(j['faithfulness'])} |",
                 f"| Точность цитирования (судья) | {_f(j['citation_precision'])} |",

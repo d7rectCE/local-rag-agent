@@ -147,6 +147,75 @@ def _metric_values(items: dict[str, ItemResult], ids: list[str], metric: str) ->
     return [items[i].retrieval[metric] for i in ids]
 
 
+def _score(r: ItemResult) -> float | None:
+    """Judge score when the judge ran, otherwise the must-include check."""
+    if r.judge is not None and r.judge.error is None:
+        return r.judge.score
+    return None if r.must_include_ok is None else float(r.must_include_ok)
+
+
+def _reasoning_section(rows: list[dict], per_item: list[dict[str, ItemResult]]) -> list[str]:
+    """H11 (ТЗ ч.2): accuracy against generated tokens and latency for each reasoning setting,
+    per question class, and the share of extra tokens that bought no accuracy [Chen et al. 2025]."""
+    ref = per_item[0]
+    out = ["", "## Рассуждения: точность против затрат", "",
+           "Точность — оценка судьи (1 / 0.5 / 0), без судьи — доля ответов с обязательными фрагментами. "
+           "Δ — парный бутстреп по вопросам относительно первой конфигурации. Токены — все сгенерированные "
+           "(рассуждение + ответ) на вопрос.", "",
+           "| # | Конфигурация | Точность | Δ [95% CI], p | Токенов (рассужд.) | С рассуждением | Обрезано | Эскалаций "
+           "| Латентность p50 / p95, с | p95 с рассужд., с |",
+           "|---|---|---|---|---|---|---|---|---|---|"]
+    for k, (row, items) in enumerate(zip(rows, per_item), start=1):
+        rs = row["summary"].get("reasoning") or {}
+        ids = [i for i in items if i in ref and _score(items[i]) is not None and _score(ref[i]) is not None]
+        delta = "—"
+        if k > 1 and ids:
+            cmp = paired_bootstrap([_score(items[i]) for i in ids], [_score(ref[i]) for i in ids])
+            if cmp["ci"]:
+                delta = f"{cmp['diff']:+.3f} [{cmp['ci'][0]:+.2f}; {cmp['ci'][1]:+.2f}], p={cmp['p']:.3f}"
+        scores = [s for r in items.values() if (s := _score(r)) is not None]
+        lat = rs.get("latency") or {}
+        out.append(
+            f"| {k} | {row['run'].name} | {_fmt(sum(scores) / len(scores) if scores else None)} | {delta} "
+            f"| {_fmt(rs.get('generated_tokens'), 0)} ({_fmt(rs.get('reasoning_tokens'), 0)}) "
+            f"| {_fmt(rs.get('reasoning_share'), 2)} | {_fmt(rs.get('truncated_share'), 2)} | {rs.get('escalated', 0)} "
+            f"| {_fmt(lat.get('p50'), 1)} / {_fmt(lat.get('p95'), 1)} | {_fmt((rs.get('latency_reasoning') or {}).get('p95'), 1)} |"
+        )
+
+    classes = sorted({c for row in rows for c in (row["summary"].get("reasoning") or {}).get("by_class", {})})
+    out += ["", "По классам вопросов: точность / токенов на вопрос / доля с рассуждением.", "",
+            "| Класс | " + " | ".join(f"{k}. {row['run'].name}" for k, row in enumerate(rows, start=1)) + " |",
+            "|---|" + "---|" * len(rows)]
+    for c in classes:
+        cells = []
+        for row, items in zip(rows, per_item):
+            by = ((row["summary"].get("reasoning") or {}).get("by_class") or {}).get(c, {})
+            scores = [s for r in items.values() if r.cls == c and (s := _score(r)) is not None]
+            acc = sum(scores) / len(scores) if scores else None
+            cells.append(f"{_fmt(acc, 2)} / {_fmt(by.get('generated_tokens'), 0)} / {_fmt(by.get('reasoning_share'), 2)}")
+        out.append(f"| {c} {CLASS_NAMES.get(c, '')} (n={len([r for r in ref.values() if r.cls == c])}) | " + " | ".join(cells) + " |")
+
+    # "overthinking": extra tokens over the no-reasoning run spent on questions whose score did not improve
+    base = next((k for k, row in enumerate(rows) if not (row["summary"].get("reasoning") or {}).get("reasoning_share")), None)
+    if base is not None:
+        out += ["", f"Токены сверх конфигурации «{rows[base]['run'].name}», не давшие прироста точности на вопросе:", ""]
+        for k, (row, items) in enumerate(zip(rows, per_item), start=1):
+            if k - 1 == base:
+                continue
+            extra = wasted = 0
+            for i, r in items.items():
+                b = per_item[base].get(i)
+                if b is None or _score(r) is None or _score(b) is None:
+                    continue
+                more = max(0, r.generated_tokens - b.generated_tokens)
+                extra += more
+                if _score(r) <= _score(b):
+                    wasted += more
+            share = f"{wasted / extra:.2f}" if extra else "—"
+            out.append(f"- {k}. {row['run'].name}: {share} (лишних токенов всего {extra}, из них без прироста {wasted})")
+    return out
+
+
 def render_ablation(spec: AblationSpec, es: EvalSet, rows: list[dict], per_item: list[dict[str, ItemResult]]) -> str:
     ref_items = per_item[0]
     ids = [i for i, r in ref_items.items() if r.retrieval]
@@ -195,6 +264,8 @@ def render_ablation(spec: AblationSpec, es: EvalSet, rows: list[dict], per_item:
                 f"| {_fmt((j.get('faithfulness') or {}).get('mean'))} | {s.get('refusals', {}).get('false_refusals', '—')} "
                 f"| {_fmt(s.get('latency', {}).get('all', {}).get('p95'), 1)} |"
             )
+    if any((row["summary"].get("reasoning") or {}).get("reasoning_share") for row in rows):
+        out += _reasoning_section(rows, per_item)
     out += ["", "Переопределения настроек:", ""]
     out += [f"{k}. **{row['run'].name}** — `{json.dumps(row['run'].overrides, ensure_ascii=False)}`"
             + (f" — {row['run'].note}" if row["run"].note else "") for k, row in enumerate(rows, start=1)]

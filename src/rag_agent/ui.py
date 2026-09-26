@@ -215,7 +215,9 @@ def render_answer(ans: dict) -> None:
         st.caption(f":material/edit_note: Понял вопрос как: «{ans['standalone_question']}»")
     if ans.get("reasoning"):
         cut = ", обрезан по бюджету" if ans.get("reasoning_truncated") else ""
-        with st.expander(f"Черновик рассуждений ({ans.get('reasoning_tokens', 0)} токенов{cut})"):
+        level = {"light": "коротко", "deep": "подробно"}.get(ans.get("reasoning_level"), "")
+        level = f"{level}, " if level else ""
+        with st.expander(f"Черновик рассуждений ({level}{ans.get('reasoning_tokens', 0)} токенов{cut})"):
             st.caption("Это черновик модели, а не объяснение ответа: подтверждением служат только ссылки на источники.")
             st.markdown(ans["reasoning"])
     st.markdown(ans["answer"])

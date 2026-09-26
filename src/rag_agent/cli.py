@@ -131,7 +131,7 @@ def serve(host: Optional[str] = None, port: Optional[int] = None) -> None:
     uvicorn.run(create_app(), host=host or settings.api.host, port=port or settings.api.port)
 
 
-DEFAULT_EVALSET = REPO_ROOT / "evalsets" / "demo_v3.yaml"
+DEFAULT_EVALSET = REPO_ROOT / "evalsets" / "demo_v4.yaml"
 
 
 @app.command("eval")
@@ -240,14 +240,14 @@ def ablate(spec: Path = typer.Argument(..., help="Ablation spec (YAML)")) -> Non
 def eval_validate(evalset: Path = typer.Argument(DEFAULT_EVALSET), root: Optional[Path] = None) -> None:
     """Check that every reference in the eval set points to an indexed fragment."""
     from rag_agent.engine import Engine
-    from rag_agent.evaluation.dataset import load_evalset, validate_evalset
+    from rag_agent.evaluation.dataset import CLASS_NAMES, load_evalset, validate_evalset
 
     es = load_evalset(evalset)
     engine = Engine()
     engine.index_folder(root or es.corpus_root())
     problems = validate_evalset(es, engine.index.catalog)
     engine.close()
-    counts = {c: sum(1 for i in es.items if i.cls == c) for c in ("Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "G")}
+    counts = {c: n for c in CLASS_NAMES if (n := sum(1 for i in es.items if i.cls == c))}
     typer.echo(f"{es.name}: {len(es.items)} questions {counts}")
     typer.echo("OK" if not problems else "Problems:\n  " + "\n  ".join(problems))
     if problems:

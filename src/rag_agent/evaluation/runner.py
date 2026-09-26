@@ -57,6 +57,12 @@ class ItemResult(BaseModel):
     citation_precision_ref: float | None = None
     latency_s: float | None = None
     tokens: int = 0
+    generated_tokens: int = 0  # completion tokens including reasoning: the cost of the answer
+    # reasoning mode (ТЗ ч.2 S15)
+    reasoning_level: str | None = None  # none | light | deep
+    reasoning_tokens: int = 0
+    reasoning_truncated: bool = False
+    escalated: bool = False
     judge: Verdict | None = None
     error: str | None = None
 
@@ -92,7 +98,8 @@ def run_config(engine: Engine, es: EvalSet, *, top_k: int, mode: str, route: str
     }
 
 
-def evaluate_item(engine: Engine, item: EvalItem, *, retrieval_k: int, top_k: int, mode: str, route: str, generate: bool) -> ItemResult:
+def evaluate_item(engine: Engine, item: EvalItem, *, retrieval_k: int, top_k: int, mode: str, route: str, generate: bool,
+                  reasoning: str | None = None) -> ItemResult:
     r = ItemResult(
         id=item.id, cls=item.cls, question=item.question, expected_route=item.expected_route, file_types=item.file_types
     )
@@ -109,7 +116,7 @@ def evaluate_item(engine: Engine, item: EvalItem, *, retrieval_k: int, top_k: in
                 r.retrieval = retrieval_metrics(nodes, item.sources)
         if not generate:
             return r
-        ans = engine.ask(item.question, history=item.history, top_k=top_k, mode=mode, route=route)
+        ans = engine.ask(item.question, history=item.history, top_k=top_k, mode=mode, route=route, reasoning=reasoning)
         r.route = ans.route
         r.route_ok = ans.route == item.expected_route
         r.standalone_question = ans.standalone_question
@@ -126,6 +133,11 @@ def evaluate_item(engine: Engine, item: EvalItem, *, retrieval_k: int, top_k: in
             r.citation_precision_ref = citation_precision([cited[i] for i in r.citations if i in cited], item.sources)
         r.latency_s = ans.latency_s
         r.tokens = sum(int(s.detail.get("prompt_tokens", 0)) + int(s.detail.get("completion_tokens", 0)) for s in ans.trace)
+        r.generated_tokens = sum(int(s.detail.get("completion_tokens", 0)) for s in ans.trace)
+        r.reasoning_level = ans.reasoning_level
+        r.reasoning_tokens = ans.reasoning_tokens
+        r.reasoning_truncated = ans.reasoning_truncated
+        r.escalated = any(s.name == "escalate" for s in ans.trace)
     except Exception as exc:  # one failing question must not abort the run
         r.error = f"{type(exc).__name__}: {exc}"
     return r
@@ -139,6 +151,7 @@ def run_eval(
     top_k: int | None = None,
     mode: str | None = None,
     route: str = "auto",
+    reasoning: str | None = None,
     generate: bool = True,
     limit: int | None = None,
     on_item: Callable[[ItemResult], None] | None = None,
@@ -150,7 +163,8 @@ def run_eval(
         engine.llm.chat([{"role": "user", "content": "ok"}], max_tokens=1, purpose="warmup")
     results = []
     for item in es.items[:limit] if limit else es.items:
-        r = evaluate_item(engine, item, retrieval_k=retrieval_k, top_k=top_k, mode=mode, route=route, generate=generate)
+        r = evaluate_item(engine, item, retrieval_k=retrieval_k, top_k=top_k, mode=mode, route=route, generate=generate,
+                          reasoning=reasoning)
         results.append(r)
         if on_item:
             on_item(r)
@@ -250,4 +264,31 @@ def summarize(results: list[ItemResult], es: EvalSet, n_boot: int = 1000) -> dic
         "general": percentiles([r.latency_s for r in answered if r.route == "general"]),
         "mean_tokens": _mean(r.tokens for r in answered),
     }
+
+    # --- reasoning (ТЗ ч.2 S15, H11): accuracy against generated tokens and latency, per class ---
+    by_cls = defaultdict(list)
+    for r in answered:
+        by_cls[r.cls].append(r)
+    reasoned = [r for r in answered if r.reasoning_level not in (None, "none")]
+    summary["reasoning"] = {
+        **_cost_row(answered),
+        "levels": dict(Counter(r.reasoning_level or "none" for r in answered)),
+        "truncated_share": _mean(float(r.reasoning_truncated) for r in reasoned),
+        "escalated": sum(r.escalated for r in answered),
+        "latency_reasoning": percentiles([r.latency_s for r in reasoned]),
+        "by_class": {c: _cost_row(rs) for c, rs in sorted(by_cls.items())},
+    }
     return summary
+
+
+def _cost_row(rs: list[ItemResult]) -> dict:
+    judged = [r for r in rs if r.judge is not None and r.judge.error is None]
+    return {
+        "n": len(rs),
+        "reasoning_share": _mean(float(r.reasoning_level not in (None, "none")) for r in rs),
+        "reasoning_tokens": _mean(r.reasoning_tokens for r in rs),
+        "generated_tokens": _mean(r.generated_tokens for r in rs),
+        "correctness": _mean(r.judge.score for r in judged),
+        "must_include": _mean(float(r.must_include_ok) for r in rs if r.must_include_ok is not None),
+        "latency": percentiles([r.latency_s for r in rs]),
+    }

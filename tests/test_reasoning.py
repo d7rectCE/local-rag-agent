@@ -20,28 +20,53 @@ def engine_with(settings, fake_embedder, corpus: Path, route: dict | None = None
 def test_reasoning_off_on(settings, fake_embedder, corpus: Path):
     eng = engine_with(settings, fake_embedder, corpus)
     off = eng.ask("learning rate", route="corpus", reasoning="off")
-    assert off.reasoning is None and eng.llm.kinds[-1] == "answer"
+    assert off.reasoning is None and off.reasoning_level == "none" and eng.llm.kinds[-1] == "answer"
     on = eng.ask("learning rate", route="corpus", reasoning="on")
     assert on.reasoning and on.reasoning_tokens == 3 and eng.llm.kinds[-1] == "answer+reasoning"
+    assert on.reasoning_level == "deep" and eng.llm.budgets == [settings.reasoning.budget_tokens["deep"]]
     eng.close()
 
 
-def test_auto_follows_the_router(settings, fake_embedder, corpus: Path):
-    route = {"route": "corpus", "standalone_question": "Почему lr 0.05?", "needs_reasoning": True}
+def test_auto_budget_follows_the_router_estimate(settings, fake_embedder, corpus: Path):
+    budgets = settings.reasoning.budget_tokens
+    eng = engine_with(settings, fake_embedder, corpus)
+    for level, question in [("deep", "Почему lr 0.05?"), ("light", "Сравни lr в двух ноутбуках"), ("none", "Какой lr?")]:
+        eng.llm.route = {"route": "corpus", "standalone_question": question, "reasoning": level}
+        ans = eng.ask(question, reasoning="auto")
+        assert ans.reasoning_level == level and ans.trace[0].detail["reasoning"] == level
+        assert (ans.reasoning is None) == (level == "none")
+    assert eng.llm.budgets == [budgets["deep"], budgets["light"]]
+    eng.close()
+
+
+def test_on_mode_keeps_a_lighter_router_estimate(settings, fake_embedder, corpus: Path):
+    route = {"route": "corpus", "standalone_question": "Сравни", "reasoning": "light"}
     eng = engine_with(settings, fake_embedder, corpus, route=route)
-    ans = eng.ask("Почему lr 0.05?", reasoning="auto")
-    assert ans.reasoning and ans.trace[0].detail["needs_reasoning"] is True
-    eng.llm.route = {"route": "corpus", "standalone_question": "Какой lr?", "needs_reasoning": False}
-    simple = eng.ask("Какой lr?", reasoning="auto")
-    assert simple.reasoning is None
+    assert eng.ask("Сравни", reasoning="on").reasoning_level == "light"
+    eng.llm.route = {**route, "reasoning": "none"}  # "on" still reasons when the router says it is not needed
+    assert eng.ask("Сравни", reasoning="on").reasoning_level == "deep"
     eng.close()
 
 
 def test_general_route_can_reason(settings, fake_embedder, corpus: Path):
-    route = {"route": "general", "standalone_question": "Сравни L1 и L2", "needs_reasoning": True}
+    route = {"route": "general", "standalone_question": "Сравни L1 и L2", "reasoning": "deep"}
     eng = engine_with(settings, fake_embedder, corpus, route=route)
     ans = eng.ask("Сравни L1 и L2", reasoning="auto")
     assert ans.route == "general" and ans.reasoning and eng.llm.kinds[-1] == "general+reasoning"
+    eng.close()
+
+
+def test_ungrounded_fast_answer_escalates_to_reasoning(settings, fake_embedder, corpus: Path):
+    route = {"route": "corpus", "standalone_question": "Какой lr?", "reasoning": "none"}
+    eng = engine_with(settings, fake_embedder, corpus, route=route)
+    eng.llm.reply = {"answerable": True, "answer": "Learning rate был 0.05.", "general": ""}  # no citation
+    ans = eng.ask("Какой lr?", reasoning="auto")
+    assert eng.llm.kinds == ["route", "answer", "answer+reasoning"]
+    assert ans.reasoning_level == "deep" and "escalate" in [s.name for s in ans.trace]
+    settings.reasoning.escalate = False
+    eng.llm.kinds.clear()
+    eng.ask("Какой lr?", reasoning="auto")
+    assert eng.llm.kinds == ["route", "answer"]
     eng.close()
 
 

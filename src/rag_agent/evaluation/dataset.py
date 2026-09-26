@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rag_agent.schema import Node
 
-QuestionClass = Literal["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "G"]
+QuestionClass = Literal["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q8", "G"]
 
 CLASS_NAMES = {
     "Q1": "фактологический",
@@ -21,6 +21,7 @@ CLASS_NAMES = {
     "Q4": "визуальный",
     "Q5": "многошаговый",
     "Q6": "неотвечаемый",
+    "Q8": "требующий рассуждения",
     "G": "общий (без файлов)",
 }
 

@@ -89,6 +89,7 @@ class Answer(BaseModel):
     reasoning: str | None = None
     reasoning_tokens: int = 0
     reasoning_truncated: bool = False
+    reasoning_level: str = "none"  # none | light | deep: which budget was applied
 
 
 def _call(llm: BaseLLM, messages: list[dict], json_schema: dict | None, purpose: str, reasoning_budget: int | None):

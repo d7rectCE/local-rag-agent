@@ -18,6 +18,7 @@ from rag_agent.llm import BaseLLM, LLMError
 
 Route = Literal["corpus", "general"]
 RouteChoice = Literal["auto", "corpus", "general"]
+ReasoningLevel = Literal["none", "light", "deep"]
 
 ROUTER_PROMPT = """Ты — маршрутизатор запросов ассистента, у которого есть доступ к личному архиву исследовательских файлов пользователя: код на Python, Jupyter-ноутбуки с экспериментами и результатами, PDF, изображения.
 
@@ -28,20 +29,22 @@ ROUTER_PROMPT = """Ты — маршрутизатор запросов асси
 
 Кроме того, перепиши последний вопрос пользователя в самостоятельный вопрос: раскрой местоимения и отсылки к предыдущим репликам. Если истории нет или вопрос уже самостоятельный, верни его без изменений. Не отвечай на вопрос.
 
-Реши также, нужно ли перед ответом рассуждать (needs_reasoning):
-- true — нужно сопоставить несколько фактов, сравнить варианты, объяснить причину («почему»), посчитать или спланировать шаги;
-- false — достаточно найти и пересказать один факт, определение, место в коде, или это разговор.
+Оцени также, сколько рассуждений нужно перед ответом (reasoning):
+- "none" — найти и пересказать факт: значение, метрику, параметр, файл, место в коде, что делает функция, определение; разговор. Вопросы «какой», «где», «в каком», «сколько», «что делает», «покажи» — обычно "none", даже если ответ состоит из нескольких чисел.
+- "light" — явно просят сравнить или сопоставить несколько фактов, посчитать, перечислить шаги: «сравни», «чем отличается», «совпадает ли», «согласуется ли».
+- "deep" — нужно сделать вывод, которого нет в файлах готовым: объяснить причину («почему», «чем вызвано», «из-за чего»), оценить корректность или значимость («корректно ли», «можно ли утверждать», «не случаен ли»), предложить, как проверить или исправить, спланировать эксперимент, разрешить противоречие.
+Примеры (не из архива пользователя): «Какой оптимизатор в эксперименте A?» — "none"; «Сравни конфиги A и B» — "light"; «Почему метрика упала после смены препроцессинга?» — "deep"; «Не подогнан ли порог под валидацию?» — "deep".
 
-Верни JSON: {"route": "corpus" | "general", "standalone_question": "...", "needs_reasoning": true | false}"""
+Верни JSON: {"route": "corpus" | "general", "standalone_question": "...", "reasoning": "none" | "light" | "deep"}"""
 
 ROUTER_SCHEMA = {
     "type": "object",
     "properties": {
         "route": {"type": "string", "enum": ["corpus", "general"]},
         "standalone_question": {"type": "string"},
-        "needs_reasoning": {"type": "boolean"},
+        "reasoning": {"type": "string", "enum": ["none", "light", "deep"]},
     },
-    "required": ["route", "standalone_question", "needs_reasoning"],
+    "required": ["route", "standalone_question", "reasoning"],
     "additionalProperties": False,
 }
 
@@ -55,7 +58,11 @@ class RouteDecision:
     standalone_question: str
     latency_s: float = 0.0
     fallback: bool = False  # router failed and the default route was used
-    needs_reasoning: bool = False
+    reasoning: ReasoningLevel = "none"  # difficulty estimate (ТЗ ч.2 S15): sets the reasoning budget
+
+    @property
+    def needs_reasoning(self) -> bool:
+        return self.reasoning != "none"
 
 
 def trim_history(history: list[dict] | None) -> list[dict]:
@@ -85,7 +92,8 @@ def route_question(question: str, history: list[dict] | None, llm: BaseLLM) -> R
         standalone = str(data.get("standalone_question") or "").strip() or question
         if route not in ("corpus", "general"):
             raise LLMError(f"unknown route {route!r}")
+        level = data.get("reasoning")
         return RouteDecision(route, standalone, time.perf_counter() - t0,
-                             needs_reasoning=bool(data.get("needs_reasoning", False)))
+                             reasoning=level if level in ("none", "light", "deep") else "none")
     except LLMError:
         return RouteDecision("corpus", question, time.perf_counter() - t0, fallback=True)

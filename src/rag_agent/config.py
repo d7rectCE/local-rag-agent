@@ -102,7 +102,14 @@ class ReasoningConfig(BaseModel):
     """Reasoning mode (ТЗ ч.2, S15): off, on, or auto (the router decides per question)."""
 
     mode: Literal["off", "on", "auto"] = "auto"
-    budget_tokens: int = 1024  # hard cap on reasoning; then the answer is forced (budget forcing)
+    # hard caps on reasoning tokens by the router's difficulty estimate; past the cap the answer
+    # is forced (budget forcing). "on" without an estimate uses the deep budget.
+    budget_tokens: dict[str, int] = {"light": 512, "deep": 1536}
+    # auto mode: a fast answer that is not grounded in the sources is retried with deep reasoning
+    escalate: bool = True
+
+    def budget(self, level: str) -> int:
+        return self.budget_tokens.get(level) or max(self.budget_tokens.values())
 
 
 class TracingConfig(BaseModel):

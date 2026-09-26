@@ -255,16 +255,18 @@ class Engine:
 
         standalone = question
         chosen = route
-        reasoning_mode = reasoning or self.settings.reasoning.mode
-        think = reasoning_mode == "on"
-        # the router also rewrites follow-ups into standalone questions and decides on reasoning in auto mode
+        rcfg = self.settings.reasoning
+        reasoning_mode = reasoning or rcfg.mode
+        # reasoning level: "on" reasons deep unless the router estimated a lighter level
+        level = "deep" if reasoning_mode == "on" else "none"
+        # the router also rewrites follow-ups into standalone questions and estimates the reasoning level
         if route == "auto" or turns or reasoning_mode == "auto":
             decision = route_question(question, turns, self.llm)
             standalone = decision.standalone_question
-            if reasoning_mode == "auto":
-                think = decision.needs_reasoning
+            if reasoning_mode == "auto" or (reasoning_mode == "on" and decision.needs_reasoning):
+                level = decision.reasoning
             detail = {"route": decision.route, "standalone_question": standalone, "fallback": decision.fallback,
-                      "needs_reasoning": decision.needs_reasoning}
+                      "reasoning": decision.reasoning}
             if route == "auto":
                 chosen = decision.route
                 # corpus signal: a question that names a function, class or file of the corpus is about the files
@@ -278,7 +280,7 @@ class Engine:
         if chosen == "corpus" and index is None:
             chosen, notice = "general", "Папка ещё не проиндексирована, поэтому ответ дан из общих знаний модели."
 
-        budget = self.settings.reasoning.budget_tokens if think else None
+        budget = rcfg.budget(level) if level != "none" else None
         if chosen == "general":
             answer = generate_general(question, turns, self.llm, reasoning_budget=budget)
         else:
@@ -302,9 +304,17 @@ class Engine:
             )
             answer = generate_answer(standalone, hits, self.llm, self.settings.generation.max_source_chars,
                                      reasoning_budget=budget)
+            # escalation (ТЗ ч.2 S15): the fast answer claims an answer but cites nothing valid
+            if reasoning_mode == "auto" and rcfg.escalate and budget is None and not answer.grounded:
+                fast_trace = answer.trace
+                answer = generate_answer(standalone, hits, self.llm, self.settings.generation.max_source_chars,
+                                         reasoning_budget=rcfg.budget("deep"))
+                answer.trace[:0] = [*fast_trace, TraceStep(name="escalate", duration_s=0.0, detail={"reason": "ungrounded"})]
+                level = "deep"
             answer.question = question
 
         answer.standalone_question = standalone if standalone != question else None
+        answer.reasoning_level = level
         answer.notice = notice
         answer.trace[:0] = steps
         answer.latency_s = round(time.perf_counter() - t0, 3)

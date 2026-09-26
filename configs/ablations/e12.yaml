@@ -1,0 +1,16 @@
+# Э12, H11 (ТЗ ч.2): авторежим рассуждений близок по точности к «всегда вкл» при заметно меньшем
+# числе токенов. Три режима на всех классах demo_v4 (включая 16 вопросов Q8) и «вкл» с малым
+# бюджетом — ещё одна точка кривой «точность — токены». Референс для парных сравнений — «всегда вкл».
+name: e12-reasoning
+evalset: ../../evalsets/demo_v4.yaml
+retrieval_only: false
+judge: true
+runs:
+  - name: "вкл (бюджет 512 / 1536)"
+    overrides: {reasoning: {mode: "on"}}
+  - name: "авто (по умолчанию)"
+    overrides: {reasoning: {mode: auto}}
+  - name: "выкл"
+    overrides: {reasoning: {mode: "off"}}
+  - name: "вкл, малый бюджет (256)"
+    overrides: {reasoning: {mode: "on", budget_tokens: {light: 256, deep: 256}}}

@@ -103,3 +103,27 @@ def test_validate_and_run_eval_end_to_end(settings, fake_embedder, corpus: Path)
     })
     assert "## Поиск" in report and "маршрут corpus вместо general" in report
     eng.close()
+
+
+def test_reasoning_accounting_and_h11_section(settings, fake_embedder, corpus: Path):
+    from rag_agent.evaluation.ablation import AblationRun, AblationSpec, render_ablation
+
+    eng = Engine(settings, embedder=fake_embedder, llm=FakeLLM(settings))
+    eng.index_folder(corpus)
+    es = small_evalset()
+    es.items = [i for i in es.items if i.id != "bad"]
+    rows, per_item = [], []
+    for mode in ("on", "off"):
+        results = run_eval(eng, es, retrieval_k=10, top_k=3, reasoning=mode)
+        run_judge(results, es, FakeLLM(settings))
+        summary = summarize(results, es, n_boot=50)
+        rows.append({"run": AblationRun(name=mode), "summary": summary})
+        per_item.append({r.id: r for r in results})
+    on, off = rows[0]["summary"]["reasoning"], rows[1]["summary"]["reasoning"]
+    assert on["reasoning_share"] == 1.0 and on["levels"] == {"deep": 4} and on["reasoning_tokens"] == 3
+    assert off["reasoning_share"] == 0.0 and off["by_class"]["Q1"]["n"] == 2
+    assert per_item[0]["a"].generated_tokens > per_item[1]["a"].generated_tokens
+    report = render_ablation(AblationSpec(name="h11", evalset="x", runs=[r["run"] for r in rows]), es, rows, per_item)
+    assert "## Рассуждения: точность против затрат" in report and "не давшие прироста" in report
+    assert "- 1. on: 1.00" in report  # the fake judge scores both runs the same: every extra token is wasted
+    eng.close()

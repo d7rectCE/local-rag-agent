@@ -1,6 +1,9 @@
 """Relational catalog (SQLite): files, nodes and typed edges.
 
-Э1 keeps the structural part; experiment/metric tables for text-to-SQL arrive in Э6.
+Structural part (Э1) plus the experiments, metrics and hyperparameters extracted
+from notebooks by the LLM (Э6, `x_*` tables): they are keyed by file content and
+model, so re-indexing an unchanged file keeps them. The SQL tool never queries this
+database directly — see rag_agent.structured.analytics.
 """
 
 from __future__ import annotations
@@ -76,7 +79,27 @@ CREATE TABLE IF NOT EXISTS calls (
 );
 CREATE INDEX IF NOT EXISTS idx_calls_name ON calls(name COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS idx_calls_file ON calls(file_path);
+CREATE TABLE IF NOT EXISTS x_state (
+    file_path TEXT PRIMARY KEY,
+    content_hash TEXT,
+    model TEXT,
+    n_experiments INTEGER,
+    n_values INTEGER,
+    n_dropped INTEGER,       -- values not found in the cited cell (hallucinations) and dropped
+    error TEXT,
+    extracted_at TEXT
+);
+CREATE TABLE IF NOT EXISTS x_experiments (
+    file_path TEXT NOT NULL, idx INTEGER, title TEXT, task TEXT, dataset TEXT, model TEXT, cell INTEGER
+);
+CREATE TABLE IF NOT EXISTS x_metrics (
+    file_path TEXT NOT NULL, exp_idx INTEGER, name TEXT, value REAL, split TEXT, variant TEXT, cell INTEGER
+);
+CREATE TABLE IF NOT EXISTS x_hparams (
+    file_path TEXT NOT NULL, exp_idx INTEGER, name TEXT, value TEXT, value_num REAL, variant TEXT, cell INTEGER
+);
 """
+X_TABLES = ("x_state", "x_experiments", "x_metrics", "x_hparams")
 
 _NODE_COLS = "id, file_path, file_type, node_type, parent_id, title, text, context, location, metadata, embed"
 
@@ -182,6 +205,8 @@ class Catalog:
             for p in paths:
                 self._delete_file_rows(p)
                 self._conn.execute("DELETE FROM files WHERE path=?", (p,))
+                for table in X_TABLES:
+                    self._conn.execute(f"DELETE FROM {table} WHERE file_path=?", (p,))
 
     def _delete_file_rows(self, path: str) -> None:
         for table in ("nodes", "edges", "symbols", "calls"):
@@ -189,7 +214,7 @@ class Catalog:
 
     def clear(self) -> None:
         with self._lock, self._conn:
-            for table in ("nodes", "edges", "symbols", "calls", "files"):
+            for table in ("nodes", "edges", "symbols", "calls", "files", *X_TABLES):
                 self._conn.execute(f"DELETE FROM {table}")
 
     # --- nodes & edges ----------------------------------------------------
@@ -294,6 +319,46 @@ class Catalog:
             }
             for r in rows
         ]
+
+    # --- extracted experiments (Э6) -----------------------------------------
+    def extraction_states(self) -> dict[str, tuple[str | None, str | None]]:
+        """path -> (content_hash, model) of the last extraction."""
+        with self._lock:
+            rows = self._conn.execute("SELECT file_path, content_hash, model FROM x_state").fetchall()
+        return {r["file_path"]: (r["content_hash"], r["model"]) for r in rows}
+
+    def replace_extraction(self, path: str, content_hash: str | None, model: str, experiments: list[dict],
+                           n_dropped: int = 0, error: str | None = None) -> None:
+        """experiments: [{title, task, dataset, model, cell, metrics: [...], hyperparameters: [...]}]"""
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        n_values = sum(len(e.get("metrics", [])) + len(e.get("hyperparameters", [])) for e in experiments)
+        with self._lock, self._conn:
+            for table in X_TABLES:
+                self._conn.execute(f"DELETE FROM {table} WHERE file_path=?", (path,))
+            self._conn.execute(
+                "INSERT INTO x_state VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (path, content_hash, model, len(experiments), n_values, n_dropped, error, now),
+            )
+            for i, e in enumerate(experiments):
+                self._conn.execute(
+                    "INSERT INTO x_experiments VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (path, i, e.get("title"), e.get("task"), e.get("dataset"), e.get("model"), e.get("cell")),
+                )
+                self._conn.executemany(
+                    "INSERT INTO x_metrics VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    [(path, i, m["name"], m["value"], m.get("split"), m.get("variant") or "", m.get("cell"))
+                     for m in e.get("metrics", [])],
+                )
+                self._conn.executemany(
+                    "INSERT INTO x_hparams VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    [(path, i, h["name"], h["value"], h.get("value_num"), h.get("variant") or "", h.get("cell"))
+                     for h in e.get("hyperparameters", [])],
+                )
+
+    def query(self, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
+        """Read rows of the internal tables (for building the analytics database)."""
+        with self._lock:
+            return self._conn.execute(sql, params).fetchall()
 
     def close(self) -> None:
         with self._lock:

@@ -35,7 +35,9 @@ ROUTER_PROMPT = """Ты — маршрутизатор запросов асси
 - "deep" — нужно сделать вывод, которого нет в файлах готовым: объяснить причину («почему», «чем вызвано», «из-за чего»), оценить корректность или значимость («корректно ли», «можно ли утверждать», «не случаен ли»), предложить, как проверить или исправить, спланировать эксперимент, разрешить противоречие.
 Примеры (не из архива пользователя): «Какой оптимизатор в эксперименте A?» — "none"; «Сравни конфиги A и B» — "light"; «Почему метрика упала после смены препроцессинга?» — "deep"; «Не подогнан ли порог под валидацию?» — "deep".
 
-Верни JSON: {"route": "corpus" | "general", "standalone_question": "...", "reasoning": "none" | "light" | "deep"}"""
+Отметь, агрегатный ли вопрос (aggregate): true — нужно собрать или сравнить значения по многим экспериментам, запускам, файлам или функциям: лучший или худший по метрике, максимум, минимум, среднее, «сколько», «все», «список», «в каких», сортировка; false — вопрос об одном конкретном месте или значении.
+
+Верни JSON: {"route": "corpus" | "general", "standalone_question": "...", "reasoning": "none" | "light" | "deep", "aggregate": true | false}"""
 
 ROUTER_SCHEMA = {
     "type": "object",
@@ -43,8 +45,9 @@ ROUTER_SCHEMA = {
         "route": {"type": "string", "enum": ["corpus", "general"]},
         "standalone_question": {"type": "string"},
         "reasoning": {"type": "string", "enum": ["none", "light", "deep"]},
+        "aggregate": {"type": "boolean"},
     },
-    "required": ["route", "standalone_question", "reasoning"],
+    "required": ["route", "standalone_question", "reasoning", "aggregate"],
     "additionalProperties": False,
 }
 
@@ -59,6 +62,7 @@ class RouteDecision:
     latency_s: float = 0.0
     fallback: bool = False  # router failed and the default route was used
     reasoning: ReasoningLevel = "none"  # difficulty estimate (ТЗ ч.2 S15): sets the reasoning budget
+    aggregate: bool = False  # over many experiments / files: the catalog is queried with SQL (Э6)
 
     @property
     def needs_reasoning(self) -> bool:
@@ -94,6 +98,7 @@ def route_question(question: str, history: list[dict] | None, llm: BaseLLM) -> R
             raise LLMError(f"unknown route {route!r}")
         level = data.get("reasoning")
         return RouteDecision(route, standalone, time.perf_counter() - t0,
-                             reasoning=level if level in ("none", "light", "deep") else "none")
+                             reasoning=level if level in ("none", "light", "deep") else "none",
+                             aggregate=bool(data.get("aggregate", False)))
     except LLMError:
         return RouteDecision("corpus", question, time.perf_counter() - t0, fallback=True)

@@ -11,9 +11,12 @@ Docling's layout model (ТЗ S1 "CV-компонент проекта").
     # 3. mAP on the DocLayNet test split: ours and Docling's (heron)
     python scripts/train_layout_detector.py evaluate --data C:/ml-cache/doclaynet640 --model runs/layout/rtdetr_v2_r50/best
     python scripts/train_layout_detector.py evaluate --data C:/ml-cache/doclaynet640 --model <docling models dir>/<heron>
+    # 4. install next to Docling's models (documents.layout_model: local/rtdetr-v2-doclaynet), optionally ONNX
+    python scripts/train_layout_detector.py export --model runs/layout/rtdetr_v2_r50/best --onnx
 
 DocLayNet v1.2 is read from the local Hugging Face cache (docling-project/DocLayNet-v1.2).
-Without validation shards, the last train shard is held out as validation.
+The shards are sorted by document category, so all train shards are needed for a model that
+covers the six categories. Without validation shards, whole documents are held out from train.
 All models are loaded from local files only.
 """
 
@@ -26,6 +29,7 @@ import math
 import os
 import random
 import time
+import zlib
 from pathlib import Path
 
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
@@ -57,49 +61,95 @@ def dataset_files() -> dict[str, list[Path]]:
     for rev in repo.revisions:
         for f in rev.files:
             name = f.file_name
-            for split in files:
-                if name.startswith(f"{split}-") and name.endswith(".parquet"):
+            for split, prefixes in (("train", ("train-",)), ("validation", ("validation-", "val-")), ("test", ("test-",))):
+                if name.startswith(prefixes) and name.endswith(".parquet"):
                     files[split].append(Path(f.file_path))
-    files = {split: sorted(set(paths)) for split, paths in files.items()}
-    if not files["validation"] and len(files["train"]) > 1:
-        files["validation"] = [files["train"].pop()]  # hold out one train shard
-    return files
+    return {split: sorted(set(paths)) for split, paths in files.items()}
 
 
-def prepare(out: Path, size: int, limit: int | None) -> None:
+def _scan(paths: list[Path]) -> list[tuple[Path, int, int, str, str]]:
+    """(file, row group, row, doc_category, document) for every page, reading only the metadata column."""
+    import pyarrow.parquet as pq
+
+    rows = []
+    for path in paths:
+        pf = pq.ParquetFile(path)
+        for rg in range(pf.num_row_groups):
+            metas = pf.read_row_group(rg, columns=["metadata"]).column("metadata").to_pylist()
+            rows += [(path, rg, i, m.get("doc_category") or "?", m.get("original_filename") or f"{path.name}#{rg}")
+                     for i, m in enumerate(metas)]
+    return rows
+
+
+def _sample(rows: list, per_category: int | None, seed: int) -> list:
+    """Up to per_category random pages of each document category (all pages when None)."""
+    if per_category is None:
+        return rows
+    rng = random.Random(seed)
+    by_cat: dict[str, list] = {}
+    for r in rows:
+        by_cat.setdefault(r[3], []).append(r)
+    picked = []
+    for cat in sorted(by_cat):
+        pages = by_cat[cat]
+        picked += rng.sample(pages, min(per_category, len(pages)))
+    return picked
+
+
+def _write_split(rows: list, target: Path, size: int) -> None:
     import pyarrow.parquet as pq
     from PIL import Image
 
-    for split, paths in dataset_files().items():
-        target = out / split
-        target.mkdir(parents=True, exist_ok=True)
-        records, n = [], 0
-        for path in paths:
-            pf = pq.ParquetFile(path)
-            for rg in range(pf.num_row_groups):
-                table = pf.read_row_group(rg, columns=["image", "bboxes", "category_id", "metadata"])
-                for row in table.to_pylist():
-                    img = Image.open(io.BytesIO(row["image"]["bytes"])).convert("RGB")
-                    sx, sy = size / img.width, size / img.height
-                    name = f"{n:06d}.jpg"
-                    img.resize((size, size), Image.BILINEAR).save(target / name, quality=90)
-                    boxes = [[b[0] * sx, b[1] * sy, b[2] * sx, b[3] * sy] for b in row["bboxes"]]
-                    keep = [i for i, b in enumerate(boxes) if b[2] > 1 and b[3] > 1]
-                    records.append({
-                        "file": name,
-                        "boxes": [[round(v, 2) for v in boxes[i]] for i in keep],
-                        "labels": [int(row["category_id"][i]) - 1 for i in keep],
-                        "doc_category": row["metadata"].get("doc_category"),
-                    })
-                    n += 1
-                    if limit and n >= limit:
-                        break
-                if limit and n >= limit:
-                    break
-            if limit and n >= limit:
-                break
-        (target / "annotations.json").write_text(json.dumps({"classes": CLASSES, "size": size, "images": records}))
-        print(f"{split}: {n} pages -> {target}")
+    target.mkdir(parents=True, exist_ok=True)
+    wanted: dict[tuple[Path, int], dict[int, tuple[str, str]]] = {}
+    for path, rg, i, cat, doc in rows:
+        wanted.setdefault((path, rg), {})[i] = (cat, doc)
+    records, n = [], 0
+    for (path, rg), idx in sorted(wanted.items(), key=lambda kv: (str(kv[0][0]), kv[0][1])):
+        order = sorted(idx)
+        table = pq.ParquetFile(path).read_row_group(rg, columns=["image", "bboxes", "category_id"]).take(order)
+        for i, row in zip(order, table.to_pylist()):
+            img = Image.open(io.BytesIO(row["image"]["bytes"])).convert("RGB")
+            sx, sy = size / img.width, size / img.height
+            name = f"{n:06d}.jpg"
+            img.resize((size, size), Image.BILINEAR).save(target / name, quality=90)
+            boxes = [[b[0] * sx, b[1] * sy, b[2] * sx, b[3] * sy] for b in row["bboxes"]]
+            keep = [k for k, b in enumerate(boxes) if b[2] > 1 and b[3] > 1]
+            records.append({
+                "file": name,
+                "boxes": [[round(v, 2) for v in boxes[k]] for k in keep],
+                "labels": [int(row["category_id"][k]) - 1 for k in keep],
+                "doc_category": idx[i][0],
+                "doc": idx[i][1],
+            })
+            n += 1
+    (target / "annotations.json").write_text(json.dumps({"classes": CLASSES, "size": size, "images": records}))
+    cats = {}
+    for r in records:
+        cats[r["doc_category"]] = cats.get(r["doc_category"], 0) + 1
+    print(f"{target.name}: {n} pages {dict(sorted(cats.items()))} -> {target}")
+
+
+def prepare(out: Path, size: int, limit: int | None, per_category: int | None = None, seed: int = 0) -> None:
+    """Pages of every split, resized to size x size. With per_category, train and validation take a
+    balanced random sample of each document category (the parquet shards are sorted by category, so
+    a partial download or a prefix covers only some of them). Without official validation shards,
+    whole documents (not pages) are held out from train, so no document is in both."""
+    files = dataset_files()
+    train = _scan(files["train"])
+    if files["validation"]:
+        val = _scan(files["validation"])
+    else:
+        held = {doc for *_, doc in train if zlib.crc32(doc.encode()) % 20 == 0}  # ~5% of documents
+        val = [r for r in train if r[4] in held]
+        train = [r for r in train if r[4] not in held]
+    splits = {
+        "train": _sample(train, per_category, seed)[:limit],
+        "validation": _sample(val, per_category and max(1, per_category // 10), seed)[:limit],
+        "test": _scan(files["test"])[:limit],
+    }
+    for split, rows in splits.items():
+        _write_split(rows, out / split, size)
 
 
 # --------------------------------------------------------------------------- data
@@ -169,6 +219,7 @@ def evaluate_model(model_path: str, data: Path, split: str, device: str, batch_s
     processor, model, mapping, dtype = load_model(model_path, device)
     dataset = LayoutDataset(data / split, limit)
     metric = MeanAveragePrecision(box_format="xywh", iou_type="bbox", class_metrics=True, backend="pycocotools")
+    per_category: dict[str, MeanAveragePrecision] = {}  # mAP by document category (financial reports, patents, ...)
     size = json.loads((data / split / "annotations.json").read_text())["size"]
     t0 = time.perf_counter()
     for k in range(0, len(dataset), batch_size):
@@ -192,11 +243,83 @@ def evaluate_model(model_path: str, data: Path, split: str, device: str, batch_s
             targets.append({"boxes": torch.tensor(rec["boxes"], dtype=torch.float32).reshape(-1, 4),
                             "labels": torch.tensor(rec["labels"], dtype=torch.long)})
         metric.update(preds, targets)
+        for (_, rec, _), pred, target in zip(batch, preds, targets):
+            cat = rec.get("doc_category") or "?"
+            if cat not in per_category:
+                per_category[cat] = MeanAveragePrecision(box_format="xywh", iou_type="bbox", backend="pycocotools")
+            per_category[cat].update([pred], [target])
     m = metric.compute()
     per_class = {CLASSES[int(c)]: round(float(v), 4) for c, v in zip(m["classes"], m["map_per_class"])}
+    by_category = {cat: {"pages": sum(1 for r in dataset.items if (r.get("doc_category") or "?") == cat),
+                         "map": round(float(mc.compute()["map"]), 4)}
+                   for cat, mc in sorted(per_category.items())}
     return {"model": model_path, "split": split, "images": len(dataset), "seconds": round(time.perf_counter() - t0, 1),
             "map": round(float(m["map"]), 4), "map_50": round(float(m["map_50"]), 4),
-            "map_75": round(float(m["map_75"]), 4), "map_per_class": per_class}
+            "map_75": round(float(m["map_75"]), 4), "map_per_class": per_class, "map_by_category": by_category}
+
+
+# --------------------------------------------------------------------------- export
+
+
+EXPORT_REPO_ID = "local/rtdetr-v2-doclaynet"
+
+
+def export(model_path: Path, models_dir: Path, repo_id: str, onnx: bool) -> Path:
+    """Copy the model to <models_dir>/<org>--<name>, where Docling resolves layout models,
+    with class names spelled as Docling's DocItemLabel members (list_item, not List-item)."""
+    import shutil
+
+    dest = models_dir / repo_id.replace("/", "--")
+    if dest.exists():
+        shutil.rmtree(dest)
+    dest.mkdir(parents=True)
+    for name in ("config.json", "model.safetensors", "preprocessor_config.json"):
+        shutil.copy2(model_path / name, dest / name)
+    cfg = json.loads((dest / "config.json").read_text(encoding="utf-8"))
+    names = {int(i): n.lower().replace("-", "_") for i, n in cfg["id2label"].items()}
+    cfg["id2label"] = {str(i): n for i, n in sorted(names.items())}
+    cfg["label2id"] = {n: i for i, n in sorted(names.items())}
+    (dest / "config.json").write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    if onnx:
+        export_onnx(dest, dest / "model.onnx")
+    return dest
+
+
+def export_onnx(model_dir: Path, out: Path) -> None:
+    """ONNX graph with pixel_values -> (logits, pred_boxes); checked against PyTorch when onnxruntime is present."""
+    import torch
+    from transformers import AutoModelForObjectDetection
+
+    model = AutoModelForObjectDetection.from_pretrained(model_dir, local_files_only=True).eval()
+    size = json.loads((model_dir / "preprocessor_config.json").read_text(encoding="utf-8"))["size"]
+
+    class Heads(torch.nn.Module):
+        def __init__(self, m):
+            super().__init__()
+            self.m = m
+
+        def forward(self, pixel_values):
+            o = self.m(pixel_values=pixel_values)
+            return o.logits, o.pred_boxes
+
+    dummy = torch.rand(1, 3, size["height"], size["width"])
+    torch.onnx.export(Heads(model), (dummy,), str(out), input_names=["pixel_values"],
+                      output_names=["logits", "pred_boxes"], opset_version=17, dynamo=False,
+                      dynamic_axes={"pixel_values": {0: "batch"}, "logits": {0: "batch"}, "pred_boxes": {0: "batch"}})
+    print(f"ONNX: {out} ({out.stat().st_size / 2**20:.0f} MB)")
+    try:
+        import onnxruntime as ort
+    except ImportError:
+        return
+    sess = ort.InferenceSession(str(out), providers=["CPUExecutionProvider"])
+    x = torch.rand(2, 3, size["height"], size["width"])
+    with torch.inference_mode():
+        ref = Heads(model)(x)
+    t0 = time.perf_counter()
+    got = sess.run(None, {"pixel_values": x.numpy()})
+    ms = (time.perf_counter() - t0) * 1000 / len(x)
+    diff = max(float(np.abs(r.numpy() - g).max()) for r, g in zip(ref, got))
+    print(f"onnxruntime (CPU): max |diff| vs PyTorch = {diff:.2e}, {ms:.0f} ms per page")
 
 
 # --------------------------------------------------------------------------- training
@@ -300,6 +423,9 @@ def main() -> None:
     p.add_argument("--out", required=True)
     p.add_argument("--size", type=int, default=640)
     p.add_argument("--limit", type=int, default=None, help="pages per split (smoke tests)")
+    p.add_argument("--per-category", type=int, default=None,
+                   help="balanced train sample: pages per document category (validation gets a tenth)")
+    p.add_argument("--seed", type=int, default=0)
     t = sub.add_parser("train")
     t.add_argument("--data", required=True)
     t.add_argument("--out", required=True)
@@ -322,14 +448,23 @@ def main() -> None:
     e.add_argument("--batch-size", type=int, default=16)
     e.add_argument("--limit", type=int, default=None)
     e.add_argument("--out", default=None, help="write the metrics JSON here")
+    x = sub.add_parser("export", help="install the model for Docling (documents.layout_model), optionally as ONNX")
+    x.add_argument("--model", required=True)
+    x.add_argument("--models-dir", default="~/.cache/docling/models", help="documents.models_dir")
+    x.add_argument("--repo-id", default=EXPORT_REPO_ID)
+    x.add_argument("--onnx", action="store_true", help="also write model.onnx (needs the onnx package)")
     args = ap.parse_args()
     if args.cmd == "prepare":
-        prepare(Path(args.out), args.size, args.limit)
+        prepare(Path(args.out), args.size, args.limit, args.per_category, args.seed)
     elif args.cmd == "train":
         train(args)
     elif args.cmd == "stop":
         (Path(args.out) / "STOP").touch()
         print("stop requested: the training saves a checkpoint after the current batch and exits")
+    elif args.cmd == "export":
+        dest = export(Path(args.model), Path(args.models_dir).expanduser(), args.repo_id, args.onnx)
+        print(f"installed: {dest}")
+        print(f"use it with documents.layout_model: {args.repo_id}")
     else:
         import torch
 

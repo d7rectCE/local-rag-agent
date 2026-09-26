@@ -45,6 +45,9 @@ class ChunkingConfig(BaseModel):
     docx: Literal["structured", "plain"] = "structured"  # plain = flat text in fixed windows (H10 baseline)
 
 
+DEFAULT_LAYOUT_MODEL = "docling-project/docling-layout-heron"
+
+
 class DocumentsConfig(BaseModel):
     """PDF conversion (Docling) and OCR (ТЗ S1)."""
 
@@ -57,6 +60,9 @@ class DocumentsConfig(BaseModel):
     # PDF text backend: docling-parse (Docling's default) cannot open its resources from a
     # non-ASCII install path on Windows; auto falls back to pdfium there
     backend: Literal["auto", "docling_parse", "pypdfium"] = "auto"
+    # layout detector (H8): Hugging Face repo id, looked up as <models_dir>/<org>--<name>; the default is
+    # Docling's Heron, `scripts/train_layout_detector.py export` installs our DocLayNet model next to it
+    layout_model: str = DEFAULT_LAYOUT_MODEL
 
 
 class EmbeddingConfig(BaseModel):
@@ -130,6 +136,20 @@ class ApiConfig(BaseModel):
     port: int = 8765
 
 
+class CatalogConfig(BaseModel):
+    """Relational catalog of experiments and the SQL tool (ТЗ S6)."""
+
+    # LLM extraction of experiments, metrics and hyperparameters from notebooks after indexing;
+    # cached per file content and model, every value is checked against its source cell
+    extract: bool = True
+    notebook_chars: int = 14000  # notebook text shown to the extractor
+    sql: bool = True  # aggregate questions also query the catalog
+    max_rows: int = 50  # forced LIMIT
+    timeout_s: float = 5.0
+    attempts: int = 3  # generation + self-correction on an error or an empty result
+    examples: str | None = None  # extra "question -> SQL" examples (YAML list), added to the built-in ones
+
+
 class Settings(BaseModel):
     corpus: CorpusConfig = CorpusConfig()
     storage: StorageConfig = StorageConfig()
@@ -140,6 +160,7 @@ class Settings(BaseModel):
     llm: LLMConfig = LLMConfig()
     generation: GenerationConfig = GenerationConfig()
     reasoning: ReasoningConfig = ReasoningConfig()
+    catalog: CatalogConfig = CatalogConfig()
     tracing: TracingConfig = TracingConfig()
     evaluation: EvaluationConfig = EvaluationConfig()
     api: ApiConfig = ApiConfig()

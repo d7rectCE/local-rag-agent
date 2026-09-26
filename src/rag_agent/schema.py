@@ -16,6 +16,7 @@ class FileType(StrEnum):
     PNG = "png"
     DOCX = "docx"
     TXT = "txt"
+    CATALOG = "catalog"  # a result of an SQL query to the catalog of experiments (Э6), not a file
 
 
 class NodeType(StrEnum):

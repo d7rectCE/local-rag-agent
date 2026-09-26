@@ -48,6 +48,7 @@ class AblationSpec(BaseModel):
     evalset: str
     retrieval_only: bool = True
     judge: bool = False
+    classes: list[str] | None = None  # only these question classes (e.g. Q3 for H5)
     runs: list[AblationRun]
     path: Path | None = None
 
@@ -86,6 +87,8 @@ def run_ablation(
     spec: AblationSpec, base: Settings, out_root: Path, log: Callable[[str], None] = print
 ) -> tuple[list[dict], Path]:
     es = load_evalset(spec.evalset_path())
+    if spec.classes:
+        es.items = [i for i in es.items if i.cls in spec.classes]
     corpus = es.corpus_root()
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     out_dir = out_root / f"{stamp}-{spec.name}"
@@ -216,9 +219,36 @@ def _reasoning_section(rows: list[dict], per_item: list[dict[str, ItemResult]]) 
     return out
 
 
+def _sql_section(rows: list[dict], per_item: list[dict[str, ItemResult]]) -> list[str]:
+    """H5: the SQL tool answers aggregate questions (Q3) that retrieval alone cannot."""
+    ref = per_item[0]
+    out = ["", "## SQL по каталогу экспериментов (H5)", "",
+           "Точность — судья (без судьи — обязательные фрагменты) на вопросах Q3; Δ — парный бутстреп относительно "
+           "первой конфигурации. EX — точность исполнения SQL по эталонным запросам.", "",
+           "| # | Конфигурация | Точность Q3 | Δ Q3 [95% CI], p | SQL на Q3 | SQL на прочих | Ошибок SQL | EX |",
+           "|---|---|---|---|---|---|---|---|"]
+    for k, (row, items) in enumerate(zip(rows, per_item), start=1):
+        s = row["summary"].get("sql") or {}
+        ids = [i for i, r in items.items() if r.cls == "Q3" and i in ref and _score(r) is not None and _score(ref[i]) is not None]
+        scores = [_score(items[i]) for i in ids]
+        delta = "—"
+        if k > 1 and ids:
+            cmp = paired_bootstrap(scores, [_score(ref[i]) for i in ids])
+            if cmp["ci"]:
+                delta = f"{cmp['diff']:+.3f} [{cmp['ci'][0]:+.2f}; {cmp['ci'][1]:+.2f}], p={cmp['p']:.3f}"
+        ex = s.get("execution_accuracy") or {}
+        out.append(
+            f"| {k} | {row['run'].name} | {_fmt(sum(scores) / len(scores) if scores else None)} | {delta} "
+            f"| {_fmt(s.get('used_q3'), 2)} | {_fmt(s.get('used_other'), 2)} | {s.get('errors', 0)} "
+            f"| {_fmt(ex.get('mean'))} (n={s.get('n_gold', 0)}) |"
+        )
+    return out
+
+
 def render_ablation(spec: AblationSpec, es: EvalSet, rows: list[dict], per_item: list[dict[str, ItemResult]]) -> str:
     ref_items = per_item[0]
     ids = [i for i, r in ref_items.items() if r.retrieval]
+    types = sorted({ft for row in rows for ft in row["summary"]["retrieval_by_file_type"]})
     out = [
         f"# Абляции: {spec.name}",
         "",
@@ -226,8 +256,9 @@ def render_ablation(spec: AblationSpec, es: EvalSet, rows: list[dict], per_item:
         f"Сравнение каждой конфигурации с первой (референсной) — парный бутстреп по вопросам для {COMPARE_METRIC}: "
         "Δ, 95% интервал Δ и одностороннее p для гипотезы «конфигурация не лучше референса».",
         "",
-        "| # | Конфигурация | Recall@5 [95% CI] | Recall@10 | MRR@10 | nDCG@10 | Δ Recall@5 [CI], p | .py R@5 | .ipynb R@5 | Поиск p50/p95, с |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| # | Конфигурация | Recall@5 [95% CI] | Recall@10 | MRR@10 | nDCG@10 | Δ Recall@5 [CI], p | "
+        + "".join(f".{ft} R@5 | " for ft in types) + "Поиск p50/p95, с |",
+        "|---|---|---|---|---|---|---|" + "---|" * len(types) + "---|",
     ]
     for k, (row, items) in enumerate(zip(rows, per_item), start=1):
         s = row["summary"]
@@ -243,8 +274,8 @@ def render_ablation(spec: AblationSpec, es: EvalSet, rows: list[dict], per_item:
         out.append(
             f"| {k} | {row['run'].name} | {r5['mean']:.3f} [{ci[0]:.2f}; {ci[1]:.2f}] | {_fmt(ret['recall@10']['mean'])} "
             f"| {_fmt(ret['mrr']['mean'])} | {_fmt(ret['ndcg@10']['mean'])} | {delta} "
-            f"| {_fmt(ft.get('py', {}).get('recall@5'))} | {_fmt(ft.get('ipynb', {}).get('recall@5'))} "
-            f"| {_fmt(lat.get('p50'), 2)} / {_fmt(lat.get('p95'), 2)} |"
+            f"| {''.join(_fmt(ft.get(t, {}).get('recall@5')) + ' | ' for t in types)}"
+            f"{_fmt(lat.get('p50'), 2)} / {_fmt(lat.get('p95'), 2)} |"
         )
     classes = sorted({c for row in rows for c in row["summary"]["retrieval_by_class"]})
     out += ["", "Recall@5 по классам вопросов:", "",
@@ -266,6 +297,8 @@ def render_ablation(spec: AblationSpec, es: EvalSet, rows: list[dict], per_item:
             )
     if any((row["summary"].get("reasoning") or {}).get("reasoning_share") for row in rows):
         out += _reasoning_section(rows, per_item)
+    if any((row["summary"].get("sql") or {}).get("used_q3") for row in rows):
+        out += _sql_section(rows, per_item)
     out += ["", "Переопределения настроек:", ""]
     out += [f"{k}. **{row['run'].name}** — `{json.dumps(row['run'].overrides, ensure_ascii=False)}`"
             + (f" — {row['run'].note}" if row["run"].note else "") for k, row in enumerate(rows, start=1)]

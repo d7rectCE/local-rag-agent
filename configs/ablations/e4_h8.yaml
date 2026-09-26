@@ -1,0 +1,12 @@
+# Э4, H8 (ТЗ ч.1): собственный детектор вёрстки (RT-DETRv2, дообучен на DocLayNet) не хуже модели
+# Docling (Heron) — здесь по влиянию на поиск: Recall@5 по фрагментам PDF (столбец и таблица по типам
+# файлов в отчётах прогонов). mAP на отложенной выборке DocLayNet — scripts/train_layout_detector.py evaluate.
+# Перед запуском: scripts/train_layout_detector.py export --model runs/layout/rtdetr_v2_r50/best
+name: e4-h8-layout
+evalset: ../../evalsets/demo_v4.yaml
+retrieval_only: true
+runs:
+  - name: "Docling Heron (по умолчанию)"
+    overrides: {documents: {layout_model: docling-project/docling-layout-heron}}
+  - name: "H8: свой RT-DETRv2 на DocLayNet"
+    overrides: {documents: {layout_model: local/rtdetr-v2-doclaynet}}

@@ -75,6 +75,7 @@ def settings(tmp_path: Path) -> Settings:
     s.retrieval.rerank = False
     s.retrieval.symbols = False
     s.reasoning.mode = "off"  # reasoning is tested explicitly in test_reasoning.py
+    s.catalog.extract = False  # the catalog of experiments is tested in test_catalog.py
     return s
 
 
@@ -102,16 +103,32 @@ class FakeEmbedder:
         return Encoded(dense=dense, sparse=sparse)
 
 
+EXTRACTION = {"experiments": [{
+    "title": "Experiment A", "task": "binary classification", "dataset": "Breast Cancer", "model": "HistGradientBoosting",
+    "cell": 1,
+    "metrics": [
+        {"name": "ROC-AUC", "value": 0.9925, "split": "validation", "variant": "", "cell": 2},
+        {"name": "accuracy", "value": 0.97, "split": "val", "variant": "", "cell": 2},  # not printed anywhere
+    ],
+    "hyperparameters": [
+        {"name": "lr", "value": "0.05", "variant": "", "cell": 3},  # wrong cell: found in cell 2
+        {"name": "max_depth", "value": "7", "variant": "", "cell": 2},  # not in the code
+    ],
+}]}
+
+
 class FakeLLM(BaseLLM):
     """Answers by request kind: router (schema with "route"), grounded answer
-    (schema with "answerable") or a free-text general answer."""
+    (schema with "answerable"), judge, catalog extraction, SQL, or a free-text general answer."""
 
     def __init__(self, settings: Settings, reply: dict | str | None = None, route: dict | str | None = None,
-                 general: str = "Общий ответ."):
+                 general: str = "Общий ответ.", extraction: dict | None = None, sql: list[dict] | None = None):
         super().__init__(settings.llm)
         self.reply = reply if reply is not None else {"answerable": True, "answer": "Learning rate был 0.05 [1].", "general": ""}
         self.route = route  # None -> corpus with the question unchanged
         self.general = general
+        self.extraction = extraction if extraction is not None else EXTRACTION
+        self.sql = list(sql or [])  # replies of successive SQL calls; the last one repeats
         self.calls: list[list[dict]] = []
         self.kinds: list[str] = []
         self.budgets: list[int] = []  # reasoning budgets of chat_reasoning calls
@@ -126,6 +143,13 @@ class FakeLLM(BaseLLM):
         elif "answerable" in props:
             self.kinds.append("answer")
             reply = self.reply
+        elif "experiments" in props:
+            self.kinds.append("extract")
+            reply = self.extraction
+        elif "sql" in props:
+            self.kinds.append("sql")
+            reply = (self.sql.pop(0) if len(self.sql) > 1 else self.sql[0]) if self.sql else {
+                "sql": "SELECT path, cell, name, value FROM metrics", "reason": ""}
         elif "correctness" in props:
             self.kinds.append("judge")
             reply = {"correctness": "correct", "faithful": True, "supported_citations": [1], "relevant": True,

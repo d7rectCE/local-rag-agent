@@ -17,6 +17,10 @@ from rag_agent.llm import BaseLLM, make_llm
 from rag_agent.index.reranker import Reranker
 from rag_agent.retrieval import Hit, Mode, corpus_mentions, search
 from rag_agent.router import RouteChoice, route_question, trim_history
+from rag_agent.schema import FileType, Location, Node, NodeType
+from rag_agent.structured.analytics import ANALYTICS_FILE, build_analytics
+from rag_agent.structured.extract import update_catalog
+from rag_agent.structured.sql import SQLResult, SQLTool
 from rag_agent.tracing import NULL_TRACER, Tracer
 
 log = logging.getLogger(__name__)
@@ -172,6 +176,8 @@ class Engine:
                     force=force,
                     cancel=self._cancel,
                 )
+                if progress.state == "done":
+                    self._update_catalog(index, progress)
             except Exception:
                 log.exception("indexing failed")
             finally:
@@ -185,6 +191,49 @@ class Engine:
         else:
             job()
         return progress
+
+    def _update_catalog(self, index: CorpusIndex, progress: IndexProgress) -> None:
+        """Э6: extract experiments from new or changed notebooks, then rebuild the analytics database."""
+        t0 = time.perf_counter()
+        if self.settings.catalog.extract:
+            progress.state = "extracting"
+            try:
+                progress.catalog = update_catalog(index, self.llm, self.settings.catalog, progress, self._cancel)
+            except Exception as exc:  # the index itself is fine: answer without the catalog
+                log.exception("catalog extraction failed")
+                progress.catalog = {"error": str(exc)}
+        try:
+            progress.catalog["tables"] = build_analytics(index.catalog, index.dir / ANALYTICS_FILE)
+        except Exception as exc:
+            log.exception("analytics database build failed")
+            progress.catalog["error"] = str(exc)
+        progress.current = None
+        progress.elapsed_s = round(progress.elapsed_s + time.perf_counter() - t0, 2)
+        progress.state = "cancelled" if self._cancel.is_set() else "done"
+
+    def sql_tool(self) -> SQLTool:
+        return SQLTool(self.index.dir / ANALYTICS_FILE, self.llm, self.settings.catalog, self.embedder)
+
+    def query_catalog(self, question: str) -> SQLResult:
+        """Answer an aggregate question with SQL over the catalog (no answer text)."""
+        res = self.sql_tool().run(question)
+        self.tracer.log("sql", question=question if self.tracer.log_prompts else None, **res.model_dump(exclude={"question", "rows"}),
+                        n_rows=len(res.rows))
+        return res
+
+    def _sql_hits(self, res: SQLResult, index: CorpusIndex) -> list[Hit]:
+        """The SQL result as a source for the answer, followed by the notebook cells its rows come from."""
+        node = Node(id="catalog:sql", file_path="каталог экспериментов (SQL)", file_type=FileType.CATALOG,
+                    node_type=NodeType.TABLE, title="Результат запроса к каталогу",
+                    text=f"SQL: {res.sql}\n\n{res.markdown()}", location=Location())
+        hits = [Hit(node=node, score=1.0, rank=1)]
+        for path, cell in res.provenance()[:5]:
+            nodes = index.catalog.file_nodes(path) if cell is not None else []
+            out = next((n for n in nodes if n.location.cell == cell and n.node_type == NodeType.CELL_OUTPUT), None)
+            src = out or next((n for n in nodes if n.location.cell == cell), None)
+            if src is not None:
+                hits.append(Hit(node=src, score=0.5, rank=len(hits) + 1))
+        return hits
 
     def cancel_indexing(self) -> None:
         self._cancel.set()
@@ -259,14 +308,16 @@ class Engine:
         reasoning_mode = reasoning or rcfg.mode
         # reasoning level: "on" reasons deep unless the router estimated a lighter level
         level = "deep" if reasoning_mode == "on" else "none"
+        aggregate = False
         # the router also rewrites follow-ups into standalone questions and estimates the reasoning level
         if route == "auto" or turns or reasoning_mode == "auto":
             decision = route_question(question, turns, self.llm)
             standalone = decision.standalone_question
             if reasoning_mode == "auto" or (reasoning_mode == "on" and decision.needs_reasoning):
                 level = decision.reasoning
+            aggregate = decision.aggregate
             detail = {"route": decision.route, "standalone_question": standalone, "fallback": decision.fallback,
-                      "reasoning": decision.reasoning}
+                      "reasoning": decision.reasoning, "aggregate": decision.aggregate}
             if route == "auto":
                 chosen = decision.route
                 # corpus signal: a question that names a function, class or file of the corpus is about the files
@@ -302,6 +353,17 @@ class Engine:
                     },
                 )
             )
+            # Э6: an aggregate question also queries the catalog; the result leads the sources
+            if aggregate and self.settings.catalog.sql and (index.dir / ANALYTICS_FILE).exists():
+                res = self.query_catalog(standalone)
+                steps.append(TraceStep(name="sql", duration_s=res.latency_s, detail={
+                    "sql": res.sql, "rows": len(res.rows), "attempts": res.attempts, "error": res.error,
+                    "tables": res.tables, "hints": res.hints}))
+                if res.ok and res.rows:
+                    extra = self._sql_hits(res, index)
+                    seen = {h.node.id for h in extra}
+                    merged = extra + [h for h in hits if h.node.id not in seen]
+                    hits = [Hit(node=h.node, score=h.score, rank=i) for i, h in enumerate(merged, start=1)]
             answer = generate_answer(standalone, hits, self.llm, self.settings.generation.max_source_chars,
                                      reasoning_budget=budget)
             # escalation (ТЗ ч.2 S15): the fast answer claims an answer but cites nothing valid
@@ -341,6 +403,32 @@ class Engine:
         """Parsed content of one indexed file (served from the catalog, never from disk)."""
         return [n.model_dump(mode="json") for n in self.index.catalog.file_nodes(rel_path)]
 
+    def catalog_summary(self, idx: CorpusIndex | None = None) -> dict:
+        """Experiments extracted into the catalog: counts and per-notebook extraction state."""
+        idx = idx or self.index
+        states = idx.catalog.query("SELECT file_path, model, n_experiments, n_values, n_dropped, error FROM x_state "
+                                   "ORDER BY file_path")
+        return {
+            "analytics": (idx.dir / ANALYTICS_FILE).exists(),
+            "notebooks": len(states),
+            "experiments": sum(r["n_experiments"] or 0 for r in states),
+            "values": sum(r["n_values"] or 0 for r in states),
+            "dropped": sum(r["n_dropped"] or 0 for r in states),
+            "files": [dict(r) for r in states],
+        }
+
+    def experiments(self) -> list[dict]:
+        """The extracted experiments with their metric values (for the UI and ``rag experiments``)."""
+        cat = self.index.catalog
+        out = []
+        for e in cat.query("SELECT * FROM x_experiments ORDER BY file_path, idx"):
+            metrics = cat.query("SELECT name, value, split, variant, cell FROM x_metrics WHERE file_path=? AND exp_idx=?",
+                                (e["file_path"], e["idx"]))
+            hparams = cat.query("SELECT name, value, variant, cell FROM x_hparams WHERE file_path=? AND exp_idx=?",
+                                (e["file_path"], e["idx"]))
+            out.append({**dict(e), "metrics": [dict(m) for m in metrics], "hyperparameters": [dict(h) for h in hparams]})
+        return out
+
     def status(self) -> dict:
         idx = self._index
         if idx is None:
@@ -358,6 +446,7 @@ class Engine:
                 "stats": idx.catalog.stats(),
                 "vectors": idx.store.count(),
                 "prefs": self.corpus_prefs(idx.root),
+                "catalog": self.catalog_summary(idx),
             },
             "progress": self.progress.model_dump(),
             "embedder": {"model": self.embedder.name, "device": self.embedder.device},

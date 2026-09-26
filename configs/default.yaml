@@ -83,6 +83,14 @@ reasoning:                            # ТЗ ч.2 S15
     deep: 1536                        #   "on" uses the deep budget unless the router estimated otherwise
   escalate: true                      # auto: retry an ungrounded fast answer with deep reasoning
 
+catalog:                              # ТЗ S6: relational catalog + text-to-SQL
+  extract: true                       # LLM extraction of experiments / metrics / hyperparameters after indexing
+  sql: true                           # aggregate questions ("best", "how many", "all runs") also query the catalog
+  max_rows: 50                        # forced LIMIT
+  timeout_s: 5
+  attempts: 3                         # self-correction on an SQL error or an empty result
+  examples: null                      # YAML list of {question, sql}: your own few-shot examples
+
 tracing:
   enabled: true
   log_prompts: true                   # traces stay local, inside storage.data_dir

@@ -89,6 +89,9 @@ class EvalItem(BaseModel):
     answer: str | None = None
     must_include: list[str] = Field(default_factory=list)
     sources: list[SourceRef] = Field(default_factory=list)
+    # Э6: reference SQL over the catalog of experiments; its result is compared with the result
+    # of the query the system ran (execution accuracy, as in BIRD)
+    sql: str | None = None
     notes: str | None = None
 
     @property

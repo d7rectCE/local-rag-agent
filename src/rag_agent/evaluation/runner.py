@@ -63,6 +63,11 @@ class ItemResult(BaseModel):
     reasoning_tokens: int = 0
     reasoning_truncated: bool = False
     escalated: bool = False
+    # SQL over the catalog (Э6)
+    sql_used: bool = False
+    sql_pred: str | None = None
+    sql_error: str | None = None
+    sql_ex: bool | None = None  # execution accuracy against item.sql
     judge: Verdict | None = None
     error: str | None = None
 
@@ -138,9 +143,44 @@ def evaluate_item(engine: Engine, item: EvalItem, *, retrieval_k: int, top_k: in
         r.reasoning_tokens = ans.reasoning_tokens
         r.reasoning_truncated = ans.reasoning_truncated
         r.escalated = any(s.name == "escalate" for s in ans.trace)
+        step = next((s for s in ans.trace if s.name == "sql"), None)
+        if step is not None:
+            r.sql_used, r.sql_pred, r.sql_error = True, step.detail.get("sql"), step.detail.get("error")
+        if item.sql:
+            r.sql_ex = execution_match(engine, item.sql, r.sql_pred if r.sql_error is None else None)
     except Exception as exc:  # one failing question must not abort the run
         r.error = f"{type(exc).__name__}: {exc}"
     return r
+
+
+def _cells(row) -> list:
+    return [round(v, 4) if isinstance(v, float) else (v.strip().lower() if isinstance(v, str) else v) for v in row]
+
+
+def execution_match(engine: Engine, gold_sql: str, pred_sql: str | None) -> bool:
+    """Execution accuracy, relaxed for extra columns: the predicted query returns as many rows
+    as the reference one and every reference row is contained in a predicted row (the system
+    adds path/cell columns for citations). Floats compare to 4 decimals, strings case-insensitively."""
+    if not pred_sql:
+        return False
+    from rag_agent.structured.analytics import ANALYTICS_FILE
+    from rag_agent.structured.sql import SQLValidationError, run_readonly, validate_sql
+
+    db, cfg = engine.index.dir / ANALYTICS_FILE, engine.settings.catalog
+    try:
+        _, gold = run_readonly(db, validate_sql(gold_sql, 10_000), cfg.timeout_s)
+        _, pred = run_readonly(db, validate_sql(pred_sql, 10_000), cfg.timeout_s)
+    except (SQLValidationError, Exception):
+        return False
+    if len(gold) != len(pred):
+        return False
+    pool = [_cells(p) for p in pred]
+    for g in map(_cells, gold):
+        hit = next((i for i, p in enumerate(pool) if all(p.count(v) >= g.count(v) for v in g)), None)
+        if hit is None:
+            return False
+        pool.pop(hit)
+    return True
 
 
 def run_eval(
@@ -263,6 +303,18 @@ def summarize(results: list[ItemResult], es: EvalSet, n_boot: int = 1000) -> dic
         "corpus": percentiles([r.latency_s for r in answered if r.route == "corpus"]),
         "general": percentiles([r.latency_s for r in answered if r.route == "general"]),
         "mean_tokens": _mean(r.tokens for r in answered),
+    }
+
+    # --- SQL over the catalog (Э6, H5) ---
+    aggregate = [r for r in answered if r.cls == "Q3"]
+    others = [r for r in answered if r.cls != "Q3" and r.expected_route == "corpus"]
+    gold = [r for r in answered if r.sql_ex is not None]
+    summary["sql"] = {
+        "used_q3": _mean(float(r.sql_used) for r in aggregate),
+        "used_other": _mean(float(r.sql_used) for r in others),
+        "errors": sum(1 for r in answered if r.sql_used and r.sql_error),
+        "n_gold": len(gold),
+        "execution_accuracy": mean_ci([float(r.sql_ex) for r in gold], n_boot) if gold else None,
     }
 
     # --- reasoning (ТЗ ч.2 S15, H11): accuracy against generated tokens and latency, per class ---

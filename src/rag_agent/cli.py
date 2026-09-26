@@ -91,6 +91,39 @@ def ask(
 
 
 @app.command()
+def sql(question: str, root: Optional[Path] = typer.Option(None, help="Corpus folder (default: last used)")) -> None:
+    """Answer an aggregate question with SQL over the catalog of experiments: shows the query and the rows."""
+    engine = _engine()
+    if root:
+        engine.open_corpus(root)
+    res = engine.query_catalog(question)
+    engine.close()
+    typer.echo(f"SQL ({res.attempts} попыт.): {res.sql}\n")
+    typer.echo(res.markdown() if res.ok else f"Ошибка: {res.error}")
+    typer.echo(f"\n(таблицы: {', '.join(res.tables)}; подсказки: {'; '.join(res.hints) or '—'}; {res.latency_s:.1f}s)")
+
+
+@app.command()
+def experiments(root: Optional[Path] = typer.Option(None, help="Corpus folder (default: last used)")) -> None:
+    """Experiments extracted into the catalog, with their metric values and source cells."""
+    engine = _engine()
+    if root:
+        engine.open_corpus(root)
+    summary, items = engine.catalog_summary(), engine.experiments()
+    engine.close()
+    typer.echo(f"ноутбуков {summary['notebooks']}, экспериментов {summary['experiments']}, значений {summary['values']}, "
+               f"отброшено непроверенных {summary['dropped']}\n")
+    for e in items:
+        typer.echo(f"{e['file_path']} — {e['title']} [{e['task']}; {e['dataset']}; {e['model']}]")
+        for m in e["metrics"]:
+            variant = f" ({m['variant']})" if m["variant"] else ""
+            typer.echo(f"    {m['name']}@{m['split']}{variant} = {m['value']:g}   ячейка {m['cell']}")
+        for h in e["hyperparameters"]:
+            variant = f" ({h['variant']})" if h["variant"] else ""
+            typer.echo(f"    {h['name']} = {h['value']}{variant}   ячейка {h['cell']}")
+
+
+@app.command()
 def symbols(name: str, root: Optional[Path] = typer.Option(None, help="Corpus folder (default: last used)")) -> None:
     """Where a function or class is defined and where it is called (static index, no LLM)."""
     engine = _engine()

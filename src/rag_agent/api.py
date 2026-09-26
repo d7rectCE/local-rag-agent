@@ -13,6 +13,7 @@ from rag_agent.engine import Engine, IndexingBusyError, NoCorpusError
 from rag_agent.generation import Answer
 from rag_agent.index.indexer import IndexProgress
 from rag_agent.llm import LLMError
+from rag_agent.structured.sql import SQLResult
 
 
 class IndexRequest(BaseModel):
@@ -29,6 +30,10 @@ class OpenRequest(BaseModel):
 class ChatTurn(BaseModel):
     role: Literal["user", "assistant"]
     content: str
+
+
+class SQLRequest(BaseModel):
+    question: str
 
 
 class AskRequest(BaseModel):
@@ -122,6 +127,20 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             return eng().lookup_symbol(name)
         except NoCorpusError as exc:
             raise HTTPException(404, str(exc)) from exc
+
+    @app.get("/catalog")
+    def catalog() -> dict:
+        try:
+            return {**eng().catalog_summary(), "experiments": eng().experiments()}
+        except NoCorpusError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.post("/sql")
+    def sql(req: SQLRequest) -> SQLResult:
+        try:
+            return eng().query_catalog(req.question)
+        except NoCorpusError as exc:
+            raise HTTPException(404, "Сначала проиндексируйте папку") from exc
 
     @app.post("/ask")
     def ask(req: AskRequest) -> Answer:

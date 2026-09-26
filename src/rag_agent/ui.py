@@ -30,6 +30,7 @@ STATE_LABELS = {
     "idle": "ожидание",
     "scanning": "сканирование папки",
     "indexing": "индексация",
+    "extracting": "каталог экспериментов",
     "done": "готово",
     "error": "ошибка",
     "cancelled": "остановлено",
@@ -97,7 +98,7 @@ def progress_panel() -> None:
     state = prog["state"]
     if state == "idle":
         return
-    running = state in ("scanning", "indexing")
+    running = state in ("scanning", "indexing", "extracting")
     total, done = prog["files_total"], prog["files_done"]
     label = STATE_LABELS.get(state, state)
     if running:
@@ -108,6 +109,10 @@ def progress_panel() -> None:
             api("POST", "/index/cancel")
     elif state == "done":
         st.success(f"Готово за {fmt_seconds(prog['elapsed_s'])}: {total} файлов, {prog['nodes_embedded']} новых фрагментов")
+        if prog.get("catalog", {}).get("notebooks"):
+            cat = prog["catalog"]
+            st.caption(f"Каталог экспериментов: {cat['notebooks']} ноутбуков разобрано, экспериментов {cat['experiments']}, "
+                       f"значений {cat['values']}, отброшено непроверенных {cat['dropped']}")
     elif state == "error":
         st.error(f"Ошибка индексации: {prog.get('message')}")
     else:
@@ -124,7 +129,7 @@ def progress_panel() -> None:
 
 def sidebar(status: dict) -> None:
     corpus = status.get("corpus")
-    running = status["progress"]["state"] in ("scanning", "indexing")
+    running = status["progress"]["state"] in ("scanning", "indexing", "extracting")
     if "root" not in st.session_state:
         st.session_state.root = corpus["root"] if corpus else ""
 
@@ -170,6 +175,22 @@ def sidebar(status: dict) -> None:
             st.rerun()
 
     st.fragment(progress_panel, run_every=1.0 if running else None)()
+
+    cat = (corpus or {}).get("catalog") or {}
+    if cat.get("experiments"):
+        with st.expander(f"Каталог экспериментов ({cat['experiments']})"):
+            st.caption(f"Извлечено из {cat['notebooks']} ноутбуков: {cat['values']} значений метрик и гиперпараметров, "
+                       f"каждое проверено по своей ячейке; отброшено непроверенных — {cat['dropped']}. "
+                       "Агрегатные вопросы («лучший», «сколько», «все запуски») отвечаются SQL-запросом к каталогу.")
+            if st.button("Показать", use_container_width=True):
+                data, err = api("GET", "/catalog")
+                if err:
+                    st.error(err)
+                else:
+                    rows = [{"ноутбук": e["file_path"], "датасет": e["dataset"], "модель": e["model"],
+                             "метрика": m["name"], "выборка": m["split"], "вариант": m["variant"], "значение": m["value"],
+                             "ячейка": m["cell"]} for e in data["experiments"] for m in e["metrics"]]
+                    st.dataframe(rows, hide_index=True)
 
     known = [c["root"] for c in status.get("corpora", [])]
     if len(known) > 1:
@@ -224,6 +245,9 @@ def render_answer(ans: dict) -> None:
     if ans.get("route") == "general":
         st.caption(":material/school: Ответ из общих знаний модели, файлы не использовались.")
         return
+    sql = next((s["detail"] for s in ans.get("trace", []) if s["name"] == "sql"), None)
+    if sql and sql.get("rows"):
+        st.caption(f":material/table: Использован запрос к каталогу экспериментов ({sql['rows']} строк) — см. источник [1].")
     if not ans["answerable"]:
         st.caption(":material/help: В найденных фрагментах ответа нет.")
     elif not ans["grounded"]:
@@ -238,6 +262,11 @@ def render_answer(ans: dict) -> None:
         for s in ans["sources"]:
             mark = " · процитирован" if s["cited"] else ""
             st.markdown(f"**[{s['n']}]** `{s['file_path']}` — {s['location'] or s['title']} · score {s['score']:.3f}{mark}")
+            if s.get("file_type") == "catalog":  # SQL over the catalog of experiments: query + result table
+                query, _, table = s["text"].partition("\n\n")
+                st.code(query.removeprefix("SQL: "), language="sql")
+                st.markdown(table)
+                continue
             lang = "python" if s["node_type"] in ("code_chunk", "code_cell", "function", "class") else "text"
             st.code(s["text"], language=lang)
     with st.expander("Трасса"):

@@ -22,7 +22,7 @@ import logging
 import threading
 from pathlib import Path
 
-from rag_agent.config import ChunkingConfig, DocumentsConfig
+from rag_agent.config import DEFAULT_LAYOUT_MODEL, ChunkingConfig, DocumentsConfig
 from rag_agent.ingest.walker import CorpusFile
 from rag_agent.schema import Edge, EdgeType, FileType, Location, Node, NodeType, ParsedFile
 
@@ -68,7 +68,7 @@ def pdf_backend(cfg: DocumentsConfig) -> str:
 
 
 def _converter(cfg: DocumentsConfig, ocr: bool):
-    key = (ocr, cfg.models_dir, cfg.device, tuple(cfg.ocr_langs), cfg.table_mode, pdf_backend(cfg))
+    key = (ocr, cfg.models_dir, cfg.device, tuple(cfg.ocr_langs), cfg.table_mode, pdf_backend(cfg), cfg.layout_model)
     with _LOCK:
         if key in _CONVERTERS:
             return _CONVERTERS[key]
@@ -94,6 +94,16 @@ def _converter(cfg: DocumentsConfig, ocr: bool):
             accelerator_options=AcceleratorOptions(device=AcceleratorDevice(cfg.device)),
         )
         opts.table_structure_options.mode = TableFormerMode(cfg.table_mode)
+        if cfg.layout_model != DEFAULT_LAYOUT_MODEL:
+            from docling.datamodel.pipeline_options import LayoutObjectDetectionOptions
+            from docling.datamodel.stage_model_specs import ObjectDetectionModelSpec
+
+            folder = artifacts / cfg.layout_model.replace("/", "--")
+            if not folder.exists():
+                raise RuntimeError(f"layout model {cfg.layout_model} not found in {folder}; install it with "
+                                   "scripts/train_layout_detector.py export")
+            opts.layout_options = LayoutObjectDetectionOptions(
+                model_spec=ObjectDetectionModelSpec(name=cfg.layout_model, repo_id=cfg.layout_model))
         if ocr:
             opts.ocr_options = EasyOcrOptions(lang=list(cfg.ocr_langs), download_enabled=False,
                                               use_gpu=cfg.device != "cpu")

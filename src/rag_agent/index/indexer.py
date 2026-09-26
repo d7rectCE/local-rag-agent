@@ -19,7 +19,7 @@ from typing import Iterable, Literal
 
 from pydantic import BaseModel, Field
 
-from rag_agent.config import Settings
+from rag_agent.config import DEFAULT_LAYOUT_MODEL, Settings
 from rag_agent.index.catalog import Catalog
 from rag_agent.index.embedder import Embedder
 from rag_agent.index.vector_store import VectorStore
@@ -42,11 +42,14 @@ def corpus_key(root: Path) -> str:
 
 def index_signature(settings: Settings) -> str:
     emb = settings.embedding
+    documents = settings.documents.model_dump()
+    if documents["layout_model"] == DEFAULT_LAYOUT_MODEL:  # indexes built before the option keep their signature
+        del documents["layout_model"]
     payload = {
         "schema": SCHEMA_VERSION,
         "embedding": {"model": emb.model, "pooling": emb.pooling, "max_length": emb.max_length},
         "chunking": settings.chunking.model_dump(),
-        "documents": settings.documents.model_dump(),
+        "documents": documents,
     }
     return hashlib.sha1(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:10]
 
@@ -60,7 +63,7 @@ def sha256_file(path: Path) -> str:
 
 
 class IndexProgress(BaseModel):
-    state: Literal["idle", "scanning", "indexing", "done", "error", "cancelled"] = "idle"
+    state: Literal["idle", "scanning", "indexing", "extracting", "done", "error", "cancelled"] = "idle"
     root: str | None = None
     files_total: int = 0
     files_done: int = 0
@@ -77,10 +80,11 @@ class IndexProgress(BaseModel):
     finished_at: str | None = None
     elapsed_s: float = 0.0
     message: str | None = None
+    catalog: dict = Field(default_factory=dict)  # experiments extracted into the catalog (Э6)
 
     @property
     def running(self) -> bool:
-        return self.state in ("scanning", "indexing")
+        return self.state in ("scanning", "indexing", "extracting")
 
 
 class CorpusIndex:

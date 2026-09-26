@@ -200,6 +200,11 @@ rag eval --retrieval-only --mode hybrid    # только метрики пои�
 rag eval путь/к/набору.yaml --no-judge     # свой набор, без судьи
 rag eval-validate путь/к/набору.yaml       # проверить разметку по индексу
 rag ablate configs/ablations/e3.yaml       # таблица абляций: несколько конфигураций на одном наборе
+rag rejudge configs/ablations/e13.yaml runs/ablations/<папка>   # заново к судье, ответы не генерируются
+rag ablate-code configs/ablations/e15.yaml # код-агент: задачи со скрытыми проверками в песочнице
+python scripts/redteam_code.py             # опасный код в песочнице (Э17), без модели
+python scripts/h9_monitoring.py            # мониторинг на канареечных запросах (Э9, нужен driftfdr)
+make check                                 # секреты и личные пути в файлах репозитория (то же в CI)
 ```
 
 По умолчанию используется `evalsets/demo_v4.yaml` (Э12: документы и 16 вопросов, требующих рассуждения); наборы прежних этапов — `demo_v3.yaml` (Э4), `demo_v2.yaml` (Э3) и `demo_v1.yaml` (Э2). Результаты пишутся в `runs/eval/<дата>-<имя>-<режим>/`: `report.md`, `summary.json`, `results.jsonl`, `config.json`. Папка `runs/` не коммитится.

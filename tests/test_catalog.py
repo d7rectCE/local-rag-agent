@@ -145,3 +145,15 @@ def test_sql_sources_are_numbered_once(settings, fake_embedder, corpus: Path):
     assert [s.n for s in ans.sources] == list(range(1, len(ans.sources) + 1))
     assert len({s.node_id for s in ans.sources}) == len(ans.sources)
     eng.close()
+
+
+def test_value_based_execution_accuracy(settings, fake_embedder, corpus: Path):
+    from rag_agent.evaluation.runner import execution_match
+
+    eng = catalog_engine(settings, fake_embedder, corpus)
+    gold = "SELECT path, value FROM metrics WHERE name = 'roc_auc'"
+    pred = "SELECT e.title, m.value FROM metrics m JOIN experiments e ON e.id = m.experiment_id WHERE m.name = 'roc_auc'"
+    assert not execution_match(eng, gold, pred)  # strict: the notebook path is not in the predicted row
+    assert execution_match(eng, gold, pred, values_only=True)  # the number is the same
+    assert not execution_match(eng, gold, "SELECT value * 2 FROM metrics WHERE name = 'roc_auc'", values_only=True)
+    eng.close()

@@ -67,7 +67,7 @@ CODE_PROMPT = """Ты — код-агент. Решаешь задачу пол�
 
 PIPELINE_PROMPT = """Определи тип задачи для код-агента:
 - collect_metrics — собрать метрики экспериментов из ноутбуков в таблицу (CSV);
-- plot_logs — построить график по логу обучения (target — путь к логу, если назван);
+- plot_logs — только построить график (картинку) по логу обучения (target — путь к логу, если назван); если нужна таблица или CSV — это free;
 - fix_traceback — исправить ошибку при запуске скрипта или ноутбука (target — команда или путь, если названы);
 - free — всё остальное.
 Верни JSON: {"pipeline": "...", "target": "..."}"""
@@ -236,9 +236,13 @@ class CodeAgent:
             data = self.llm.chat([{"role": "system", "content": PIPELINE_PROMPT},
                                   {"role": "user", "content": self.result.task}],
                                  json_schema=PIPELINE_SCHEMA, max_tokens=120, purpose="code_pipeline").json()
-            return str(data.get("pipeline") or "free"), str(data.get("target") or "")
+            pipeline, target = str(data.get("pipeline") or "free"), str(data.get("target") or "")
         except LLMError:
             return "free", ""
+        task = self.result.task.lower()
+        if pipeline == "plot_logs" and not re.search(r"график|графи|plot|png|картин|диаграм|визуализ", task):
+            pipeline = "free"  # a table or CSV from a log is not a plot: the template would draw the wrong artifact
+        return pipeline, target
 
     def pipeline_collect_metrics(self) -> str | None:
         """Metrics already extracted (and grounded) in the catalog -> CSV; checked by reading it back."""

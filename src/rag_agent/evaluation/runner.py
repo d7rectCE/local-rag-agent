@@ -67,7 +67,8 @@ class ItemResult(BaseModel):
     sql_used: bool = False
     sql_pred: str | None = None
     sql_error: str | None = None
-    sql_ex: bool | None = None  # execution accuracy against item.sql
+    sql_ex: bool | None = None  # execution accuracy against item.sql (all values of every row)
+    sql_ex_values: bool | None = None  # numbers only: identifiers may differ (a title instead of a path)
     # agent (Э7)
     agent_used: bool = False
     agent_steps: int = 0
@@ -188,7 +189,9 @@ def evaluate_item(engine: Engine, item: EvalItem, *, retrieval_k: int, top_k: in
         if step is not None:
             r.sql_used, r.sql_pred, r.sql_error = True, step.detail.get("sql"), step.detail.get("error")
         if item.sql:
-            r.sql_ex = execution_match(engine, item.sql, r.sql_pred if r.sql_error is None else None)
+            pred = r.sql_pred if r.sql_error is None else None
+            r.sql_ex = execution_match(engine, item.sql, pred)
+            r.sql_ex_values = execution_match(engine, item.sql, pred, values_only=True)
     except Exception as exc:  # one failing question must not abort the run
         r.error = f"{type(exc).__name__}: {exc}"
     return r
@@ -205,10 +208,12 @@ def _cells(row) -> list:
     return [round(v, 4) if isinstance(v, float) else (v.strip().lower() if isinstance(v, str) else v) for v in row]
 
 
-def execution_match(engine: Engine, gold_sql: str, pred_sql: str | None) -> bool:
+def execution_match(engine: Engine, gold_sql: str, pred_sql: str | None, values_only: bool = False) -> bool:
     """Execution accuracy, relaxed for extra columns: the predicted query returns as many rows
     as the reference one and every reference row is contained in a predicted row (the system
-    adds path/cell columns for citations). Floats compare to 4 decimals, strings case-insensitively."""
+    adds path/cell columns for citations). Floats compare to 4 decimals, strings case-insensitively.
+    ``values_only``: in rows that hold numbers only the numbers must match — the identifying
+    string may differ (the experiment's title instead of its notebook path)."""
     if not pred_sql:
         return False
     from rag_agent.structured.analytics import ANALYTICS_FILE
@@ -223,7 +228,10 @@ def execution_match(engine: Engine, gold_sql: str, pred_sql: str | None) -> bool
     if len(gold) != len(pred):
         return False
     pool = [_cells(p) for p in pred]
-    for g in map(_cells, gold):
+    gold_rows = list(map(_cells, gold))
+    if values_only:
+        gold_rows = [[v for v in g if not isinstance(v, str)] or g for g in gold_rows]
+    for g in gold_rows:
         hit = next((i for i, p in enumerate(pool) if all(p.count(v) >= g.count(v) for v in g)), None)
         if hit is None:
             return False
@@ -364,6 +372,7 @@ def summarize(results: list[ItemResult], es: EvalSet, n_boot: int = 1000) -> dic
         "errors": sum(1 for r in answered if r.sql_used and r.sql_error),
         "n_gold": len(gold),
         "execution_accuracy": mean_ci([float(r.sql_ex) for r in gold], n_boot) if gold else None,
+        "execution_accuracy_values": mean_ci([float(bool(r.sql_ex_values)) for r in gold], n_boot) if gold else None,
     }
 
     # --- uploads (Э13, H12): accuracy and cost by file ---

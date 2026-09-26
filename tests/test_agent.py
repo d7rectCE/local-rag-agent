@@ -130,3 +130,16 @@ def test_agent_metrics_in_evaluation(settings, fake_embedder, corpus: Path):
     report = render_ablation(AblationSpec(name="h6", evalset="x", runs=[rows[0]["run"]]), es, rows, [by_id])
     assert "## Агент и проверка релевантности (H6, NFR2)" in report
     eng.close()
+
+
+def test_aggregate_question_starts_from_sql(settings, fake_embedder, corpus: Path):
+    settings.catalog.extract = True
+    route = {**ROUTE, "aggregate": True}
+    sql = [{"sql": "SELECT path, cell, value FROM metrics WHERE name = 'roc_auc'", "reason": ""}]
+    eng = agent_engine(settings, fake_embedder, corpus, route=route, sql=sql)
+    ans = eng.ask("В каком ноутбуке лучший ROC-AUC?")
+    seed_sql = steps(ans)[1]
+    assert seed_sql["step"] == 0 and seed_sql["action"] == "sql_query" and seed_sql["rows"] == 1
+    assert eng.llm.kinds.index("sql") < eng.llm.kinds.index("agent")  # before the model chooses anything
+    assert ans.sources[0].file_type == "catalog"
+    eng.close()

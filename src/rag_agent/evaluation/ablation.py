@@ -227,8 +227,8 @@ def _sql_section(rows: list[dict], per_item: list[dict[str, ItemResult]]) -> lis
     out = ["", "## SQL по каталогу экспериментов (H5)", "",
            "Точность — судья (без судьи — обязательные фрагменты) на вопросах Q3; Δ — парный бутстреп относительно "
            "первой конфигурации. EX — точность исполнения SQL по эталонным запросам.", "",
-           "| # | Конфигурация | Точность Q3 | Δ Q3 [95% CI], p | SQL на Q3 | SQL на прочих | Ошибок SQL | EX |",
-           "|---|---|---|---|---|---|---|---|"]
+           "| # | Конфигурация | Точность Q3 | Δ Q3 [95% CI], p | SQL на Q3 | SQL на прочих | Ошибок SQL | EX | EX по числам |",
+           "|---|---|---|---|---|---|---|---|---|"]
     for k, (row, items) in enumerate(zip(rows, per_item), start=1):
         s = row["summary"].get("sql") or {}
         ids = [i for i, r in items.items() if r.cls == "Q3" and i in ref and _score(r) is not None and _score(ref[i]) is not None]
@@ -239,10 +239,11 @@ def _sql_section(rows: list[dict], per_item: list[dict[str, ItemResult]]) -> lis
             if cmp["ci"]:
                 delta = f"{cmp['diff']:+.3f} [{cmp['ci'][0]:+.2f}; {cmp['ci'][1]:+.2f}], p={cmp['p']:.3f}"
         ex = s.get("execution_accuracy") or {}
+        exv = s.get("execution_accuracy_values") or {}
         out.append(
             f"| {k} | {row['run'].name} | {_fmt(sum(scores) / len(scores) if scores else None)} | {delta} "
             f"| {_fmt(s.get('used_q3'), 2)} | {_fmt(s.get('used_other'), 2)} | {s.get('errors', 0)} "
-            f"| {_fmt(ex.get('mean'))} (n={s.get('n_gold', 0)}) |"
+            f"| {_fmt(ex.get('mean'))} (n={s.get('n_gold', 0)}) | {_fmt(exv.get('mean'))} |"
         )
     return out
 

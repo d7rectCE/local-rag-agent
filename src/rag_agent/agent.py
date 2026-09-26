@@ -251,10 +251,22 @@ class Agent:
         self.steps.append(TraceStep(name="agent", duration_s=round(time.perf_counter() - t1, 3), detail={
             "step": 0, "thought": "начальный поиск по вопросу", "action": "search", "args": seed_args, **extra,
             "observation": seed[:1500], "trust": trust.value}))
-        messages = [{"role": "system", "content": system},
-                    {"role": "user", "content": f"Вопрос: {question}{hint}\n\nРезультат начального поиска:\n{seed}"}]
-        schema = _schema(self.tools)
+        first = f"Вопрос: {question}{hint}\n\nРезультат начального поиска:\n{seed}"
         seen_calls: set[str] = {json.dumps(["search", seed_args], sort_keys=True, ensure_ascii=False)}
+        if aggregate and "sql_query" in self.tools:
+            # an aggregate question also starts from the catalog: on the H5 run the free agent chose SQL for
+            # only 37% of them, while a fixed "SQL first" step answered 0.82 against 0.53 (Agentless)
+            t1 = time.perf_counter()
+            sql_args = {"question": question}
+            sql_obs, sql_extra = self.tool(question, "sql_query", sql_args)
+            trust = self.policy.observe("sql_query", self.prov, sql_obs)
+            self.steps.append(TraceStep(name="agent", duration_s=round(time.perf_counter() - t1, 3), detail={
+                "step": 0, "thought": "агрегатный вопрос: запрос к каталогу", "action": "sql_query", "args": sql_args,
+                **sql_extra, "observation": sql_obs[:1500], "trust": trust.value}))
+            seen_calls.add(json.dumps(["sql_query", sql_args], sort_keys=True, ensure_ascii=False))
+            first += f"\n\nРезультат запроса к каталогу экспериментов:\n{sql_obs}"
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": first}]
+        schema = _schema(self.tools)
         refused, stop = None, "answer"
         low_searches = int(extra.get("verdict") == "incorrect")
         for step in range(1, self.cfg.max_steps + 1):

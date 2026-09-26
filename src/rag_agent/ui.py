@@ -26,6 +26,9 @@ TYPE_LABELS = {
 SUPPORTED_TYPES = list(TYPE_LABELS)
 ROUTE_LABELS = {"auto": "Авто", "corpus": "Мои файлы", "general": "Общие знания"}
 REASONING_LABELS = {"off": "Выкл", "on": "Вкл", "auto": "Авто"}
+AGENT_LABELS = {"off": "Выкл", "auto": "Авто", "always": "Всегда"}
+TOOL_LABELS = {"search": "поиск", "exact_search": "точный поиск имени", "sql_query": "SQL к каталогу",
+               "read_file": "чтение файла", "list_dir": "список файлов", "answer": "ответ", "refuse": "отказ"}
 STATE_LABELS = {
     "idle": "ожидание",
     "scanning": "сканирование папки",
@@ -215,6 +218,12 @@ def sidebar(status: dict) -> None:
         help="«Вкл» — модель сначала рассуждает (медленнее, лучше на сравнениях и вопросах «почему»). "
         "«Авто» — рассуждение включается только для сложных вопросов. Длина рассуждения ограничена бюджетом.",
     )
+    st.segmented_control(
+        "Агент", list(AGENT_LABELS), default=status.get("agent", {}).get("mode", "auto"),
+        format_func=AGENT_LABELS.get, key="agent",
+        help="Агент сам вызывает поиск, точный поиск имён, SQL к каталогу и чтение файлов, пока не соберёт улики. "
+        "«Авто» — только для агрегатных и многошаговых вопросов, простые отвечаются сразу.",
+    )
     st.slider("Фрагментов в контексте", 2, 12, status["retrieval"]["top_k"], key="top_k")
     st.selectbox("Режим", ["dense", "sparse", "hybrid"], index=["dense", "sparse", "hybrid"].index(status["retrieval"]["mode"]),
                  key="mode", help="sparse и hybrid работают только с BGE-M3")
@@ -269,6 +278,19 @@ def render_answer(ans: dict) -> None:
                 continue
             lang = "python" if s["node_type"] in ("code_chunk", "code_cell", "function", "class") else "text"
             st.code(s["text"], language=lang)
+    agent_steps = [s for s in ans.get("trace", []) if s["name"] == "agent"]
+    if agent_steps:
+        with st.expander(f"Траектория агента ({len(agent_steps)} шагов)"):
+            for s in agent_steps:
+                d = s["detail"]
+                verdict = {"correct": "релевантно", "ambiguous": "частично", "incorrect": "нерелевантно"}.get(d.get("verdict"), "")
+                args = ", ".join(f"{k}={v!r}" for k, v in (d.get("args") or {}).items() if v not in (None, ""))
+                st.markdown(f"**{d.get('step')}. {TOOL_LABELS.get(d.get('action'), d.get('action'))}**({args})"
+                            + (f" · {verdict}" if verdict else "") + f" · {s['duration_s']:.1f} с")
+                if d.get("thought"):
+                    st.caption(d["thought"])
+                if d.get("observation"):
+                    st.code(d["observation"], language="text")
     with st.expander("Трасса"):
         for step in ans["trace"]:
             st.markdown(f"**{step['name']}** — {step['duration_s']:.2f} с")
@@ -337,6 +359,7 @@ def main() -> None:
                     "mode": st.session_state.mode,
                     "route": st.session_state.get("route") or "auto",
                     "reasoning": st.session_state.get("reasoning") or "auto",
+                    "agent": st.session_state.get("agent") or "auto",
                     "rerank": st.session_state.rerank,
                     "symbols": st.session_state.symbols,
                 })

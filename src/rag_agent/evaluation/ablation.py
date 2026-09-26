@@ -245,6 +245,27 @@ def _sql_section(rows: list[dict], per_item: list[dict[str, ItemResult]]) -> lis
     return out
 
 
+def _agent_section(rows: list[dict]) -> list[str]:
+    """H6 (CRAG lowers the share of wrong answers, keeps correct refusals on Q6) and NFR2 latency."""
+    out = ["", "## Агент и проверка релевантности (H6, NFR2)", "",
+           "Неверные — доля ответов с оценкой судьи «incorrect» среди вопросов, ответ на которые есть в файлах. "
+           "Отказы на Q6 — precision / recall отказов. Латентность — p95, с.", "",
+           "| # | Конфигурация | Корректность | Неверные | Отказы Q6: P / R | Ложные отказы | Отказов CRAG | Через агента "
+           "| Шагов | p95 Q1 | p95 прямой | p95 агент |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for k, row in enumerate(rows, start=1):
+        s = row["summary"]
+        a, rf, j = s.get("agent") or {}, s.get("refusals") or {}, s.get("judge") or {}
+        out.append(
+            f"| {k} | {row['run'].name} | {_fmt((j.get('correctness') or {}).get('mean'))} | {_fmt(a.get('wrong_rate'))} "
+            f"| {_fmt(rf.get('precision'), 2)} / {_fmt(rf.get('recall'), 2)} | {rf.get('false_refusals', '—')} "
+            f"| {a.get('crag_refusals', 0)} ({a.get('crag_refusals_q6', 0)} на Q6) | {_fmt(a.get('used'), 2)} "
+            f"| {_fmt(a.get('mean_steps'), 1)} | {_fmt((a.get('latency_q1') or {}).get('p95'), 1)} "
+            f"| {_fmt((a.get('latency_direct') or {}).get('p95'), 1)} | {_fmt((a.get('latency_agent') or {}).get('p95'), 1)} |"
+        )
+    return out
+
+
 def render_ablation(spec: AblationSpec, es: EvalSet, rows: list[dict], per_item: list[dict[str, ItemResult]]) -> str:
     ref_items = per_item[0]
     ids = [i for i, r in ref_items.items() if r.retrieval]
@@ -299,6 +320,9 @@ def render_ablation(spec: AblationSpec, es: EvalSet, rows: list[dict], per_item:
         out += _reasoning_section(rows, per_item)
     if any((row["summary"].get("sql") or {}).get("used_q3") for row in rows):
         out += _sql_section(rows, per_item)
+    if any((row["summary"].get("agent") or {}).get("used") or (row["summary"].get("agent") or {}).get("crag_refusals")
+           for row in rows):
+        out += _agent_section(rows)
     out += ["", "Переопределения настроек:", ""]
     out += [f"{k}. **{row['run'].name}** — `{json.dumps(row['run'].overrides, ensure_ascii=False)}`"
             + (f" — {row['run'].note}" if row["run"].note else "") for k, row in enumerate(rows, start=1)]

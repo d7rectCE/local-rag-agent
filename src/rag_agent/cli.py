@@ -65,13 +65,14 @@ def ask(
     mode: Optional[str] = typer.Option(None, help="dense | sparse | hybrid"),
     route: str = typer.Option("auto", help="auto | corpus (my files) | general (general knowledge)"),
     reasoning: Optional[str] = typer.Option(None, help="off | on | auto (default: config)"),
+    agent: Optional[str] = typer.Option(None, help="off | auto | always: the ReAct agent (default: config)"),
     as_json: bool = typer.Option(False, "--json", help="Print the full answer object"),
 ) -> None:
     """Ask a question: about the indexed folder or a general one (routed automatically)."""
     engine = _engine()
     if root:
         engine.open_corpus(root)
-    ans = engine.ask(question, top_k=top_k, mode=mode, route=route, reasoning=reasoning)
+    ans = engine.ask(question, top_k=top_k, mode=mode, route=route, reasoning=reasoning, agent=agent)
     if as_json:
         typer.echo(ans.model_dump_json(indent=2))
     else:
@@ -83,6 +84,11 @@ def ask(
         typer.echo("")
         for c in ans.citations:
             typer.echo(f"[{c.n}] {c.file_path} — {c.location}")
+        for s in ans.trace:
+            if s.name == "agent":
+                d = s.detail
+                typer.echo(f"  шаг {d.get('step')}: {d.get('action')} {json.dumps(d.get('args'), ensure_ascii=False)}"
+                           + (f" — {d['verdict']}" if d.get("verdict") else "") + (f" — {d['thought']}" if d.get("thought") else ""))
         if ans.reasoning:
             cut = ", обрезано по бюджету" if ans.reasoning_truncated else ""
             typer.echo(f"\n(рассуждение: {ans.reasoning_tokens} токенов{cut})")

@@ -68,6 +68,12 @@ class ItemResult(BaseModel):
     sql_pred: str | None = None
     sql_error: str | None = None
     sql_ex: bool | None = None  # execution accuracy against item.sql
+    # agent (Э7)
+    agent_used: bool = False
+    agent_steps: int = 0
+    agent_stop: str | None = None
+    crag_verdict: str | None = None  # of the direct path's check, or of the agent's evidence
+    crag_refused: bool = False
     judge: Verdict | None = None
     error: str | None = None
 
@@ -143,7 +149,16 @@ def evaluate_item(engine: Engine, item: EvalItem, *, retrieval_k: int, top_k: in
         r.reasoning_tokens = ans.reasoning_tokens
         r.reasoning_truncated = ans.reasoning_truncated
         r.escalated = any(s.name == "escalate" for s in ans.trace)
-        step = next((s for s in ans.trace if s.name == "sql"), None)
+        stop = next((s for s in ans.trace if s.name == "agent_stop"), None)
+        if stop is not None:
+            r.agent_used, r.agent_steps, r.agent_stop = True, stop.detail.get("steps", 0), stop.detail.get("reason")
+            best = stop.detail.get("best_relevance")
+            r.crag_verdict = None if best is None else engine_verdict(engine, best)
+        crag = next((s for s in ans.trace if s.name == "crag"), None)
+        if crag is not None:
+            r.crag_verdict = crag.detail.get("verdict")
+        r.crag_refused = not ans.answerable and r.crag_verdict == "incorrect"
+        step = next((s for s in ans.trace if s.name == "sql" or (s.name == "agent" and s.detail.get("action") == "sql_query")), None)
         if step is not None:
             r.sql_used, r.sql_pred, r.sql_error = True, step.detail.get("sql"), step.detail.get("error")
         if item.sql:
@@ -151,6 +166,13 @@ def evaluate_item(engine: Engine, item: EvalItem, *, retrieval_k: int, top_k: in
     except Exception as exc:  # one failing question must not abort the run
         r.error = f"{type(exc).__name__}: {exc}"
     return r
+
+
+def engine_verdict(engine: Engine, best: float) -> str:
+    cfg = engine.settings.agent
+    if not cfg.crag:
+        return "unknown"
+    return "correct" if best >= cfg.crag_upper else "incorrect" if best < cfg.crag_lower else "ambiguous"
 
 
 def _cells(row) -> list:
@@ -317,6 +339,24 @@ def summarize(results: list[ItemResult], es: EvalSet, n_boot: int = 1000) -> dic
         "execution_accuracy": mean_ci([float(r.sql_ex) for r in gold], n_boot) if gold else None,
     }
 
+    # --- agent and CRAG (Э7, H6, NFR2) ---
+    via_agent = [r for r in answered if r.agent_used]
+    direct = [r for r in answered if r.route == "corpus" and not r.agent_used]
+    judged_corpus = [r for r in answered if r.expected_route == "corpus" and r.judge is not None and r.judge.error is None]
+    summary["agent"] = {
+        "used": _mean(float(r.agent_used) for r in answered if r.route == "corpus"),
+        "used_by_class": {c: _mean(float(r.agent_used) for r in rs) for c, rs in sorted(by_cls_all(answered).items())},
+        "mean_steps": _mean(r.agent_steps for r in via_agent),
+        "stops": dict(Counter(r.agent_stop for r in via_agent)),
+        "crag_refusals": sum(r.crag_refused for r in answered),
+        "crag_refusals_q6": sum(r.crag_refused for r in answered if r.cls == "Q6"),
+        # H6: share of wrong answers (judge: incorrect) among questions that have an answer in the files
+        "wrong_rate": _mean(float(r.judge.correctness == "incorrect") for r in judged_corpus if r.cls != "Q6"),
+        "latency_direct": percentiles([r.latency_s for r in direct]),
+        "latency_agent": percentiles([r.latency_s for r in via_agent]),
+        "latency_q1": percentiles([r.latency_s for r in answered if r.cls == "Q1"]),
+    }
+
     # --- reasoning (ТЗ ч.2 S15, H11): accuracy against generated tokens and latency, per class ---
     by_cls = defaultdict(list)
     for r in answered:
@@ -331,6 +371,13 @@ def summarize(results: list[ItemResult], es: EvalSet, n_boot: int = 1000) -> dic
         "by_class": {c: _cost_row(rs) for c, rs in sorted(by_cls.items())},
     }
     return summary
+
+
+def by_cls_all(rs: list[ItemResult]) -> dict[str, list[ItemResult]]:
+    out: dict[str, list[ItemResult]] = defaultdict(list)
+    for r in rs:
+        out[r.cls].append(r)
+    return out
 
 
 def _cost_row(rs: list[ItemResult]) -> dict:

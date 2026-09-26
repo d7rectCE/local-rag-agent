@@ -150,6 +150,24 @@ class CatalogConfig(BaseModel):
     examples: str | None = None  # extra "question -> SQL" examples (YAML list), added to the built-in ones
 
 
+class AgentConfig(BaseModel):
+    """ReAct agent with tools and the CRAG relevance check (ТЗ S7, Э7)."""
+
+    # auto: aggregate and multi-step questions (router: aggregate or reasoning light/deep) go through
+    # the agent, simple ones are answered by direct retrieval; always / off force one path
+    mode: Literal["off", "auto", "always"] = "auto"
+    max_steps: int = 8
+    max_generated_tokens: int = 6000  # tool-call tokens over the whole trajectory
+    timeout_s: float = 60.0  # the loop stops and answers from the evidence gathered so far
+    observation_chars: int = 500  # per fragment shown to the agent
+    evidence: int = 8  # fragments passed to the final answer
+    # CRAG: relevance of the retrieved fragments by the cross-encoder (reranker) score in [0, 1]
+    crag: bool = True
+    crag_upper: float = 0.5  # >= upper: relevant
+    crag_lower: float = 0.1  # < lower: irrelevant -> rewrite the query; after the retries -> refuse
+    crag_retries: int = 1
+
+
 class Settings(BaseModel):
     corpus: CorpusConfig = CorpusConfig()
     storage: StorageConfig = StorageConfig()
@@ -161,6 +179,7 @@ class Settings(BaseModel):
     generation: GenerationConfig = GenerationConfig()
     reasoning: ReasoningConfig = ReasoningConfig()
     catalog: CatalogConfig = CatalogConfig()
+    agent: AgentConfig = AgentConfig()
     tracing: TracingConfig = TracingConfig()
     evaluation: EvaluationConfig = EvaluationConfig()
     api: ApiConfig = ApiConfig()

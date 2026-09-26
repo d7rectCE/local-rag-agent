@@ -76,6 +76,8 @@ def settings(tmp_path: Path) -> Settings:
     s.retrieval.symbols = False
     s.reasoning.mode = "off"  # reasoning is tested explicitly in test_reasoning.py
     s.catalog.extract = False  # the catalog of experiments is tested in test_catalog.py
+    s.agent.mode = "off"  # the agent and the CRAG check are tested in test_agent.py
+    s.agent.crag = False
     return s
 
 
@@ -122,13 +124,15 @@ class FakeLLM(BaseLLM):
     (schema with "answerable"), judge, catalog extraction, SQL, or a free-text general answer."""
 
     def __init__(self, settings: Settings, reply: dict | str | None = None, route: dict | str | None = None,
-                 general: str = "Общий ответ.", extraction: dict | None = None, sql: list[dict] | None = None):
+                 general: str = "Общий ответ.", extraction: dict | None = None, sql: list[dict] | None = None,
+                 agent: list[dict] | None = None):
         super().__init__(settings.llm)
         self.reply = reply if reply is not None else {"answerable": True, "answer": "Learning rate был 0.05 [1].", "general": ""}
         self.route = route  # None -> corpus with the question unchanged
         self.general = general
         self.extraction = extraction if extraction is not None else EXTRACTION
         self.sql = list(sql or [])  # replies of successive SQL calls; the last one repeats
+        self.agent = list(agent or [])  # scripted agent steps; after the script: answer
         self.calls: list[list[dict]] = []
         self.kinds: list[str] = []
         self.budgets: list[int] = []  # reasoning budgets of chat_reasoning calls
@@ -150,6 +154,12 @@ class FakeLLM(BaseLLM):
             self.kinds.append("sql")
             reply = (self.sql.pop(0) if len(self.sql) > 1 else self.sql[0]) if self.sql else {
                 "sql": "SELECT path, cell, name, value FROM metrics", "reason": ""}
+        elif "action" in props:
+            self.kinds.append("agent")
+            reply = self.agent.pop(0) if self.agent else {"thought": "достаточно", "action": "answer", "args": {}}
+        elif set(props) == {"query"}:
+            self.kinds.append("rewrite")
+            reply = {"query": "learning rate lr"}
         elif "correctness" in props:
             self.kinds.append("judge")
             reply = {"correctness": "correct", "faithful": True, "supported_citations": [1], "relevant": True,
@@ -172,6 +182,21 @@ class FakeLLM(BaseLLM):
 
     def is_available(self) -> bool:
         return True
+
+
+class FakeReranker:
+    """Relevance by word overlap with the query: 0.9 with a shared word of 2+ letters, else 0.02."""
+
+    def __init__(self, relevant: bool | None = None):
+        self.relevant = relevant  # force every score high (True) or low (False)
+
+    def score(self, query: str, passages: list[str]) -> np.ndarray:
+        words = {w for w in re.findall(r"\w+", query.lower()) if len(w) >= 2}
+        out = []
+        for p in passages:
+            hit = bool(words & set(re.findall(r"\w+", p.lower()))) if self.relevant is None else self.relevant
+            out.append(0.9 if hit else 0.02)
+        return np.asarray(out, dtype=np.float32)
 
 
 @pytest.fixture

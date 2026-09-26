@@ -9,6 +9,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from rag_agent.agent import Agent, RelevanceEvaluator, rewrite_query
 from rag_agent.config import REPO_ROOT, Settings, load_settings
 from rag_agent.generation import Answer, TraceStep, generate_answer, generate_general
 from rag_agent.index.embedder import Embedder
@@ -258,6 +259,7 @@ class Engine:
         mode: Mode | None = None,
         rerank: bool | None = None,
         symbols: bool | None = None,
+        file_types: list[str] | None = None,
     ) -> list[Hit]:
         cfg = self.settings.retrieval
         use_rerank = cfg.rerank if rerank is None else rerank
@@ -271,7 +273,65 @@ class Engine:
             rerank_pool=cfg.rerank_pool,
             symbols=cfg.symbols if symbols is None else symbols,
             with_header=self.settings.chunking.context_header,
+            file_types=file_types,
         )
+
+    def _answer_direct(self, standalone: str, index: CorpusIndex, steps: list[TraceStep], *, top_k: int, mode: str,
+                       rerank: bool | None, symbols: bool | None, aggregate: bool, budget: int | None,
+                       escalate: bool) -> tuple[Answer, bool]:
+        """Direct retrieval (no agent loop): search, the CRAG check, SQL for an aggregate question, the answer."""
+        t1 = time.perf_counter()
+        hits = self.search(standalone, top_k, mode, rerank=rerank, symbols=symbols)
+        cfg = self.settings.retrieval
+        steps.append(TraceStep(name="retrieve", duration_s=round(time.perf_counter() - t1, 3), detail={
+            "mode": mode, "top_k": top_k, "rerank": cfg.rerank if rerank is None else rerank,
+            "symbols": cfg.symbols if symbols is None else symbols,
+            "hits": [[h.node.id, round(h.score, 4)] for h in hits]}))
+        # Э6: an aggregate question also queries the catalog; the result leads the sources
+        sql_rows = False
+        if aggregate:
+            res = self.query_catalog(standalone)
+            steps.append(TraceStep(name="sql", duration_s=res.latency_s, detail={
+                "sql": res.sql, "rows": len(res.rows), "attempts": res.attempts, "error": res.error,
+                "tables": res.tables, "hints": res.hints}))
+            if res.ok and res.rows:
+                sql_rows = True
+                extra = self._sql_hits(res, index)
+                seen = {h.node.id for h in extra}
+                merged = extra + [h for h in hits if h.node.id not in seen]
+                hits = [Hit(node=h.node, score=h.score, rank=i) for i, h in enumerate(merged, start=1)]
+        # CRAG (ТЗ S7): irrelevant fragments -> one rewritten query -> still irrelevant -> honest refusal
+        acfg = self.settings.agent
+        if acfg.crag and hits and not sql_rows:
+            evaluator = RelevanceEvaluator(self, acfg)
+            t2 = time.perf_counter()
+            best = max(evaluator.scores(standalone, [h.node for h in hits]))
+            detail = {"best": round(best, 4), "verdict": evaluator.verdict(best)}
+            for _ in range(acfg.crag_retries):
+                if detail["verdict"] != "incorrect":
+                    break
+                query = rewrite_query(self.llm, standalone)
+                retry = self.search(query, top_k, mode, rerank=rerank, symbols=symbols)
+                retry_best = max(evaluator.scores(standalone, [h.node for h in retry]), default=0.0)
+                detail.setdefault("rewrites", []).append({"query": query, "best": round(retry_best, 4)})
+                if retry_best > best:
+                    hits, best = retry, retry_best
+                    detail.update(best=round(best, 4), verdict=evaluator.verdict(best))
+            steps.append(TraceStep(name="crag", duration_s=round(time.perf_counter() - t2, 3), detail=detail))
+            if detail["verdict"] == "incorrect":
+                return Answer(question=standalone, answer="В архиве не нашлось фрагментов, относящихся к вопросу, "
+                              "поэтому ответа по файлам нет.", answerable=False, grounded=True,
+                              model=self.llm.name), False
+        answer = generate_answer(standalone, hits, self.llm, self.settings.generation.max_source_chars,
+                                 reasoning_budget=budget)
+        # escalation (ТЗ ч.2 S15): the fast answer claims an answer but cites nothing valid
+        if escalate and budget is None and not answer.grounded:
+            fast_trace = answer.trace
+            answer = generate_answer(standalone, hits, self.llm, self.settings.generation.max_source_chars,
+                                     reasoning_budget=self.settings.reasoning.budget("deep"))
+            answer.trace[:0] = [*fast_trace, TraceStep(name="escalate", duration_s=0.0, detail={"reason": "ungrounded"})]
+            return answer, True
+        return answer, False
 
     def ask(
         self,
@@ -283,6 +343,7 @@ class Engine:
         rerank: bool | None = None,
         symbols: bool | None = None,
         reasoning: str | None = None,
+        agent: str | None = None,
     ) -> Answer:
         """Route the question, then answer it from the user's files (with citations)
         or from general knowledge. ``history`` is the previous chat turns
@@ -309,13 +370,14 @@ class Engine:
         # reasoning level: "on" reasons deep unless the router estimated a lighter level
         level = "deep" if reasoning_mode == "on" else "none"
         aggregate = False
+        complexity = "none"  # the router's difficulty estimate: multi-step questions go to the agent (Э7)
         # the router also rewrites follow-ups into standalone questions and estimates the reasoning level
         if route == "auto" or turns or reasoning_mode == "auto":
             decision = route_question(question, turns, self.llm)
             standalone = decision.standalone_question
             if reasoning_mode == "auto" or (reasoning_mode == "on" and decision.needs_reasoning):
                 level = decision.reasoning
-            aggregate = decision.aggregate
+            aggregate, complexity = decision.aggregate, decision.reasoning
             detail = {"route": decision.route, "standalone_question": standalone, "fallback": decision.fallback,
                       "reasoning": decision.reasoning, "aggregate": decision.aggregate}
             if route == "auto":
@@ -337,42 +399,18 @@ class Engine:
         else:
             top_k = top_k or self.settings.retrieval.top_k
             mode = mode or self.settings.retrieval.mode
-            t1 = time.perf_counter()
-            hits = self.search(standalone, top_k, mode, rerank=rerank, symbols=symbols)
-            cfg = self.settings.retrieval
-            steps.append(
-                TraceStep(
-                    name="retrieve",
-                    duration_s=round(time.perf_counter() - t1, 3),
-                    detail={
-                        "mode": mode,
-                        "top_k": top_k,
-                        "rerank": cfg.rerank if rerank is None else rerank,
-                        "symbols": cfg.symbols if symbols is None else symbols,
-                        "hits": [[h.node.id, round(h.score, 4)] for h in hits],
-                    },
-                )
-            )
-            # Э6: an aggregate question also queries the catalog; the result leads the sources
-            if aggregate and self.settings.catalog.sql and (index.dir / ANALYTICS_FILE).exists():
-                res = self.query_catalog(standalone)
-                steps.append(TraceStep(name="sql", duration_s=res.latency_s, detail={
-                    "sql": res.sql, "rows": len(res.rows), "attempts": res.attempts, "error": res.error,
-                    "tables": res.tables, "hints": res.hints}))
-                if res.ok and res.rows:
-                    extra = self._sql_hits(res, index)
-                    seen = {h.node.id for h in extra}
-                    merged = extra + [h for h in hits if h.node.id not in seen]
-                    hits = [Hit(node=h.node, score=h.score, rank=i) for i, h in enumerate(merged, start=1)]
-            answer = generate_answer(standalone, hits, self.llm, self.settings.generation.max_source_chars,
-                                     reasoning_budget=budget)
-            # escalation (ТЗ ч.2 S15): the fast answer claims an answer but cites nothing valid
-            if reasoning_mode == "auto" and rcfg.escalate and budget is None and not answer.grounded:
-                fast_trace = answer.trace
-                answer = generate_answer(standalone, hits, self.llm, self.settings.generation.max_source_chars,
-                                         reasoning_budget=rcfg.budget("deep"))
-                answer.trace[:0] = [*fast_trace, TraceStep(name="escalate", duration_s=0.0, detail={"reason": "ungrounded"})]
-                level = "deep"
+            agent_mode = agent or self.settings.agent.mode
+            sql_ok = self.settings.catalog.sql and (index.dir / ANALYTICS_FILE).exists()
+            # ТЗ S7: only aggregate and multi-step questions go through the agent loop
+            if agent_mode == "always" or (agent_mode == "auto" and (aggregate or complexity != "none")):
+                agent = Agent(self, index, top_k=top_k, mode=mode, sql=sql_ok, reasoning_budget=budget)
+                answer = agent.run(standalone, aggregate=aggregate)
+            else:
+                answer, escalated = self._answer_direct(standalone, index, steps, top_k=top_k, mode=mode, rerank=rerank,
+                                                        symbols=symbols, aggregate=aggregate and sql_ok, budget=budget,
+                                                        escalate=reasoning_mode == "auto" and rcfg.escalate)
+                if escalated:
+                    level = "deep"
             answer.question = question
 
         answer.standalone_question = standalone if standalone != question else None
@@ -453,6 +491,7 @@ class Engine:
             "llm": {"name": self.llm.name, "available": getattr(self.llm, "is_available", lambda: True)()},
             "retrieval": self.settings.retrieval.model_dump(),
             "reasoning": self.settings.reasoning.model_dump(),
+            "agent": self.settings.agent.model_dump(),
             "defaults": {"include_ext": self.settings.corpus.include_ext, "exclude": self.settings.corpus.exclude},
         }
 

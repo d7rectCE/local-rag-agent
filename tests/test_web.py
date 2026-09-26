@@ -139,3 +139,22 @@ def test_engine_web_modes(settings, fake_embedder, corpus: Path):
     assert eng.ask("Что такое F1?", web="auto").route == "general"  # the router did not ask for the web
     assert eng.ask("Что такое F1?", web="always").route == "web"
     eng.close()
+
+
+def test_auto_web_blocked_by_rule1_keeps_the_answer_from_files(settings, fake_embedder, corpus: Path):
+    requests = []
+    client, fetcher = web_parts(settings, requests)
+    route = {"route": "corpus", "standalone_question": "Какие аргументы у compute_f1?", "reasoning": "none",
+             "aggregate": False, "web": True}  # the router wrongly asks for the web about a corpus function
+    eng = Engine(settings, embedder=fake_embedder, llm=FakeLLM(settings, route=route))
+    eng._web_client, eng._page_fetcher = client, fetcher
+    eng.llm.web_query = "compute_f1 arguments"
+    eng.index_folder(corpus)
+    ans = eng.ask("Какие аргументы у compute_f1?", web="auto")
+    assert ans.route == "corpus" and ans.answerable and ans.citations  # answered from the files
+    assert ans.pending and ans.pending[0]["rule"] == "rule 1" and "подтверждение" in ans.notice
+    assert not [u for u in requests if "/search" in u]  # nothing was sent
+    assert any(s.name == "web_blocked" for s in ans.trace)
+    always = eng.ask("Какие аргументы у compute_f1?", web="always")  # explicit web: the confirmation itself
+    assert always.route == "web" and always.pending and not always.answerable
+    eng.close()

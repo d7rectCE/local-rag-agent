@@ -409,6 +409,34 @@ class Engine:
             self._page_fetcher = PageFetcher(self.settings)
         return self._page_fetcher
 
+    def _answer_corpus(self, standalone: str, index: CorpusIndex, steps: list[TraceStep], *, top_k: int | None,
+                       mode: str | None, agent: str | None, rerank: bool | None, symbols: bool | None, aggregate: bool,
+                       complexity: str, budget: int | None, escalate: bool, web_mode: str,
+                       confirmed: list[str] | None) -> tuple[Answer, bool]:
+        """The user's files: the agent loop for aggregate and multi-step questions, direct retrieval otherwise;
+        in the auto web mode irrelevant results send the question to the web (S19)."""
+        top_k = top_k or self.settings.retrieval.top_k
+        mode = mode or self.settings.retrieval.mode
+        agent_mode = agent or self.settings.agent.mode
+        sql_ok = self.settings.catalog.sql and (index.dir / ANALYTICS_FILE).exists()
+        escalated = False
+        # ТЗ S7: only aggregate and multi-step questions go through the agent loop
+        if agent_mode == "always" or (agent_mode == "auto" and (aggregate or complexity != "none")):
+            loop = Agent(self, index, top_k=top_k, mode=mode, sql=sql_ok, reasoning_budget=budget,
+                         confirmed=set(confirmed or []), web=web_mode != "off")
+            answer = loop.run(standalone, aggregate=aggregate)
+        else:
+            answer, escalated = self._answer_direct(standalone, index, steps, top_k=top_k, mode=mode, rerank=rerank,
+                                                    symbols=symbols, aggregate=aggregate and sql_ok, budget=budget,
+                                                    escalate=escalate)
+        if web_mode == "auto" and not answer.answerable and not answer.pending and any(
+                s.name == "crag" and s.detail.get("verdict") == "incorrect" for s in answer.trace):
+            first = answer.trace
+            answer = self._answer_web(standalone, index, budget, confirmed)
+            answer.trace[:0] = [*first, TraceStep(name="web_fallback", duration_s=0.0,
+                                                  detail={"reason": "irrelevant corpus results"})]
+        return answer, escalated
+
     def _answer_direct(self, standalone: str, index: CorpusIndex, steps: list[TraceStep], *, top_k: int, mode: str,
                        rerank: bool | None, symbols: bool | None, aggregate: bool, budget: int | None,
                        escalate: bool) -> tuple[Answer, bool]:
@@ -546,32 +574,31 @@ class Engine:
                 notice = "Загруженный файл уже есть в корпусе: " + "; ".join(dups)
         elif web_mode == "always" or (web_mode == "auto" and wants_web):
             answer = self._answer_web(standalone, index, budget, confirmed)
+            blocked = bool(answer.pending) or any(s.name == "web_error" for s in answer.trace)
+            if web_mode == "auto" and blocked and index is not None:
+                # auto: the web adds to the files. A query waiting for approval (rule 1) or a failed search
+                # leaves the answer from the files; the confirmation is still offered with it
+                web_answer = answer
+                answer, escalated = self._answer_corpus(
+                    standalone, index, steps, top_k=top_k, mode=mode, agent=agent, rerank=rerank, symbols=symbols,
+                    aggregate=aggregate, complexity=complexity, budget=budget,
+                    escalate=reasoning_mode == "auto" and rcfg.escalate, web_mode="off", confirmed=confirmed)
+                if escalated:
+                    level = "deep"
+                answer.pending = web_answer.pending
+                answer.trace[:0] = [*web_answer.trace, TraceStep(name="web_blocked", duration_s=0.0,
+                                                                 detail={"message": web_answer.answer})]
+                notice = web_answer.answer
             answer.question = question
         elif chosen == "general":
             answer = generate_general(question, turns, self.llm, reasoning_budget=budget)
         else:
-            top_k = top_k or self.settings.retrieval.top_k
-            mode = mode or self.settings.retrieval.mode
-            agent_mode = agent or self.settings.agent.mode
-            sql_ok = self.settings.catalog.sql and (index.dir / ANALYTICS_FILE).exists()
-            # ТЗ S7: only aggregate and multi-step questions go through the agent loop
-            if agent_mode == "always" or (agent_mode == "auto" and (aggregate or complexity != "none")):
-                agent = Agent(self, index, top_k=top_k, mode=mode, sql=sql_ok, reasoning_budget=budget,
-                              confirmed=set(confirmed or []), web=web_mode != "off")
-                answer = agent.run(standalone, aggregate=aggregate)
-            else:
-                answer, escalated = self._answer_direct(standalone, index, steps, top_k=top_k, mode=mode, rerank=rerank,
-                                                        symbols=symbols, aggregate=aggregate and sql_ok, budget=budget,
-                                                        escalate=reasoning_mode == "auto" and rcfg.escalate)
-                if escalated:
-                    level = "deep"
-            # S19: irrelevant corpus results send the question to the web in auto mode
-            if web_mode == "auto" and not answer.answerable and not answer.pending and any(
-                    s.name == "crag" and s.detail.get("verdict") == "incorrect" for s in answer.trace):
-                first = answer.trace
-                answer = self._answer_web(standalone, index, budget, confirmed)
-                answer.trace[:0] = [*first, TraceStep(name="web_fallback", duration_s=0.0,
-                                                      detail={"reason": "irrelevant corpus results"})]
+            answer, escalated = self._answer_corpus(
+                standalone, index, steps, top_k=top_k, mode=mode, agent=agent, rerank=rerank, symbols=symbols,
+                aggregate=aggregate, complexity=complexity, budget=budget,
+                escalate=reasoning_mode == "auto" and rcfg.escalate, web_mode=web_mode, confirmed=confirmed)
+            if escalated:
+                level = "deep"
             answer.question = question
 
         answer.standalone_question = standalone if standalone != question else None

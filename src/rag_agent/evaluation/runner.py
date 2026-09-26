@@ -177,7 +177,7 @@ def evaluate_item(engine: Engine, item: EvalItem, *, retrieval_k: int, top_k: in
         r.reasoning_truncated = ans.reasoning_truncated
         r.escalated = any(s.name == "escalate" for s in ans.trace)
         r.web_error = any(s.name == "web_error" for s in ans.trace)
-        r.web_pending = ans.route == "web" and bool(ans.pending)
+        r.web_pending = any(s.name == "web_policy" for s in ans.trace)
         support = next((s for s in ans.trace if s.name == "web_support"), None)
         if support is not None:
             r.web_supported, r.web_unsupported = support.detail.get("supported", 0), support.detail.get("unsupported", 0)
@@ -401,8 +401,8 @@ def summarize(results: list[ItemResult], es: EvalSet, n_boot: int = 1000) -> dic
         "used_other": _mean(float(r.route == "web") for r in answered if r.cls != "Q10"),
         "unsupported_share": sum(r.web_unsupported for r in web_answers) / sentences if sentences else None,
         "latency_web": percentiles([r.latency_s for r in web_answers]),
-        "gateway_errors": sum(r.web_error for r in web_answers),
-        "pending": sum(r.web_pending for r in web_answers),
+        "gateway_errors": sum(r.web_error for r in answered),
+        "pending": sum(r.web_pending for r in answered),
     }
 
     # --- agent and CRAG (Э7, H6, NFR2) ---

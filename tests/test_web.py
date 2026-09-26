@@ -7,7 +7,7 @@ import httpx
 
 from rag_agent.engine import Engine
 from rag_agent.policy import Policy, Provenance
-from rag_agent.web import PageFetcher, SearxClient, extract_main_text, source_priority
+from rag_agent.web import PageFetcher, SearxClient, WebError, extract_main_text, source_priority
 from rag_agent.web_qa import answer_from_web, mark_unsupported
 from tests.conftest import FakeLLM
 
@@ -63,6 +63,27 @@ def test_pages_are_cached_with_the_access_date(settings):
     assert first.error is None and "1.9.1" in first.text
     assert fetcher.fetch("https://example.org/missing").error == "HTTP 404"
 
+
+
+def test_search_cache_and_refusing_engines(settings, tmp_path):
+    requests = []
+    http = httpx.Client(transport=transport({}, requests))
+    client = SearxClient(settings.web, http, cache_dir=tmp_path / "search")
+    first = client.search("scikit-learn latest version")
+    again = client.search("Scikit-learn  latest version")  # the same query: from the disk cache
+    assert [r.url for r in again] == [r.url for r in first] and len(requests) == 1
+
+    def refused(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"results": [], "unresponsive_engines": [["brave", "Suspended: too many requests"],
+                                                                                  ["duckduckgo", "timeout"]]})
+
+    client = SearxClient(settings.web, httpx.Client(transport=httpx.MockTransport(refused)), cache_dir=tmp_path / "s2")
+    try:
+        client.search("anything")
+        raise AssertionError("an empty page of results from refusing engines must be an error")
+    except WebError as exc:
+        assert "too many requests" in str(exc)
+    assert not list((tmp_path / "s2").glob("*.json"))  # a failure is not cached
 
 def test_support_check_marks_unsupported_sentences():
     text, ok, bad = mark_unsupported(

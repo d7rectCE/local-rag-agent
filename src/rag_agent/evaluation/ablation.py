@@ -252,9 +252,12 @@ def _web_section(rows: list[dict], per_item: list[dict[str, ItemResult]]) -> lis
     """H15: adaptive web access improves Q10 and does not hurt questions about the files."""
     out = ["", "## Интернет (H15)", "",
            "Точность — судья (без судьи — обязательные фрагменты) отдельно на Q10 и на остальных вопросах. "
-           "Неподтверждённые — доля предложений веб-ответов без ссылки или с числами, которых нет в цитируемых фрагментах.",
-           "", "| # | Конфигурация | Точность Q10 | Точность прочих | В интернет: Q10 / прочие | Неподтверждённые | p95 веб-ответа, с |",
-           "|---|---|---|---|---|---|---|"]
+           "Неподтверждённые — доля предложений веб-ответов без ссылки или с числами, которых нет в цитируемых фрагментах. "
+           "Сбои поиска — веб-ответы, для которых поисковые системы не ответили (ограничения запросов, SearXNG недоступен): "
+           "это сбой окружения, а не модели; подтверждения — ответы, остановленные правилом 1.",
+           "", "| # | Конфигурация | Точность Q10 | Точность прочих | В интернет: Q10 / прочие | Неподтверждённые "
+           "| Сбои поиска / подтверждения | p95 веб-ответа, с |",
+           "|---|---|---|---|---|---|---|---|"]
     for k, (row, items) in enumerate(zip(rows, per_item), start=1):
         w = row["summary"].get("web") or {}
         q10 = [s for r in items.values() if r.cls == "Q10" and (s := _score(r)) is not None]
@@ -262,6 +265,7 @@ def _web_section(rows: list[dict], per_item: list[dict[str, ItemResult]]) -> lis
         out.append(f"| {k} | {row['run'].name} | {_fmt(sum(q10) / len(q10) if q10 else None)} "
                    f"| {_fmt(sum(other) / len(other) if other else None)} | {_fmt(w.get('used_q10'), 2)} / "
                    f"{_fmt(w.get('used_other'), 2)} | {_fmt(w.get('unsupported_share'), 2)} "
+                   f"| {w.get('gateway_errors', '—')} / {w.get('pending', '—')} "
                    f"| {_fmt((w.get('latency_web') or {}).get('p95'), 1)} |")
     return out
 

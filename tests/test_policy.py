@@ -32,6 +32,19 @@ def test_rule1_private_entities_in_web_queries():
     assert (d.action, d.rule) == ("confirm", "rule 1") and "compute_f1" in d.reason
 
 
+
+def test_rule1_catalog_names_skip_plain_words():
+    class Cat:
+        def file_stems(self):
+            return ["features", "metrics", "__init__", "hparam_search", "08_numpy_mlp", "report-march", "train"]
+
+        def query(self, sql):
+            return [{"name": "compute_f1"}, {"name": "trainModel"}, {"name": "predict"}]
+
+    policy = Policy.for_catalog(Cat(), web=True)
+    assert policy.private == {"hparam_search", "08_numpy_mlp", "report-march", "compute_f1", "trainModel"}
+    assert policy.check("web_search", {"query": "sklearn features metrics"}, Provenance()).allowed
+
 def test_rule2_and_rule3_after_untrusted_content():
     policy = Policy(web=True, code=True)
     prov = Provenance()

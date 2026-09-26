@@ -78,6 +78,7 @@ def settings(tmp_path: Path) -> Settings:
     s.catalog.extract = False  # the catalog of experiments is tested in test_catalog.py
     s.agent.mode = "off"  # the agent and the CRAG check are tested in test_agent.py
     s.agent.crag = False
+    s.web.min_interval_s = 0.0  # no pause between queries to the mocked SearXNG
     return s
 
 

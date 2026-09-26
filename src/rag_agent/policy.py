@@ -148,7 +148,10 @@ class Policy:
         """Private entities of the corpus: file stems and defined names that look like identifiers."""
         names: set[str] = set()
         if catalog is not None:
-            names |= {s for s in catalog.file_stems() if len(s) >= 6}  # "train", "utils" are too generic
+            # "features", "metrics", "trainer" are plain words: web queries about them are not a leak;
+            # "hparam_search", "08_numpy_mlp", "report-march" name this archive
+            names |= {s for s in catalog.file_stems()
+                      if len(s) >= 6 and not s.startswith("__") and re.search(r"[_\-\d]", s)}
             for r in catalog.query("SELECT DISTINCT name FROM symbols"):
                 n = r["name"]
                 if len(n) >= 6 and ("_" in n or re.search(r"[a-z][A-Z]", n)):  # compute_f1, trainModel

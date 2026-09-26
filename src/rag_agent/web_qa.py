@@ -133,7 +133,8 @@ def answer_from_web(question: str, llm: BaseLLM, settings, *, policy: Policy, pr
             results += [r for r in client.search(q) if r.url not in {x.url for x in results}]
     except WebError as exc:
         return Answer(question=question, answer=f"Интернет недоступен: {exc}", answerable=False, grounded=True,
-                      route="web", model=llm.name)
+                      route="web", model=llm.name, trace=[TraceStep(name="web_error", duration_s=round(
+                          time.perf_counter() - t0, 3), detail={"queries": queries, "error": str(exc)})])
     results.sort(key=lambda r: (-r.priority, r.rank))
     policy.observe("web_search", prov, "\n".join(r.url for r in results))
     steps.append(TraceStep(name="web_search", duration_s=round(time.perf_counter() - t0, 3), detail={

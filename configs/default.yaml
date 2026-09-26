@@ -123,6 +123,8 @@ web:                                  # ТЗ ч.2 S19: web gateway through a loc
   searxng_url: http://127.0.0.1:8888
   pages: 3                            # pages read per question; main text extracted, cached for cache_days
   cache_days: 7
+  search_cache_hours: 24               # the same query within a day comes from the disk cache
+  min_interval_s: 1.5                  # between queries: upstream engines suspend clients that send bursts
 
 tracing:
   enabled: true

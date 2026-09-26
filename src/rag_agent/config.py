@@ -216,6 +216,8 @@ class WebConfig(BaseModel):
     page_max_mb: float = 3.0
     timeout_s: float = 15.0
     cache_days: float = 7.0
+    search_cache_hours: float = 24.0  # the same query within a day is answered from the disk cache
+    min_interval_s: float = 1.5  # between queries to SearXNG: its engines suspend clients that send bursts
     passages: int = 6  # compressed fragments given to the answer
     # primary sources first, aggregators and SEO sites last (S19)
     prefer: list[str] = ["arxiv.org", "aclanthology.org", "openreview.net", "github.com", "pypi.org", "docs.python.org",

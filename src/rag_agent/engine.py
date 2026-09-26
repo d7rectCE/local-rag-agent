@@ -398,7 +398,7 @@ class Engine:
         if getattr(self, "_web_client", None) is None:
             from rag_agent.web import SearxClient
 
-            self._web_client = SearxClient(self.settings.web)
+            self._web_client = SearxClient(self.settings.web, cache_dir=self.settings.data_dir / "web_cache" / "search")
         return self._web_client
 
     @property

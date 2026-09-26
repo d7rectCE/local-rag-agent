@@ -73,9 +73,16 @@ def source_priority(url: str, cfg: WebConfig) -> int:
 
 
 class SearxClient:
-    def __init__(self, cfg: WebConfig, http: httpx.Client | None = None):
+    """Search through the local SearXNG. Results of a query are cached on disk for ``search_cache_hours``
+    (reruns of an evaluation do not hit the engines again), and queries are spaced by ``min_interval_s``:
+    the upstream engines suspend clients that send bursts ("too many requests")."""
+
+    _last_request = 0.0  # shared by all clients of the process
+
+    def __init__(self, cfg: WebConfig, http: httpx.Client | None = None, cache_dir: Path | None = None):
         self.cfg = cfg
         self.http = http or httpx.Client(timeout=cfg.timeout_s, headers={"User-Agent": UA})
+        self.cache = cache_dir
 
     def available(self) -> bool:
         try:
@@ -83,15 +90,43 @@ class SearxClient:
         except httpx.HTTPError:
             return False
 
-    def search(self, query: str, n: int | None = None) -> list[WebResult]:
+    def _cache_file(self, query: str) -> Path | None:
+        if self.cache is None or self.cfg.search_cache_hours <= 0:
+            return None
+        return self.cache / (hashlib.sha256(" ".join(query.lower().split()).encode()).hexdigest()[:32] + ".json")
+
+    def _raw(self, query: str) -> list[dict]:
+        f = self._cache_file(query)
+        if f is not None and f.exists():
+            data = json.loads(f.read_text(encoding="utf-8"))
+            if time.time() - data["at"] <= self.cfg.search_cache_hours * 3600:
+                return data["results"]
+        wait = SearxClient._last_request + self.cfg.min_interval_s - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        SearxClient._last_request = time.monotonic()
         try:
             r = self.http.get(f"{self.cfg.searxng_url}/search", params={"q": query, "format": "json", "safesearch": 0})
         except httpx.HTTPError as exc:
             raise WebError(f"SearXNG недоступен ({self.cfg.searxng_url}): {exc}. Запустите: rag searxng start") from exc
         if r.status_code != 200:
             raise WebError(f"SearXNG ответил {r.status_code}: {r.text[:200]}")
+        body = r.json()
+        items = body.get("results", [])
+        failed = body.get("unresponsive_engines") or []
+        if not items and failed:  # no results because the engines refused, not because there is nothing
+            reasons = "; ".join(" — ".join(str(x) for x in e) if isinstance(e, (list, tuple)) else str(e)
+                                for e in failed[:5])
+            raise WebError(f"поисковые системы не ответили ({reasons})")
+        if f is not None and items:
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(json.dumps({"query": query, "at": time.time(), "results": items}, ensure_ascii=False),
+                         encoding="utf-8")
+        return items
+
+    def search(self, query: str, n: int | None = None) -> list[WebResult]:
         seen, results = set(), []
-        for k, item in enumerate(r.json().get("results", []), start=1):
+        for k, item in enumerate(self._raw(query), start=1):
             url = item.get("url") or ""
             if not url.startswith(("http://", "https://")) or url in seen:
                 continue

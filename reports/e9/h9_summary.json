@@ -1,0 +1,293 @@
+{
+ "без изменений": {
+  "Page-Hinkley, порог по умолчанию": {
+   "n_drifts": 0.0,
+   "alarms": 0.0,
+   "false_alarms": 0.0,
+   "true_alarms": 0.0,
+   "fdp": 0.0,
+   "false_alarms_per_window": 0.0,
+   "p_any_false_alarm_per_window": 0.0,
+   "mdr": null,
+   "mean_delay": null,
+   "precision": null,
+   "recall": null,
+   "f1": null,
+   "n": {
+    "fdp": 10,
+    "mean_delay": 0,
+    "precision": 0
+   }
+  },
+  "DDM, порог по умолчанию": {
+   "n_drifts": 0.0,
+   "alarms": 5.6,
+   "false_alarms": 5.6,
+   "true_alarms": 0.0,
+   "fdp": 0.9,
+   "false_alarms_per_window": 0.2074074074074074,
+   "p_any_false_alarm_per_window": 0.1814814814814815,
+   "mdr": null,
+   "mean_delay": null,
+   "precision": 0.0,
+   "recall": null,
+   "f1": null,
+   "n": {
+    "fdp": 10,
+    "mean_delay": 0,
+    "precision": 9
+   }
+  },
+  "PH, калибровка без поправки (α=0.05)": {
+   "n_drifts": 0.0,
+   "alarms": 6.1,
+   "false_alarms": 6.1,
+   "true_alarms": 0.0,
+   "fdp": 1.0,
+   "false_alarms_per_window": 0.22592592592592592,
+   "p_any_false_alarm_per_window": 0.19629629629629627,
+   "mdr": null,
+   "mean_delay": null,
+   "precision": 0.0,
+   "recall": null,
+   "f1": null,
+   "n": {
+    "fdp": 10,
+    "mean_delay": 0,
+    "precision": 10
+   }
+  },
+  "PH, калибровка + BH в окне (FDR 0.05)": {
+   "n_drifts": 0.0,
+   "alarms": 0.4,
+   "false_alarms": 0.4,
+   "true_alarms": 0.0,
+   "fdp": 0.3,
+   "false_alarms_per_window": 0.014814814814814814,
+   "p_any_false_alarm_per_window": 0.01111111111111111,
+   "mdr": null,
+   "mean_delay": null,
+   "precision": 0.0,
+   "recall": null,
+   "f1": null,
+   "n": {
+    "fdp": 10,
+    "mean_delay": 0,
+    "precision": 3
+   }
+  },
+  "PH, калибровка + LORD++ (FDR 0.05)": {
+   "n_drifts": 0.0,
+   "alarms": 0.0,
+   "false_alarms": 0.0,
+   "true_alarms": 0.0,
+   "fdp": 0.0,
+   "false_alarms_per_window": 0.0,
+   "p_any_false_alarm_per_window": 0.0,
+   "mdr": null,
+   "mean_delay": null,
+   "precision": null,
+   "recall": null,
+   "f1": null,
+   "n": {
+    "fdp": 10,
+    "mean_delay": 0,
+    "precision": 0
+   }
+  }
+ },
+ "слабый эмбеддер": {
+  "Page-Hinkley, порог по умолчанию": {
+   "n_drifts": 10.0,
+   "alarms": 4.6,
+   "false_alarms": 0.2,
+   "true_alarms": 4.4,
+   "fdp": 0.03666666666666667,
+   "false_alarms_per_window": 0.007407407407407407,
+   "p_any_false_alarm_per_window": 0.007407407407407407,
+   "mdr": 0.5599999999999999,
+   "mean_delay": 385.0,
+   "precision": 0.9033333333333335,
+   "recall": 0.41000000000000003,
+   "f1": 0.5615476190476191,
+   "n": {
+    "fdp": 10,
+    "mean_delay": 10,
+    "precision": 10
+   }
+  },
+  "DDM, порог по умолчанию": {
+   "n_drifts": 10.0,
+   "alarms": 14.1,
+   "false_alarms": 4.4,
+   "true_alarms": 9.7,
+   "fdp": 0.3050412087912088,
+   "false_alarms_per_window": 0.16296296296296295,
+   "p_any_false_alarm_per_window": 0.1296296296296296,
+   "mdr": 0.029999999999999992,
+   "mean_delay": 185.77777777777777,
+   "precision": 0.6949587912087912,
+   "recall": 0.97,
+   "f1": 0.8078376406202492,
+   "n": {
+    "fdp": 10,
+    "mean_delay": 10,
+    "precision": 10
+   }
+  },
+  "PH, калибровка без поправки (α=0.05)": {
+   "n_drifts": 10.0,
+   "alarms": 15.5,
+   "false_alarms": 7.9,
+   "true_alarms": 7.6,
+   "fdp": 0.5034188034188034,
+   "false_alarms_per_window": 0.29259259259259257,
+   "p_any_false_alarm_per_window": 0.2518518518518519,
+   "mdr": 0.24,
+   "mean_delay": 186.23015873015873,
+   "precision": 0.49181929181929185,
+   "recall": 0.75,
+   "f1": 0.5914289567375123,
+   "n": {
+    "fdp": 10,
+    "mean_delay": 10,
+    "precision": 10
+   }
+  },
+  "PH, калибровка + BH в окне (FDR 0.05)": {
+   "n_drifts": 10.0,
+   "alarms": 9.1,
+   "false_alarms": 1.8,
+   "true_alarms": 7.3,
+   "fdp": 0.19449494949494947,
+   "false_alarms_per_window": 0.06666666666666667,
+   "p_any_false_alarm_per_window": 0.06296296296296297,
+   "mdr": 0.27,
+   "mean_delay": 213.92857142857147,
+   "precision": 0.7818939393939394,
+   "recall": 0.71,
+   "f1": 0.7427401837928153,
+   "n": {
+    "fdp": 10,
+    "mean_delay": 10,
+    "precision": 10
+   }
+  },
+  "PH, калибровка + LORD++ (FDR 0.05)": {
+   "n_drifts": 10.0,
+   "alarms": 7.1,
+   "false_alarms": 1.0,
+   "true_alarms": 6.1,
+   "fdp": 0.1376984126984127,
+   "false_alarms_per_window": 0.037037037037037035,
+   "p_any_false_alarm_per_window": 0.03333333333333333,
+   "mdr": 0.39,
+   "mean_delay": 225.2857142857143,
+   "precision": 0.8623015873015871,
+   "recall": 0.61,
+   "f1": 0.7115927072583419,
+   "n": {
+    "fdp": 10,
+    "mean_delay": 10,
+    "precision": 10
+   }
+  }
+ },
+ "файлы нового домена": {
+  "Page-Hinkley, порог по умолчанию": {
+   "n_drifts": 6.0,
+   "alarms": 1.3,
+   "false_alarms": 0.0,
+   "true_alarms": 1.3,
+   "fdp": 0.0,
+   "false_alarms_per_window": 0.0,
+   "p_any_false_alarm_per_window": 0.0,
+   "mdr": 0.7833333333333334,
+   "mean_delay": 480.0,
+   "precision": 0.95,
+   "recall": 0.2,
+   "f1": 0.325,
+   "n": {
+    "fdp": 10,
+    "mean_delay": 10,
+    "precision": 10
+   }
+  },
+  "DDM, порог по умолчанию": {
+   "n_drifts": 6.0,
+   "alarms": 12.0,
+   "false_alarms": 6.4,
+   "true_alarms": 5.6,
+   "fdp": 0.5051584853055442,
+   "false_alarms_per_window": 0.23703703703703702,
+   "p_any_false_alarm_per_window": 0.20370370370370366,
+   "mdr": 0.06666666666666667,
+   "mean_delay": 257.00000000000006,
+   "precision": 0.49484151469445586,
+   "recall": 0.9333333333333333,
+   "f1": 0.6369026689796644,
+   "n": {
+    "fdp": 10,
+    "mean_delay": 10,
+    "precision": 10
+   }
+  },
+  "PH, калибровка без поправки (α=0.05)": {
+   "n_drifts": 6.0,
+   "alarms": 12.4,
+   "false_alarms": 6.8,
+   "true_alarms": 5.6,
+   "fdp": 0.5304545454545454,
+   "false_alarms_per_window": 0.2518518518518519,
+   "p_any_false_alarm_per_window": 0.22592592592592592,
+   "mdr": 0.06666666666666665,
+   "mean_delay": 307.6666666666667,
+   "precision": 0.45212121212121215,
+   "recall": 0.9,
+   "f1": 0.5969654528478058,
+   "n": {
+    "fdp": 10,
+    "mean_delay": 10,
+    "precision": 10
+   }
+  },
+  "PH, калибровка + BH в окне (FDR 0.05)": {
+   "n_drifts": 6.0,
+   "alarms": 5.5,
+   "false_alarms": 0.6,
+   "true_alarms": 4.9,
+   "fdp": 0.09523809523809523,
+   "false_alarms_per_window": 0.02222222222222222,
+   "p_any_false_alarm_per_window": 0.018518518518518517,
+   "mdr": 0.1833333333333333,
+   "mean_delay": 369.0,
+   "precision": 0.868095238095238,
+   "recall": 0.7833333333333334,
+   "f1": 0.8172261072261072,
+   "n": {
+    "fdp": 10,
+    "mean_delay": 10,
+    "precision": 10
+   }
+  },
+  "PH, калибровка + LORD++ (FDR 0.05)": {
+   "n_drifts": 6.0,
+   "alarms": 1.0,
+   "false_alarms": 0.0,
+   "true_alarms": 1.0,
+   "fdp": 0.0,
+   "false_alarms_per_window": 0.0,
+   "p_any_false_alarm_per_window": 0.0,
+   "mdr": 0.8333333333333334,
+   "mean_delay": 900.0,
+   "precision": 0.65,
+   "recall": 0.08333333333333333,
+   "f1": 0.12714285714285714,
+   "n": {
+    "fdp": 10,
+    "mean_delay": 5,
+    "precision": 5
+   }
+  }
+ }
+}

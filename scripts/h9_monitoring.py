@@ -51,6 +51,7 @@ STATES = ("normal", "weak_embedder", "new_domain")
 WEAK_DIMS = 128
 POOL = 10
 TOP = 5
+TOLERANCE = 0.02  # the null of a test: the miss rate of the segment rose by at most 2 points
 
 
 # --------------------------------------------------------------------------- canary answers per state
@@ -183,13 +184,13 @@ def make_scenario(ans, canaries, streams, before: str, after: str | None, onset:
             values[k, sl], errors[k, sl] = v, e
             truth[k, sl] = signals(ans[state][comp][pool])[1].mean()  # true error rate of the segment
     change = np.full(len(streams), NO_CHANGE, dtype=np.int64)
-    if after:
-        change[:] = onset
+    if after:  # a change only where the true miss rate of the segment rose by more than the tolerance
+        change[(truth[:, -1] - truth[:, 0]) > TOLERANCE] = onset
     sc = Scenario(config=ScenarioConfig(n_streams=len(streams), n_steps=n_steps), values=values, errors=errors,
                   change_start=change.copy(), change_end=change.copy(),
-                  drift_kind=np.array(["abrupt" if after else "none"] * len(streams)),
-                  event=np.zeros(len(streams), dtype=np.int64) if after else np.full(len(streams), -1))
-    return replace(sc, truth=truth, tolerance=0.02)  # null = the error rate rose by at most 2 points
+                  drift_kind=np.where(change != NO_CHANGE, "abrupt", "none"),
+                  event=np.where(change != NO_CHANGE, 0, -1).astype(np.int64))
+    return replace(sc, truth=truth, tolerance=TOLERANCE)
 
 
 def methods(n_ref: int, window: int):

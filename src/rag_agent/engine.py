@@ -386,9 +386,28 @@ class Engine:
                 scores = RelevanceEvaluator(self, acfg).scores(question, [h.node for h in hits])
                 hits = [h for h, s in zip(hits, scores) if s >= acfg.crag_upper][:3]
             archive = hits[:3]
-        policy = Policy.for_catalog(index.catalog if index is not None else None, web=True)
+        policy = Policy.for_catalog(index.catalog if index is not None else None, web=True,
+                                    enabled=self.settings.security.policies)
         return answer_from_web(question, self.llm, self.settings, policy=policy, prov=Provenance(), archive=archive,
-                               confirmed=set(confirmed or []), reasoning_budget=budget)
+                               client=self.web_client, fetcher=self.page_fetcher, confirmed=set(confirmed or []),
+                               reasoning_budget=budget)
+
+    @property
+    def web_client(self):
+        """SearXNG client (replaceable: the red-team bench swaps it for a recording fake)."""
+        if getattr(self, "_web_client", None) is None:
+            from rag_agent.web import SearxClient
+
+            self._web_client = SearxClient(self.settings.web)
+        return self._web_client
+
+    @property
+    def page_fetcher(self):
+        if getattr(self, "_page_fetcher", None) is None:
+            from rag_agent.web import PageFetcher
+
+            self._page_fetcher = PageFetcher(self.settings)
+        return self._page_fetcher
 
     def _answer_direct(self, standalone: str, index: CorpusIndex, steps: list[TraceStep], *, top_k: int, mode: str,
                        rerank: bool | None, symbols: bool | None, aggregate: bool, budget: int | None,
@@ -538,7 +557,7 @@ class Engine:
             # ТЗ S7: only aggregate and multi-step questions go through the agent loop
             if agent_mode == "always" or (agent_mode == "auto" and (aggregate or complexity != "none")):
                 agent = Agent(self, index, top_k=top_k, mode=mode, sql=sql_ok, reasoning_budget=budget,
-                              confirmed=set(confirmed or []))
+                              confirmed=set(confirmed or []), web=web_mode != "off")
                 answer = agent.run(standalone, aggregate=aggregate)
             else:
                 answer, escalated = self._answer_direct(standalone, index, steps, top_k=top_k, mode=mode, rerank=rerank,
@@ -557,7 +576,8 @@ class Engine:
 
         answer.standalone_question = standalone if standalone != question else None
         # rule 4 (ТЗ ч.2 S20): rendering the answer must not load images or follow links by itself
-        answer.answer, answer.general = defang_markdown(answer.answer), defang_markdown(answer.general)
+        if self.settings.security.policies:
+            answer.answer, answer.general = defang_markdown(answer.answer), defang_markdown(answer.general)
         answer.reasoning_level = level
         answer.notice = notice
         answer.trace[:0] = steps

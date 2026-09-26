@@ -223,6 +223,12 @@ class WebConfig(BaseModel):
                          "javatpoint.com", "quora.com", "pinterest.", "dev.to", "habr.com/ru/companies", "analyticsvidhya.com"]
 
 
+class SecurityConfig(BaseModel):
+    """Policy layer switch (ТЗ ч.2 S20). Turning it off is only for the H16 comparison in red-team runs."""
+
+    policies: bool = True
+
+
 class Settings(BaseModel):
     corpus: CorpusConfig = CorpusConfig()
     storage: StorageConfig = StorageConfig()
@@ -238,6 +244,7 @@ class Settings(BaseModel):
     uploads: UploadsConfig = UploadsConfig()
     code: CodeConfig = CodeConfig()
     web: WebConfig = WebConfig()
+    security: SecurityConfig = SecurityConfig()
     tracing: TracingConfig = TracingConfig()
     evaluation: EvaluationConfig = EvaluationConfig()
     api: ApiConfig = ApiConfig()

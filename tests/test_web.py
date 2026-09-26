@@ -104,14 +104,13 @@ def test_rule1_private_names_stop_the_web_search(settings):
     assert not ans.pending and any("/search" in r for r in requests)
 
 
-def test_engine_web_modes(settings, fake_embedder, corpus: Path, monkeypatch):
+def test_engine_web_modes(settings, fake_embedder, corpus: Path):
     requests = []
     client, fetcher = web_parts(settings, requests)
-    monkeypatch.setattr("rag_agent.web_qa.SearxClient", lambda cfg: client)
-    monkeypatch.setattr("rag_agent.web_qa.PageFetcher", lambda s: fetcher)
     route = {"route": "general", "standalone_question": "Какая последняя версия scikit-learn?", "reasoning": "none",
              "aggregate": False, "web": True}
     eng = Engine(settings, embedder=fake_embedder, llm=FakeLLM(settings, route=route))
+    eng._web_client, eng._page_fetcher = client, fetcher  # no real network in tests
     eng.index_folder(corpus)
     assert eng.ask("Какая последняя версия scikit-learn?").route == "general"  # web is off by default
     assert eng.ask("Какая последняя версия scikit-learn?", web="auto").route == "web"

@@ -11,7 +11,10 @@ Security comes from the architecture, not from the model spotting an attack
 (ТЗ ч.2 2.x, CaMeL [41], design patterns [42]):
 
 Rule 1  a web query must come from the user's question: private entities of the
-        corpus (file names, functions, classes) in it need the user's confirmation;
+        corpus (file names, functions, classes) in it need the user's confirmation,
+        and so does any distinctive token (identifier, code, number) that entered the
+        context from private data but is not in the question — a data-flow check in
+        the spirit of CaMeL: private content cannot reach an external query unseen;
 Rule 2  once untrusted data is in the context, any action with an external effect
         needs confirmation ("plan, then execute");
 Rule 3  a page is fetched only by a URL from search results or from the user;
@@ -83,6 +86,12 @@ class Provenance:
 
     labels: list[tuple[str, Trust]] = field(default_factory=lambda: [("question", Trust.TRUSTED)])
     known_urls: set[str] = field(default_factory=set)  # from search results or from the user's message
+    question_words: set[str] = field(default_factory=set)  # every word the user typed (may go out)
+    private_tokens: set[str] = field(default_factory=set)  # distinctive tokens of private observations
+
+    @classmethod
+    def for_question(cls, question: str) -> Provenance:
+        return cls(question_words=words(question), known_urls=urls_in(question))
 
     @property
     def tainted(self) -> bool:
@@ -97,6 +106,25 @@ class Provenance:
 
 
 _URL = re.compile(r"https?://[^\s<>()\"'`\]]+")
+_WORD = re.compile(r"[\w][\w.\-]*[\w]|\w")
+
+
+def words(text: str) -> set[str]:
+    return {w.lower() for w in _WORD.findall(text or "")}
+
+
+def distinctive_tokens(text: str) -> set[str]:
+    """Tokens that identify private content: codes and identifiers (digits with letters, underscores,
+    inner capitals, hyphenated codes), long numbers; ordinary words are left out."""
+    out = set()
+    for w in _WORD.findall(text or ""):
+        has_digit, has_alpha = any(c.isdigit() for c in w), any(c.isalpha() for c in w)
+        if len(w) >= 5 and has_alpha and (has_digit or "_" in w or (w.isupper() and len(w) >= 6)
+                                          or re.search(r"[a-z][A-Z]", w) or re.search(r"[A-Za-z]-[A-Z0-9]", w)):
+            out.add(w.lower())
+        elif not has_alpha and len(re.sub(r"\D", "", w)) >= 4 and not (w.isdigit() and 1900 <= int(w) <= 2100):
+            out.add(w.lower())  # 0.9913, 4417-12; years are ordinary words of a web query
+    return out
 
 
 def urls_in(text: str) -> set[str]:
@@ -109,9 +137,11 @@ def _norm_url(url: str) -> str:
 
 
 class Policy:
-    def __init__(self, private_entities: set[str] | None = None, *, web: bool = False, code: bool = False):
+    def __init__(self, private_entities: set[str] | None = None, *, web: bool = False, code: bool = False,
+                 enabled: bool = True):
         self.private = {e for e in (private_entities or set()) if len(e) >= 4}
         self.modes = {"read"} | ({"web"} if web else set()) | ({"code"} if code else set())
+        self.enabled = enabled  # False only for the H16 baseline: every enabled tool call is allowed
 
     @classmethod
     def for_catalog(cls, catalog, **modes) -> Policy:
@@ -141,10 +171,17 @@ class Policy:
             return Decision("deny", "tools", f"неизвестный инструмент {tool}")
         if spec.mode not in self.modes:
             return Decision("deny", "S21", f"инструмент {tool} выключен в текущем режиме")
+        if not self.enabled:
+            return Decision("allow", "off")
         if tool == "web_search":
-            found = self.private_in(str(args.get("query", "")))
+            query = str(args.get("query", ""))
+            found = self.private_in(query)
             if found:
                 return Decision("confirm", "rule 1", "в поисковом запросе есть приватные имена из корпуса: " + ", ".join(found))
+            leaked = sorted((distinctive_tokens(query) & prov.private_tokens) - prov.question_words)
+            if leaked:
+                return Decision("confirm", "rule 1", "в запрос попали данные из ваших файлов, которых нет в вопросе: "
+                                + ", ".join(leaked[:5]))
         if tool == "fetch_page":
             url = str(args.get("url", ""))
             if _norm_url(url) not in {_norm_url(u) for u in prov.known_urls}:
@@ -163,6 +200,8 @@ class Policy:
         prov.add(tool, trust)
         if tool == "web_search":
             prov.known_urls |= urls_in(output)
+        if trust == Trust.PRIVATE:  # data flow: private tokens must not reach external queries unnoticed
+            prov.private_tokens |= distinctive_tokens(output)
         return trust
 
 

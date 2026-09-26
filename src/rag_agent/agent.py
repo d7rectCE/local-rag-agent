@@ -18,6 +18,7 @@ step (thought, call, observation, relevance) is kept in the answer's trace.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
@@ -43,6 +44,8 @@ TOOLS = {
     "sql_query": 'sql_query {"question": "..."} — агрегатный вопрос к каталогу экспериментов: лучший, худший, сколько, все, среднее, по всем ноутбукам; вернёт таблицу',
     "read_file": 'read_file {"path": "...", "cell": N} — фрагменты файла; для ноутбука можно указать ячейку, для PDF — страницу через "page"',
     "list_dir": 'list_dir {"path": "..."} — файлы архива в папке (пустой path — корень)',
+    "web_search": 'web_search {"query": "..."} — поиск в интернете: список страниц с URL и кратким описанием',
+    "fetch_page": 'fetch_page {"url": "..."} — прочитать страницу из результатов web_search (выписываются фрагменты по вопросу)',
     "answer": "answer {} — улик достаточно, перейти к ответу",
     "refuse": 'refuse {"reason": "..."} — в архиве этого нет (только после нескольких разных попыток поиска)',
 }
@@ -73,7 +76,7 @@ def _schema(actions: list[str]) -> dict:
                 "properties": {
                     "query": {"type": "string"}, "file_type": {"type": "string"}, "name": {"type": "string"},
                     "question": {"type": "string"}, "path": {"type": "string"}, "cell": {"type": "integer"},
-                    "page": {"type": "integer"}, "reason": {"type": "string"},
+                    "page": {"type": "integer"}, "reason": {"type": "string"}, "url": {"type": "string"},
                 },
             },
         },
@@ -118,12 +121,12 @@ class RelevanceEvaluator:
 
 class Agent:
     def __init__(self, engine: Engine, index, *, top_k: int, mode: str, sql: bool, reasoning_budget: int | None,
-                 policy: Policy | None = None, confirmed: set[str] | None = None):
+                 policy: Policy | None = None, confirmed: set[str] | None = None, web: bool = False):
         self.engine, self.index = engine, index
         self.cfg: AgentConfig = engine.settings.agent
         self.top_k, self.mode, self.reasoning_budget = top_k, mode, reasoning_budget
-        self.policy = policy or Policy.for_catalog(index.catalog)
-        self.prov = Provenance()
+        self.policy = policy or Policy.for_catalog(index.catalog, web=web, enabled=engine.settings.security.policies)
+        self.prov = Provenance()  # filled for the question in run()
         self.confirmed = confirmed or set()  # keys of calls the user has approved (FR17)
         self.pending: list[dict] = []
         available = set(self.policy.tools())
@@ -197,6 +200,33 @@ class Agent:
                 return f"нет такого файла или фрагмента: {path}", {"path": path, "hits": []}
             scores = self._add(question, nodes)
             return self._list_fragments(nodes, scores), {"path": path, "hits": [n.id for n in nodes]}
+        if action == "web_search":
+            from rag_agent.web import WebError
+
+            query = str(args.get("query") or "")
+            try:
+                results = self.engine.web_client.search(query)
+            except WebError as exc:
+                return f"поиск недоступен: {exc}", {"query": query}
+            obs = "\n".join(f"- {r.title} — {r.url}\n  {r.snippet[:200]}" for r in results) or "ничего не найдено"
+            return obs, {"query": query, "results": [r.url for r in results]}
+        if action == "fetch_page":
+            from rag_agent.web_qa import compress
+            from rag_agent.schema import FileType, Location, NodeType
+
+            url = str(args.get("url") or "")
+            page = self.engine.page_fetcher.fetch(url)
+            if page.error:
+                return f"страница не прочитана: {page.error}", {"url": url}
+            passages, published = compress(question, page.title, page.text, self.engine.llm)
+            if not passages:
+                return "на странице нет сведений по вопросу", {"url": url, "passages": 0}
+            node = Node(id="web:" + hashlib.sha256(url.encode()).hexdigest()[:16], file_path=url, file_type=FileType.WEB,
+                        node_type=NodeType.SECTION, title=f"web · {page.title}"[:200],
+                        text="\n".join(f"— {p}" for p in passages),
+                        location=Location(section=f"обращение {page.fetched_at[:10]}"), metadata={"trust": "untrusted"})
+            scores = self._add(question, [node])
+            return self._list_fragments([node], scores), {"url": url, "passages": len(passages), "hits": [node.id]}
         if action == "list_dir":
             prefix = str(args.get("path") or "").strip("/").replace("\\", "/")
             rows = self.index.catalog.query("SELECT path, file_type FROM files WHERE path LIKE ? ORDER BY path LIMIT 60",
@@ -212,7 +242,7 @@ class Agent:
         system = AGENT_PROMPT.format(tools="\n".join(f"- {TOOLS[t]}" for t in self.tools), max_steps=self.cfg.max_steps,
                                      sql_rule=sql_rule)
         hint = "\nПодсказка маршрутизатора: вопрос агрегатный, начни с sql_query." if aggregate and "sql_query" in self.tools else ""
-        self.prov.known_urls |= urls_in(question)  # the user may name pages to read
+        self.prov = Provenance.for_question(question)  # the user's words may go out; URLs they give may be read
         # step 0 without the model: a search by the question itself, so the agent starts from context
         t1 = time.perf_counter()
         seed_args = {"query": question}

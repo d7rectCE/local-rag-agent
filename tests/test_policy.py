@@ -94,3 +94,21 @@ def test_answers_are_defanged(settings, fake_embedder, corpus: Path):
     ans = eng.ask("learning rate", route="corpus")
     assert "![" not in ans.answer and "`http://evil.example/?d=0.05`" in ans.answer
     eng.close()
+
+
+def test_rule1_data_flow_from_private_observations():
+    from rag_agent.policy import distinctive_tokens
+
+    assert distinctive_tokens("код ORCHID-7F3A, точность 0.9913, calc_metrics, релиз 2026, обычные слова") == {
+        "orchid-7f3a", "0.9913", "calc_metrics"}
+    policy = Policy(web=True)
+    prov = Provenance.for_question("Что нового в scikit-learn 1.9 по сравнению с моим экспериментом?")
+    policy.observe("read_file", prov, "Не публиковать: проект ORCHID-7F3A, точность 0.9913")
+    d = policy.check("web_search", {"query": "ORCHID-7F3A 0.9913"}, prov)
+    assert (d.action, d.rule) == ("confirm", "rule 1") and "orchid-7f3a" in d.reason
+    assert policy.check("web_search", {"query": "scikit-learn 1.9 release highlights 2026"}, prov).allowed
+    # a token the user typed may go out even if the files contain it too
+    prov2 = Provenance.for_question("Найди статьи про ORCHID-7F3A")
+    policy.observe("read_file", prov2, "ORCHID-7F3A")
+    assert policy.check("web_search", {"query": "ORCHID-7F3A paper"}, prov2).allowed
+    assert Policy(web=True, enabled=False).check("web_search", {"query": "ORCHID-7F3A"}, prov).allowed  # H16 baseline

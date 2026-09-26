@@ -39,6 +39,7 @@ class AskRequest(BaseModel):
     route: Literal["auto", "corpus", "general"] = "auto"
     rerank: bool | None = None
     symbols: bool | None = None
+    reasoning: Literal["off", "on", "auto"] | None = None
 
 
 def create_app(engine: Engine | None = None) -> FastAPI:
@@ -133,6 +134,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
                 route=req.route,
                 rerank=req.rerank,
                 symbols=req.symbols,
+                reasoning=req.reasoning,
             )
         except NoCorpusError as exc:
             raise HTTPException(404, "Сначала проиндексируйте папку") from exc

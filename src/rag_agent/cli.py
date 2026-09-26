@@ -64,13 +64,14 @@ def ask(
     top_k: Optional[int] = typer.Option(None, "--top-k"),
     mode: Optional[str] = typer.Option(None, help="dense | sparse | hybrid"),
     route: str = typer.Option("auto", help="auto | corpus (my files) | general (general knowledge)"),
+    reasoning: Optional[str] = typer.Option(None, help="off | on | auto (default: config)"),
     as_json: bool = typer.Option(False, "--json", help="Print the full answer object"),
 ) -> None:
     """Ask a question: about the indexed folder or a general one (routed automatically)."""
     engine = _engine()
     if root:
         engine.open_corpus(root)
-    ans = engine.ask(question, top_k=top_k, mode=mode, route=route)
+    ans = engine.ask(question, top_k=top_k, mode=mode, route=route, reasoning=reasoning)
     if as_json:
         typer.echo(ans.model_dump_json(indent=2))
     else:
@@ -82,6 +83,9 @@ def ask(
         typer.echo("")
         for c in ans.citations:
             typer.echo(f"[{c.n}] {c.file_path} — {c.location}")
+        if ans.reasoning:
+            cut = ", обрезано по бюджету" if ans.reasoning_truncated else ""
+            typer.echo(f"\n(рассуждение: {ans.reasoning_tokens} токенов{cut})")
         typer.echo(f"\n({ans.latency_s:.1f}s, route={ans.route}, answerable={ans.answerable}, grounded={ans.grounded})")
     engine.close()
 

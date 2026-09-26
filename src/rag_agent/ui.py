@@ -25,6 +25,7 @@ TYPE_LABELS = {
 }
 SUPPORTED_TYPES = list(TYPE_LABELS)
 ROUTE_LABELS = {"auto": "Авто", "corpus": "Мои файлы", "general": "Общие знания"}
+REASONING_LABELS = {"off": "Выкл", "on": "Вкл", "auto": "Авто"}
 STATE_LABELS = {
     "idle": "ожидание",
     "scanning": "сканирование папки",
@@ -187,6 +188,12 @@ def sidebar(status: dict) -> None:
         help="«Авто» сам решает, нужен ли поиск по файлам. «Мои файлы» всегда отвечает по файлам со ссылками. "
         "«Общие знания» отвечает без поиска, как обычный ассистент.",
     )
+    st.segmented_control(
+        "Думать", list(REASONING_LABELS), default=status.get("reasoning", {}).get("mode", "auto"),
+        format_func=REASONING_LABELS.get, key="reasoning",
+        help="«Вкл» — модель сначала рассуждает (медленнее, лучше на сравнениях и вопросах «почему»). "
+        "«Авто» — рассуждение включается только для сложных вопросов. Длина рассуждения ограничена бюджетом.",
+    )
     st.slider("Фрагментов в контексте", 2, 12, status["retrieval"]["top_k"], key="top_k")
     st.selectbox("Режим", ["dense", "sparse", "hybrid"], index=["dense", "sparse", "hybrid"].index(status["retrieval"]["mode"]),
                  key="mode", help="sparse и hybrid работают только с BGE-M3")
@@ -206,6 +213,11 @@ def render_answer(ans: dict) -> None:
         st.caption(f":material/info: {ans['notice']}")
     if ans.get("standalone_question"):
         st.caption(f":material/edit_note: Понял вопрос как: «{ans['standalone_question']}»")
+    if ans.get("reasoning"):
+        cut = ", обрезан по бюджету" if ans.get("reasoning_truncated") else ""
+        with st.expander(f"Черновик рассуждений ({ans.get('reasoning_tokens', 0)} токенов{cut})"):
+            st.caption("Это черновик модели, а не объяснение ответа: подтверждением служат только ссылки на источники.")
+            st.markdown(ans["reasoning"])
     st.markdown(ans["answer"])
     if ans.get("route") == "general":
         st.caption(":material/school: Ответ из общих знаний модели, файлы не использовались.")
@@ -293,6 +305,7 @@ def main() -> None:
                     "top_k": st.session_state.top_k,
                     "mode": st.session_state.mode,
                     "route": st.session_state.get("route") or "auto",
+                    "reasoning": st.session_state.get("reasoning") or "auto",
                     "rerank": st.session_state.rerank,
                     "symbols": st.session_state.symbols,
                 })

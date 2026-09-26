@@ -29,6 +29,7 @@ class LLMResponse:
     tool_calls: list[dict] = field(default_factory=list)
     usage: dict[str, int] = field(default_factory=dict)
     latency_s: float = 0.0
+    thinking_truncated: bool = False  # the reasoning hit its budget and the answer was forced
 
     def json(self) -> Any:
         text = self.content.strip()
@@ -84,6 +85,13 @@ class BaseLLM:
     def _chat(self, messages, json_schema, tools, temperature, max_tokens, think) -> LLMResponse:
         raise NotImplementedError
 
+    def chat_reasoning(
+        self, messages: list[dict], *, budget_tokens: int, json_schema: dict | None = None, purpose: str = "chat"
+    ) -> LLMResponse:
+        """Reason first, then answer, with the reasoning capped at ``budget_tokens``
+        (ТЗ ч.2 S15). Providers without a reasoning channel fall back to a plain call."""
+        return self.chat(messages, json_schema=json_schema, purpose=purpose)
+
     def unload(self) -> None:
         """Release the model on the server, if the provider supports it."""
 
@@ -126,6 +134,77 @@ class OllamaLLM(BaseLLM):
             tool_calls=msg.get("tool_calls") or [],
             usage={"prompt_tokens": data.get("prompt_eval_count", 0), "completion_tokens": data.get("eval_count", 0)},
         )
+
+    FORCE_ANSWER = (
+        "Выше — твои черновые рассуждения, прерванные по лимиту. Больше не рассуждай: сразу дай окончательный "
+        "ответ по исходным правилам и в требуемом формате."
+    )
+
+    def chat_reasoning(
+        self, messages: list[dict], *, budget_tokens: int, json_schema: dict | None = None, purpose: str = "chat"
+    ) -> LLMResponse:
+        """Budget forcing (ТЗ ч.2 [10]): stream with thinking on and count reasoning
+        chunks; past the budget the stream is dropped (Ollama stops generating when
+        the client disconnects) and a second call without thinking gets the cut
+        reasoning as a draft and must answer right away."""
+        t0 = time.perf_counter()
+        body: dict[str, Any] = {
+            "model": self.cfg.model,
+            "messages": messages,
+            "stream": True,
+            "think": True,
+            "options": {"temperature": self.cfg.temperature, "num_ctx": self.cfg.num_ctx,
+                        "num_predict": budget_tokens + self.cfg.max_tokens},
+        }
+        if json_schema is not None:
+            body["format"] = json_schema
+        thinking, content, n_thinking, done, usage = [], [], 0, None, {}
+        try:
+            with self._http.stream("POST", f"{self.cfg.base_url.rstrip('/')}/api/chat", json=body) as r:
+                if r.status_code >= 400:
+                    raise LLMError(f"{self.name}: HTTP {r.status_code}: {r.read()[:500]!r}")
+                for line in r.iter_lines():
+                    if not line:
+                        continue
+                    chunk = json.loads(line)
+                    msg = chunk.get("message", {})
+                    if msg.get("thinking"):
+                        thinking.append(msg["thinking"])
+                        n_thinking += 1
+                    if msg.get("content"):
+                        content.append(msg["content"])
+                    if chunk.get("done"):
+                        done = chunk
+                        usage = {"prompt_tokens": chunk.get("prompt_eval_count", 0),
+                                 "completion_tokens": chunk.get("eval_count", 0)}
+                        break
+                    if n_thinking >= budget_tokens and not content:
+                        break  # over budget and still thinking: cut here
+        except httpx.HTTPError as exc:
+            raise LLMError(f"{self.name}: {exc}") from exc
+
+        draft = "".join(thinking).strip()
+        answer = "".join(content).strip()
+        truncated = done is None or (done.get("done_reason") == "length" and not answer)
+        if truncated or not answer:
+            forced = [*messages, {"role": "assistant", "content": f"<черновик>\n{draft}\n</черновик>"},
+                      {"role": "user", "content": self.FORCE_ANSWER}]
+            final = self._chat(forced, json_schema, None, None, None, False)
+            answer = final.content
+            usage = {"prompt_tokens": usage.get("prompt_tokens", 0) + final.usage.get("prompt_tokens", 0),
+                     "completion_tokens": n_thinking + final.usage.get("completion_tokens", 0)}
+            truncated = True
+        usage["thinking_tokens"] = n_thinking
+        resp = LLMResponse(content=answer, thinking=draft or None, usage=usage,
+                           latency_s=time.perf_counter() - t0, thinking_truncated=truncated)
+        self.tracer.log(
+            "llm_call", purpose=f"{purpose}+reasoning", model=self.name, latency_s=round(resp.latency_s, 3),
+            usage=usage, thinking_truncated=truncated,
+            messages=messages if self.tracer.log_prompts else None,
+            thinking=draft if self.tracer.log_prompts else None,
+            response=answer if self.tracer.log_prompts else None,
+        )
+        return resp
 
     def unload(self) -> None:
         """Free the model's GPU memory now instead of after Ollama's keep-alive timeout."""

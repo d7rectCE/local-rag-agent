@@ -28,15 +28,20 @@ ROUTER_PROMPT = """Ты — маршрутизатор запросов асси
 
 Кроме того, перепиши последний вопрос пользователя в самостоятельный вопрос: раскрой местоимения и отсылки к предыдущим репликам. Если истории нет или вопрос уже самостоятельный, верни его без изменений. Не отвечай на вопрос.
 
-Верни JSON: {"route": "corpus" | "general", "standalone_question": "..."}"""
+Реши также, нужно ли перед ответом рассуждать (needs_reasoning):
+- true — нужно сопоставить несколько фактов, сравнить варианты, объяснить причину («почему»), посчитать или спланировать шаги;
+- false — достаточно найти и пересказать один факт, определение, место в коде, или это разговор.
+
+Верни JSON: {"route": "corpus" | "general", "standalone_question": "...", "needs_reasoning": true | false}"""
 
 ROUTER_SCHEMA = {
     "type": "object",
     "properties": {
         "route": {"type": "string", "enum": ["corpus", "general"]},
         "standalone_question": {"type": "string"},
+        "needs_reasoning": {"type": "boolean"},
     },
-    "required": ["route", "standalone_question"],
+    "required": ["route", "standalone_question", "needs_reasoning"],
     "additionalProperties": False,
 }
 
@@ -50,6 +55,7 @@ class RouteDecision:
     standalone_question: str
     latency_s: float = 0.0
     fallback: bool = False  # router failed and the default route was used
+    needs_reasoning: bool = False
 
 
 def trim_history(history: list[dict] | None) -> list[dict]:
@@ -79,6 +85,7 @@ def route_question(question: str, history: list[dict] | None, llm: BaseLLM) -> R
         standalone = str(data.get("standalone_question") or "").strip() or question
         if route not in ("corpus", "general"):
             raise LLMError(f"unknown route {route!r}")
-        return RouteDecision(route, standalone, time.perf_counter() - t0)
+        return RouteDecision(route, standalone, time.perf_counter() - t0,
+                             needs_reasoning=bool(data.get("needs_reasoning", False)))
     except LLMError:
         return RouteDecision("corpus", question, time.perf_counter() - t0, fallback=True)

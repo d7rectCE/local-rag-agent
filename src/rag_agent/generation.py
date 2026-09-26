@@ -85,6 +85,21 @@ class Answer(BaseModel):
     trace: list[TraceStep] = Field(default_factory=list)
     latency_s: float = 0.0
     model: str | None = None
+    # reasoning mode (ТЗ ч.2 S15): the draft is shown collapsed and is not an explanation of the answer
+    reasoning: str | None = None
+    reasoning_tokens: int = 0
+    reasoning_truncated: bool = False
+
+
+def _call(llm: BaseLLM, messages: list[dict], json_schema: dict | None, purpose: str, reasoning_budget: int | None):
+    if reasoning_budget:
+        return llm.chat_reasoning(messages, budget_tokens=reasoning_budget, json_schema=json_schema, purpose=purpose)
+    return llm.chat(messages, json_schema=json_schema, purpose=purpose)
+
+
+def _reasoning_fields(resp) -> dict:
+    return {"reasoning": resp.thinking, "reasoning_tokens": resp.usage.get("thinking_tokens", 0),
+            "reasoning_truncated": resp.thinking_truncated}
 
 
 def extract_citations(text: str, valid: set[int]) -> tuple[str, list[int]]:
@@ -139,7 +154,9 @@ def to_sources(hits: list[Hit], cited: list[int], max_chars: int) -> list[Source
     ]
 
 
-def generate_answer(question: str, hits: list[Hit], llm: BaseLLM, max_source_chars: int) -> Answer:
+def generate_answer(
+    question: str, hits: list[Hit], llm: BaseLLM, max_source_chars: int, reasoning_budget: int | None = None
+) -> Answer:
     if not hits:
         return Answer(question=question, answer=NO_SOURCES_ANSWER, answerable=False, grounded=True)
 
@@ -147,7 +164,7 @@ def generate_answer(question: str, hits: list[Hit], llm: BaseLLM, max_source_cha
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"<sources>\n{build_context(hits, max_source_chars)}\n</sources>\n\nВопрос: {question}"},
     ]
-    resp = llm.chat(messages, json_schema=ANSWER_SCHEMA, purpose="answer")
+    resp = _call(llm, messages, ANSWER_SCHEMA, "answer", reasoning_budget)
     try:
         data = resp.json()
         answerable = bool(data.get("answerable", True))
@@ -178,6 +195,7 @@ def generate_answer(question: str, hits: list[Hit], llm: BaseLLM, max_source_cha
         citations=citations,
         sources=to_sources(hits, cited, max_source_chars),
         model=llm.name,
+        **_reasoning_fields(resp),
         trace=[
             TraceStep(
                 name="generate",
@@ -188,15 +206,18 @@ def generate_answer(question: str, hits: list[Hit], llm: BaseLLM, max_source_cha
     )
 
 
-def generate_general(question: str, history: list[dict], llm: BaseLLM) -> Answer:
+def generate_general(
+    question: str, history: list[dict], llm: BaseLLM, reasoning_budget: int | None = None
+) -> Answer:
     """Answer from the model's general knowledge (no retrieval), with the dialogue history."""
     messages = [{"role": "system", "content": GENERAL_PROMPT}, *history, {"role": "user", "content": question}]
-    resp = llm.chat(messages, purpose="general")
+    resp = _call(llm, messages, None, "general", reasoning_budget)
     return Answer(
         question=question,
         answer=resp.content.strip(),
         answerable=True,
         route="general",
         model=llm.name,
+        **_reasoning_fields(resp),
         trace=[TraceStep(name="generate_general", duration_s=round(resp.latency_s, 3), detail={"model": llm.name, **resp.usage})],
     )

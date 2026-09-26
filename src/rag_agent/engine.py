@@ -233,10 +233,12 @@ class Engine:
         route: RouteChoice = "auto",
         rerank: bool | None = None,
         symbols: bool | None = None,
+        reasoning: str | None = None,
     ) -> Answer:
         """Route the question, then answer it from the user's files (with citations)
         or from general knowledge. ``history`` is the previous chat turns
-        (``{"role": "user"|"assistant", "content": ...}``) for follow-up questions."""
+        (``{"role": "user"|"assistant", "content": ...}``) for follow-up questions.
+        ``reasoning`` is off / on / auto (the router decides); defaults to the config."""
         question = question.strip()
         if not question:
             raise ValueError("empty question")
@@ -253,10 +255,16 @@ class Engine:
 
         standalone = question
         chosen = route
-        if route == "auto" or turns:  # the router also rewrites follow-ups into standalone questions
+        reasoning_mode = reasoning or self.settings.reasoning.mode
+        think = reasoning_mode == "on"
+        # the router also rewrites follow-ups into standalone questions and decides on reasoning in auto mode
+        if route == "auto" or turns or reasoning_mode == "auto":
             decision = route_question(question, turns, self.llm)
             standalone = decision.standalone_question
-            detail = {"route": decision.route, "standalone_question": standalone, "fallback": decision.fallback}
+            if reasoning_mode == "auto":
+                think = decision.needs_reasoning
+            detail = {"route": decision.route, "standalone_question": standalone, "fallback": decision.fallback,
+                      "needs_reasoning": decision.needs_reasoning}
             if route == "auto":
                 chosen = decision.route
                 # corpus signal: a question that names a function, class or file of the corpus is about the files
@@ -270,8 +278,9 @@ class Engine:
         if chosen == "corpus" and index is None:
             chosen, notice = "general", "Папка ещё не проиндексирована, поэтому ответ дан из общих знаний модели."
 
+        budget = self.settings.reasoning.budget_tokens if think else None
         if chosen == "general":
-            answer = generate_general(question, turns, self.llm)
+            answer = generate_general(question, turns, self.llm, reasoning_budget=budget)
         else:
             top_k = top_k or self.settings.retrieval.top_k
             mode = mode or self.settings.retrieval.mode
@@ -291,7 +300,8 @@ class Engine:
                     },
                 )
             )
-            answer = generate_answer(standalone, hits, self.llm, self.settings.generation.max_source_chars)
+            answer = generate_answer(standalone, hits, self.llm, self.settings.generation.max_source_chars,
+                                     reasoning_budget=budget)
             answer.question = question
 
         answer.standalone_question = standalone if standalone != question else None
@@ -343,6 +353,7 @@ class Engine:
             "embedder": {"model": self.embedder.name, "device": self.embedder.device},
             "llm": {"name": self.llm.name, "available": getattr(self.llm, "is_available", lambda: True)()},
             "retrieval": self.settings.retrieval.model_dump(),
+            "reasoning": self.settings.reasoning.model_dump(),
             "defaults": {"include_ext": self.settings.corpus.include_ext, "exclude": self.settings.corpus.exclude},
         }
 

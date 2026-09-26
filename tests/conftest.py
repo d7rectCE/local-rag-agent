@@ -74,6 +74,7 @@ def settings(tmp_path: Path) -> Settings:
     # no real models in tests: the reranker is injected explicitly where needed
     s.retrieval.rerank = False
     s.retrieval.symbols = False
+    s.reasoning.mode = "off"  # reasoning is tested explicitly in test_reasoning.py
     return s
 
 
@@ -133,6 +134,14 @@ class FakeLLM(BaseLLM):
             reply = self.general
         content = reply if isinstance(reply, str) else json.dumps(reply, ensure_ascii=False)
         return LLMResponse(content=content, usage={"prompt_tokens": 10, "completion_tokens": 5})
+
+    def chat_reasoning(self, messages, *, budget_tokens, json_schema=None, purpose="chat") -> LLMResponse:
+        resp = self._chat(messages, json_schema, None, None, None, True)
+        self.kinds[-1] += "+reasoning"
+        resp.thinking = "draft " * min(budget_tokens, 3)
+        resp.usage["thinking_tokens"] = min(budget_tokens, 3)
+        resp.thinking_truncated = budget_tokens < 3
+        return resp
 
     def is_available(self) -> bool:
         return True

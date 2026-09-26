@@ -98,6 +98,13 @@ class GenerationConfig(BaseModel):
     max_source_chars: int = 2500
 
 
+class ReasoningConfig(BaseModel):
+    """Reasoning mode (ТЗ ч.2, S15): off, on, or auto (the router decides per question)."""
+
+    mode: Literal["off", "on", "auto"] = "auto"
+    budget_tokens: int = 1024  # hard cap on reasoning; then the answer is forced (budget forcing)
+
+
 class TracingConfig(BaseModel):
     enabled: bool = True
     log_prompts: bool = True
@@ -125,6 +132,7 @@ class Settings(BaseModel):
     retrieval: RetrievalConfig = RetrievalConfig()
     llm: LLMConfig = LLMConfig()
     generation: GenerationConfig = GenerationConfig()
+    reasoning: ReasoningConfig = ReasoningConfig()
     tracing: TracingConfig = TracingConfig()
     evaluation: EvaluationConfig = EvaluationConfig()
     api: ApiConfig = ApiConfig()

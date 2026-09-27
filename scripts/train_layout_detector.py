@@ -102,8 +102,10 @@ def _write_split(rows: list, target: Path, size: int) -> None:
 
     target.mkdir(parents=True, exist_ok=True)
     wanted: dict[tuple[Path, int], dict[int, tuple[str, str]]] = {}
-    for path, rg, i, cat, doc in rows:
+    position: dict[tuple, int] = {}  # pages are read grouped by row group but keep the order of ``rows``
+    for k, (path, rg, i, cat, doc) in enumerate(rows):
         wanted.setdefault((path, rg), {})[i] = (cat, doc)
+        position[(path, rg, i)] = k
     records, n = [], 0
     for (path, rg), idx in sorted(wanted.items(), key=lambda kv: (str(kv[0][0]), kv[0][1])):
         order = sorted(idx)
@@ -111,7 +113,8 @@ def _write_split(rows: list, target: Path, size: int) -> None:
         for i, row in zip(order, table.to_pylist()):
             img = Image.open(io.BytesIO(row["image"]["bytes"])).convert("RGB")
             sx, sy = size / img.width, size / img.height
-            name = f"{n:06d}.jpg"
+            k = position[(path, rg, i)]
+            name = f"{k:06d}.jpg"
             img.resize((size, size), Image.BILINEAR).save(target / name, quality=90)
             boxes = [[b[0] * sx, b[1] * sy, b[2] * sx, b[3] * sy] for b in row["bboxes"]]
             keep = [k for k, b in enumerate(boxes) if b[2] > 1 and b[3] > 1]
@@ -121,8 +124,10 @@ def _write_split(rows: list, target: Path, size: int) -> None:
                 "labels": [int(row["category_id"][k]) - 1 for k in keep],
                 "doc_category": idx[i][0],
                 "doc": idx[i][1],
+                "_k": k,
             })
             n += 1
+    records.sort(key=lambda r: r.pop("_k"))
     (target / "annotations.json").write_text(json.dumps({"classes": CLASSES, "size": size, "images": records}))
     cats = {}
     for r in records:
@@ -158,10 +163,17 @@ def prepare(out: Path, size: int, limit: int | None, per_category: int | None = 
 
 
 class LayoutDataset:
-    def __init__(self, root: Path, limit: int | None = None):
+    def __init__(self, root: Path, limit: int | None = None, seed: int = 0):
         meta = json.loads((root / "annotations.json").read_text())
         self.root = root
-        self.items = meta["images"][:limit] if limit else meta["images"]
+        items = meta["images"]
+        if limit and limit < len(items):
+            # a seeded random subset, not a prefix: pages prepared before the order fix are grouped by source
+            # shard, i.e. by document category (the 500 validation pages of the first full run were all
+            # financial reports, and the best epoch was chosen by them)
+            keep = sorted(random.Random(seed).sample(range(len(items)), limit))
+            items = [items[i] for i in keep]
+        self.items = items
 
     def __len__(self) -> int:
         return len(self.items)

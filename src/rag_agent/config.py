@@ -21,7 +21,7 @@ ENV_PREFIX = "RAG__"
 
 
 class CorpusConfig(BaseModel):
-    include_ext: list[str] = [".py", ".ipynb", ".pdf", ".docx", ".txt", ".md", ".log"]
+    include_ext: list[str] = [".py", ".ipynb", ".pdf", ".docx", ".txt", ".md", ".log", ".png", ".jpg", ".jpeg"]
     exclude: list[str] = []
     skip_hidden: bool = True
     max_file_mb: float = 20.0
@@ -237,6 +237,23 @@ class WebConfig(BaseModel):
                          "javatpoint.com", "quora.com", "pinterest.", "dev.to", "habr.com/ru/companies", "analyticsvidhya.com"]
 
 
+class ImagesConfig(BaseModel):
+    """Image pipeline (ТЗ S4, Э5): type classifier, VLM descriptions, OCR, optional visual index (H4)."""
+
+    enabled: bool = True  # describe the images of the corpus after indexing
+    vlm_model: str | None = None  # a vision model in Ollama; None: llm.model
+    classify: bool = True  # the fine-tuned CNN of scripts/train_image_classifier.py (if exported)
+    ocr: bool = True  # EasyOCR for screenshots and scans, with the models Docling uses
+    max_images: int = 500  # described per indexing run (the rest on the next run)
+    # ColQwen2 multi-vector index of images and PDF pages; ~4.5 GB of VRAM, so off next to a 27B LLM
+    visual_index: bool = False
+    visual_model: str = "vidore/colqwen2-v1.0-hf"
+    visual_pages: bool = True
+    # how image evidence is retrieved (H4): text — the descriptions in the text index; visual — the
+    # visual index instead of the descriptions; fusion — both, by RRF
+    channel: Literal["text", "visual", "fusion"] = "text"
+
+
 class SecurityConfig(BaseModel):
     """Policy layer switch (ТЗ ч.2 S20). Turning it off is only for the H16 comparison in red-team runs."""
 
@@ -258,6 +275,7 @@ class Settings(BaseModel):
     uploads: UploadsConfig = UploadsConfig()
     code: CodeConfig = CodeConfig()
     web: WebConfig = WebConfig()
+    images: ImagesConfig = ImagesConfig()
     security: SecurityConfig = SecurityConfig()
     tracing: TracingConfig = TracingConfig()
     evaluation: EvaluationConfig = EvaluationConfig()

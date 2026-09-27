@@ -38,6 +38,8 @@ sql = ["sqlglot"]
 web = ["trafilatura"]
 # calibrated drift detection with FDR control for the canary monitoring bench (Э9, scripts/h9_monitoring.py)
 monitoring = ["driftfdr>=0.1"]
+# image pipeline (Э5): the image type classifier (timm); OCR of screenshots and scans comes with docling (EasyOCR)
+images = ["timm"]
 
 [project.scripts]
 rag = "rag_agent.cli:app"

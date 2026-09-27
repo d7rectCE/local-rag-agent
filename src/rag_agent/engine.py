@@ -226,12 +226,28 @@ class Engine:
         return progress
 
     def _update_catalog(self, index: CorpusIndex, progress: IndexProgress) -> None:
-        """Э6: extract experiments from new or changed notebooks, then rebuild the analytics database."""
+        """Э5: describe the images; Э6: extract experiments from new or changed notebooks, then rebuild the
+        analytics database."""
         t0 = time.perf_counter()
+        if self.settings.images.enabled:
+            progress.state = "extracting"
+            try:
+                from rag_agent.images.pipeline import process_images
+
+                vlm_model = self.settings.images.vlm_model
+                vlm = self.llm.get(vlm_model) if vlm_model else self.llm.base
+                progress.catalog["images"] = process_images(index, self.settings, vlm, self.embedder, progress,
+                                                            self._cancel)
+            except Exception as exc:  # the text index is fine without image descriptions
+                log.exception("image pipeline failed")
+                progress.catalog["images"] = {"error": str(exc)}
         if self.settings.catalog.extract:
             progress.state = "extracting"
             try:
+                images = progress.catalog.get("images")
                 progress.catalog = update_catalog(index, self.llm, self.settings.catalog, progress, self._cancel)
+                if images is not None:
+                    progress.catalog["images"] = images
             except Exception as exc:  # the index itself is fine: answer without the catalog
                 log.exception("catalog extraction failed")
                 progress.catalog = {"error": str(exc)}
@@ -475,6 +491,41 @@ class Engine:
         symbols: bool | None = None,
         file_types: list[str] | None = None,
     ) -> list[Hit]:
+        hits = self._text_search(question, top_k, mode, rerank, symbols, file_types)
+        channel = self.settings.images.channel
+        if channel == "text" or file_types:
+            return hits
+        return self._with_visual(question, hits, top_k or self.settings.retrieval.top_k, channel)
+
+    def _with_visual(self, question: str, hits: list[Hit], top_k: int, channel: str) -> list[Hit]:
+        """H4: image evidence from the visual index (ColQwen2), fused with the text hits by RRF; "visual"
+        drops the image descriptions from the text hits, so images are found only by their pixels."""
+        from rag_agent.images.visual import VisualIndex
+
+        index = self.index
+        vindex = VisualIndex(index, self.settings)
+        if not vindex.available:
+            return hits
+        text = [h.node for h in hits if channel != "visual" or h.node.node_type not in ("image", "figure")]
+        visual: list[Node] = []
+        for meta, _ in vindex.search(question, top_k=max(top_k, 10)):
+            if "node_id" in meta:
+                node = index.catalog.get_node(meta["node_id"])
+                found = [node] if node else []
+            else:  # a PDF page stands for its text nodes
+                found = [n for n in index.catalog.file_nodes(meta["file_path"])
+                         if n.location.page == meta["page"] and n.node_type != "file"][:2]
+            visual += [n for n in found if n.id not in {v.id for v in visual}]
+        scores: dict[str, float] = {}
+        nodes: dict[str, Node] = {}
+        for ranking in (text, visual):
+            for rank, node in enumerate(ranking, start=1):
+                scores[node.id] = scores.get(node.id, 0.0) + 1.0 / (60 + rank)
+                nodes[node.id] = node
+        order = sorted(scores, key=lambda i: -scores[i])[:top_k]
+        return [Hit(node=nodes[i], score=round(scores[i], 5), rank=k) for k, i in enumerate(order, start=1)]
+
+    def _text_search(self, question, top_k, mode, rerank, symbols, file_types) -> list[Hit]:
         cfg = self.settings.retrieval
         use_rerank = cfg.rerank if rerank is None else rerank
         return search(

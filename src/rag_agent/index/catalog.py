@@ -233,6 +233,20 @@ class Catalog:
     def get_node(self, node_id: str) -> Node | None:
         return self.get_nodes([node_id]).get(node_id)
 
+    def image_nodes(self) -> list[Node]:
+        """Images and figures of the corpus (the image pipeline, Э5)."""
+        with self._lock:
+            rows = self._conn.execute(f"SELECT {_NODE_COLS} FROM nodes WHERE node_type IN ('image', 'figure') "
+                                      "ORDER BY file_path, rowid").fetchall()
+        return [_row_to_node(r) for r in rows]
+
+    def update_node(self, node: Node) -> None:
+        """Text, metadata and the embed flag of an existing node (an image after its description)."""
+        with self._lock, self._conn:
+            self._conn.execute("UPDATE nodes SET title=?, text=?, metadata=?, content_hash=?, embed=? WHERE id=?",
+                               (node.title, node.text, json.dumps(node.metadata, ensure_ascii=False),
+                                node.content_hash, int(node.embed), node.id))
+
     def file_nodes(self, path: str) -> list[Node]:
         with self._lock:
             rows = self._conn.execute(f"SELECT {_NODE_COLS} FROM nodes WHERE file_path=? ORDER BY rowid", (path,)).fetchall()

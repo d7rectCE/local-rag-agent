@@ -80,6 +80,7 @@ def settings(tmp_path: Path) -> Settings:
     s.agent.crag = False
     s.web.min_interval_s = 0.0  # no pause between queries to the mocked SearXNG
     s.code.chat = "off"  # the chat's hand-off to the code agent is tested in test_unified_agent.py
+    s.images.enabled = False  # the image pipeline is tested in test_images.py
     return s
 
 

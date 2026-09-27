@@ -3,7 +3,7 @@
 # RAG_CONFIG to another YAML file.
 
 corpus:
-  include_ext: [".py", ".ipynb", ".pdf", ".docx", ".txt", ".md", ".log"]   # .doc needs LibreOffice; .png — Э5
+  include_ext: [".py", ".ipynb", ".pdf", ".docx", ".txt", ".md", ".log", ".png", ".jpg", ".jpeg"]   # .doc needs LibreOffice
   # Glob patterns. A pattern without "/" matches any path component
   # (directory or file name); a pattern with "/" matches the relative path.
   exclude:

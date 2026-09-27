@@ -9,7 +9,8 @@
   its heading path ("Title > Section > Subsection") in the header;
 * symbols and call sites of code cells feed the exact-name index.
 
-Images inside outputs are only counted here; the image pipeline is Э5.
+Every image output becomes an ``image`` node of its cell (text empty until the image pipeline of Э5
+describes it after indexing; the pixels are read back from the notebook).
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from collections import defaultdict
 import nbformat
 
 from rag_agent.config import ChunkingConfig
+from rag_agent.images.sources import notebook_images
 from rag_agent.ingest.code_analysis import analyze, strip_magics
 from rag_agent.ingest.python_parser import line_windows
 from rag_agent.ingest.text_utils import read_text, strip_ansi, truncate_keep_tail
@@ -212,6 +214,15 @@ def parse_notebook(cf: CorpusFile, cfg: ChunkingConfig) -> ParsedFile:
         if src.strip():
             result.edges.append(Edge(src=producer, dst=out_id, type=EdgeType.PRODUCES))
         result.edges.append(Edge(src=file_node.id, dst=out_id, type=EdgeType.CONTAINS))
+        for k in range(notebook_images(outputs)):
+            img_id = f"{cell_id}/img{k + 1}"
+            result.nodes.append(Node(
+                id=img_id, file_path=rel, file_type=FileType.IPYNB, node_type=NodeType.IMAGE, parent_id=out_id,
+                title=f"cell {idx} (image {k + 1})", text="", context=f"Code:\n{code_tail}" if code_tail else "",
+                location=Location(cell=idx),
+                metadata={"image_source": "ipynb", "output": k, **({"section": section} if section else {})},
+                embed=False))
+            result.edges.append(Edge(src=out_id, dst=img_id, type=EdgeType.CONTAINS))
 
     for (src_id, dst_id), names in flows.items():
         result.edges.append(Edge(src=src_id, dst=dst_id, type=EdgeType.USES_VAR, label=", ".join(sorted(names))))

@@ -25,6 +25,12 @@ class LLMError(RuntimeError):
     pass
 
 
+def _loggable(messages: list[dict]) -> list[dict]:
+    """Messages for the trace: images (base64) are replaced by their count."""
+    return [{**{k: v for k, v in m.items() if k != "images"}, **({"images": len(m["images"])} if m.get("images") else {})}
+            for m in messages]
+
+
 @dataclass
 class LLMResponse:
     content: str
@@ -80,7 +86,7 @@ class BaseLLM:
             model=self.name,
             latency_s=round(resp.latency_s, 3),
             usage=resp.usage,
-            messages=messages if self.tracer.log_prompts else None,
+            messages=_loggable(messages) if self.tracer.log_prompts else None,
             response=resp.content if self.tracer.log_prompts else None,
             tool_calls=resp.tool_calls or None,
         )

@@ -6,6 +6,7 @@ from typing import Callable
 
 from rag_agent.config import ChunkingConfig, DocumentsConfig
 from rag_agent.ingest.docx_parser import parse_doc, parse_docx
+from rag_agent.ingest.image_parser import parse_image
 from rag_agent.ingest.notebook_parser import parse_notebook
 from rag_agent.ingest.python_parser import parse_python
 from rag_agent.ingest.txt_parser import parse_txt
@@ -22,6 +23,9 @@ PARSERS: dict[str, Parser] = {
     ".txt": parse_txt,
     ".md": parse_txt,
     ".log": parse_txt,
+    ".png": parse_image,  # raster images: described by the image pipeline after indexing (Э5)
+    ".jpg": parse_image,
+    ".jpeg": parse_image,
 }
 
 

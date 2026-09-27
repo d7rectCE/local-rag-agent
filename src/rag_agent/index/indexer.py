@@ -26,7 +26,7 @@ from rag_agent.index.vector_store import VectorStore
 from rag_agent.ingest import CorpusFile, SkippedFile, iter_corpus, parse_file
 from rag_agent.schema import ParsedFile
 
-SCHEMA_VERSION = 3  # 2: AST chunks, symbols/calls, uses_var; 3: PDF / DOCX / TXT parsers
+SCHEMA_VERSION = 4  # 2: AST chunks, symbols/calls, uses_var; 3: PDF / DOCX / TXT parsers; 4: image nodes (Э5)
 
 
 def _now() -> str:

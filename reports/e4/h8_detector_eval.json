@@ -1,0 +1,242 @@
+{
+ "heron_test": {
+  "model": "docling-project/docling-layout-heron",
+  "split": "test",
+  "images": 4999,
+  "seconds": 346.8,
+  "map": 0.6818,
+  "map_50": 0.8605,
+  "map_75": 0.7411,
+  "map_per_class": {
+   "Caption": 0.7286,
+   "Footnote": 0.7241,
+   "Formula": 0.6405,
+   "List-item": 0.7969,
+   "Page-footer": 0.4989,
+   "Page-header": 0.6786,
+   "Picture": 0.7793,
+   "Section-header": 0.6374,
+   "Table": 0.8324,
+   "Text": 0.8317,
+   "Title": 0.3518
+  },
+  "map_by_category": {
+   "financial_reports": {
+    "pages": 1755,
+    "map": 0.5648
+   },
+   "government_tenders": {
+    "pages": 273,
+    "map": 0.57
+   },
+   "laws_and_regulations": {
+    "pages": 784,
+    "map": 0.5462
+   },
+   "manuals": {
+    "pages": 802,
+    "map": 0.7062
+   },
+   "patents": {
+    "pages": 442,
+    "map": 0.6481
+   },
+   "scientific_articles": {
+    "pages": 943,
+    "map": 0.8232
+   }
+  }
+ },
+ "ours_test": {
+  "model": "first attempt (16 shards)",
+  "split": "test",
+  "images": 4999,
+  "seconds": 133.0,
+  "map": 0.2728,
+  "map_50": 0.3815,
+  "map_75": 0.2959,
+  "map_per_class": {
+   "Caption": 0.1235,
+   "Footnote": 0.0567,
+   "Formula": 0.0,
+   "List-item": 0.4813,
+   "Page-footer": 0.4006,
+   "Page-header": 0.2744,
+   "Picture": 0.33,
+   "Section-header": 0.3531,
+   "Table": 0.5252,
+   "Text": 0.4318,
+   "Title": 0.0244
+  },
+  "map_by_category": {
+   "financial_reports": {
+    "pages": 1755,
+    "map": 0.3927
+   },
+   "government_tenders": {
+    "pages": 273,
+    "map": 0.366
+   },
+   "laws_and_regulations": {
+    "pages": 784,
+    "map": 0.2197
+   },
+   "manuals": {
+    "pages": 802,
+    "map": 0.322
+   },
+   "patents": {
+    "pages": 442,
+    "map": 0.1317
+   },
+   "scientific_articles": {
+    "pages": 943,
+    "map": 0.2717
+   }
+  }
+ },
+ "ours_full_test": {
+  "model": "rtdetr_v2_r50_full/best (epoch 1)",
+  "split": "test",
+  "images": 4999,
+  "seconds": 135.2,
+  "map": 0.5835,
+  "map_50": 0.7464,
+  "map_75": 0.636,
+  "map_per_class": {
+   "Caption": 0.556,
+   "Footnote": 0.4759,
+   "Formula": 0.5068,
+   "List-item": 0.6267,
+   "Page-footer": 0.4694,
+   "Page-header": 0.6067,
+   "Picture": 0.6909,
+   "Section-header": 0.5191,
+   "Table": 0.7518,
+   "Text": 0.5948,
+   "Title": 0.6207
+  },
+  "map_by_category": {
+   "financial_reports": {
+    "pages": 1755,
+    "map": 0.3922
+   },
+   "government_tenders": {
+    "pages": 273,
+    "map": 0.5181
+   },
+   "laws_and_regulations": {
+    "pages": 784,
+    "map": 0.477
+   },
+   "manuals": {
+    "pages": 802,
+    "map": 0.5876
+   },
+   "patents": {
+    "pages": 442,
+    "map": 0.6387
+   },
+   "scientific_articles": {
+    "pages": 943,
+    "map": 0.7633
+   }
+  }
+ },
+ "full_best_val1000": {
+  "model": "rtdetr_v2_r50_full/best (epoch 1)",
+  "split": "validation",
+  "images": 1000,
+  "seconds": 28.6,
+  "map": 0.5927,
+  "map_50": 0.7538,
+  "map_75": 0.652,
+  "map_per_class": {
+   "Caption": 0.802,
+   "Footnote": 0.483,
+   "Formula": 0.491,
+   "List-item": 0.5936,
+   "Page-footer": 0.4746,
+   "Page-header": 0.5987,
+   "Picture": 0.7653,
+   "Section-header": 0.5263,
+   "Table": 0.6367,
+   "Text": 0.5495,
+   "Title": 0.5989
+  },
+  "map_by_category": {
+   "financial_reports": {
+    "pages": 267,
+    "map": 0.4016
+   },
+   "government_tenders": {
+    "pages": 56,
+    "map": 0.5582
+   },
+   "laws_and_regulations": {
+    "pages": 189,
+    "map": 0.7124
+   },
+   "manuals": {
+    "pages": 274,
+    "map": 0.5799
+   },
+   "patents": {
+    "pages": 76,
+    "map": 0.5403
+   },
+   "scientific_articles": {
+    "pages": 138,
+    "map": 0.7856
+   }
+  }
+ },
+ "full_last_val1000": {
+  "model": "rtdetr_v2_r50_full/last (epoch 5)",
+  "split": "validation",
+  "images": 1000,
+  "seconds": 21.4,
+  "map": 0.5546,
+  "map_50": 0.6662,
+  "map_75": 0.5972,
+  "map_per_class": {
+   "Caption": 0.7562,
+   "Footnote": 0.4915,
+   "Formula": 0.4814,
+   "List-item": 0.6226,
+   "Page-footer": 0.5074,
+   "Page-header": 0.2976,
+   "Picture": 0.7415,
+   "Section-header": 0.335,
+   "Table": 0.7399,
+   "Text": 0.383,
+   "Title": 0.7447
+  },
+  "map_by_category": {
+   "financial_reports": {
+    "pages": 267,
+    "map": 0.3401
+   },
+   "government_tenders": {
+    "pages": 56,
+    "map": 0.5641
+   },
+   "laws_and_regulations": {
+    "pages": 189,
+    "map": 0.7007
+   },
+   "manuals": {
+    "pages": 274,
+    "map": 0.4575
+   },
+   "patents": {
+    "pages": 76,
+    "map": 0.5776
+   },
+   "scientific_articles": {
+    "pages": 138,
+    "map": 0.7476
+   }
+  }
+ }
+}

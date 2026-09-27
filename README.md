@@ -389,6 +389,28 @@ H15 подтверждена: адаптивный режим значимо у�
 - Содержимое файлов подаётся модели как данные. Промпт запрещает выполнять инструкции из фрагментов.
 - Интерфейс не загружает ничего из интернета: шрифты (Manrope, Fira Code — OFL) и библиотеки (marked — MIT, DOMPurify — Apache-2.0 / MPL-2.0) лежат в [`src/rag_agent/webui`](src/rag_agent/webui) вместе с лицензиями. Текст ответов проходит через DOMPurify, а политика CSP запрещает внешние запросы страницы.
 
+## Лицензии моделей и данных
+
+NFR7. Всё, что система загружает и что лежит в репозитории, разрешает использование и распространение. Лицензии проверены по карточкам моделей на Hugging Face и по `ollama show`.
+
+| Компонент | Лицензия | Где используется |
+|---|---|---|
+| BAAI/bge-m3 | MIT | эмбеддер (dense + sparse) |
+| BAAI/bge-reranker-v2-m3 | Apache-2.0 | реранкер, оценщик релевантности CRAG |
+| Qwen: qwen3.5:9b, qwen3.6:27b, huihui_ai/Qwen3.8-abliterated | Apache-2.0 | генератор, VLM, судья |
+| Docling: docling-layout-heron, docling-models (TableFormer) | Apache-2.0; CDLA-Permissive-2.0 | разбор PDF |
+| EasyOCR (модели в каталоге Docling) | Apache-2.0 | OCR сканов и скриншотов |
+| PekingU/rtdetr_v2_r50vd | Apache-2.0 | основа собственного детектора вёрстки (H8) |
+| DocLayNet v1.2 | CDLA-Permissive-1.0 | обучение детектора вёрстки, класс «скан» классификатора изображений |
+| timm/mobilenetv3_small_100.lamb_in1k | Apache-2.0 | классификатор типа изображения (Э5) |
+| vidore/colqwen2-v1.0-hf | Apache-2.0 | визуальный индекс (H4) |
+| Наборы scikit-learn: breast_cancer, digits, wine (UCI), diabetes | CC BY 4.0; BSD-3-Clause | демо-корпус |
+| Фото scikit-image и scikit-learn | свободные образцы из пакетов | только обучение классификатора; в репозиторий не входят |
+| Шрифты Manrope, Fira Code; marked; DOMPurify | OFL; MIT; Apache-2.0 / MPL-2.0 | интерфейс |
+| SearXNG | AGPL-3.0 | отдельный контейнер, запускается по команде; код проекта с ним не связан и его не распространяет |
+
+Демо-корпус целиком сгенерирован скриптами репозитория (`scripts/build_demo_corpus.py`, `scripts/demo_documents.py`, `scripts/demo_images.py`) на открытых наборах выше.
+
 ## Разработка
 
 ```bash

@@ -1,0 +1,20 @@
+{
+  "nodes": 101,
+  "generated": 202,
+  "kept": 196,
+  "train": 146,
+  "test": 50,
+  "held_out_files": [
+    "experiments/01_eda_breast_cancer.ipynb",
+    "experiments/07_scratch.ipynb",
+    "images/terminal_train_hist_gb.png",
+    "ml_toolkit/evaluation.py",
+    "ml_toolkit/preprocessing.py",
+    "ml_toolkit/trainer.py",
+    "ml_toolkit/viz.py",
+    "notes/ideas_april.txt",
+    "scripts/legacy_metrics.py",
+    "scripts/train.py"
+  ],
+  "model": "ollama:huihui_ai/Qwen3.8-abliterated:latest"
+}

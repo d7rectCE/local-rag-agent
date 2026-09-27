@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import random
 import shutil
 import sys
@@ -119,8 +120,7 @@ def cmd_synth(args) -> None:
 
 def cmd_train(args) -> None:
     import torch
-    from datasets import Dataset
-    from sentence_transformers import SentenceTransformer, SentenceTransformerTrainer, SentenceTransformerTrainingArguments
+    from sentence_transformers import SentenceTransformer
     from sentence_transformers.losses import MultipleNegativesRankingLoss
 
     from rag_agent.config import load_settings
@@ -148,17 +148,37 @@ def cmd_train(args) -> None:
         anchors.append(r["query"])
         positives.append(texts[r["node_id"]])
         negatives.append(texts[neg])
-    ds = Dataset.from_dict({"anchor": anchors, "positive": positives, "negative": negatives})
+    # a plain loop: the Hugging Face Trainer imports torch.distributed to build AdamW, and the ROCm build of
+    # torch for Windows has no distributed package
     model = SentenceTransformer(settings.embedding.model, device="cuda")
     model.max_seq_length = 512
-    targs = SentenceTransformerTrainingArguments(
-        output_dir=str(out / "checkpoints"), num_train_epochs=args.epochs, per_device_train_batch_size=args.batch,
-        learning_rate=args.lr, warmup_ratio=0.1, fp16=torch.cuda.is_available(), save_strategy="no",
-        logging_steps=10, report_to=[], seed=0, gradient_checkpointing=True)
-    trainer = SentenceTransformerTrainer(model=model, args=targs, train_dataset=ds,
-                                         loss=MultipleNegativesRankingLoss(model))
-    t0 = time.time()
-    trainer.train()
+    loss_fn = MultipleNegativesRankingLoss(model)
+    opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
+    order = list(range(len(anchors)))
+    steps = args.epochs * math.ceil(len(order) / args.batch)
+    warm = max(1, int(0.1 * steps))
+    sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda k: min(1.0, (k + 1) / warm) * max(0.0, (steps - k) / steps))
+    scaler = torch.amp.GradScaler("cuda")
+    t0, step, history = time.time(), 0, []
+    model.train()
+    for epoch in range(args.epochs):
+        random.Random(epoch).shuffle(order)
+        for k in range(0, len(order), args.batch):
+            idx = order[k:k + args.batch]
+            feats = []
+            for column in (anchors, positives, negatives):
+                f = model.tokenize([column[i] for i in idx])
+                feats.append({key: v.to("cuda") if hasattr(v, "to") else v for key, v in f.items()})
+            with torch.autocast("cuda", dtype=torch.float16):
+                loss = loss_fn(feats, None)
+            opt.zero_grad()
+            scaler.scale(loss).backward()
+            scaler.step(opt)
+            scaler.update()
+            sched.step()
+            step += 1
+            history.append({"step": step, "epoch": epoch + 1, "loss": round(loss.item(), 4)})
+            print(history[-1], flush=True)
     model.save(str(out / "bge-m3-ft"))
     head = Path(settings.embedding.model)
     from huggingface_hub import hf_hub_download
@@ -166,8 +186,9 @@ def cmd_train(args) -> None:
     sparse = head / "sparse_linear.pt" if head.is_dir() else Path(hf_hub_download(settings.embedding.model, "sparse_linear.pt",
                                                                                   local_files_only=True))
     shutil.copy2(sparse, out / "bge-m3-ft" / "sparse_linear.pt")  # the sparse head is not trained (dense only)
-    (out / "train.json").write_text(json.dumps({"pairs": len(ds), "epochs": args.epochs, "batch": args.batch, "lr": args.lr,
-                                                "elapsed_s": round(time.time() - t0, 1)}, indent=2), encoding="utf-8")
+    (out / "train.json").write_text(json.dumps({"pairs": len(anchors), "epochs": args.epochs, "batch": args.batch,
+                                                "lr": args.lr, "elapsed_s": round(time.time() - t0, 1),
+                                                "history": history}, indent=2), encoding="utf-8")
     print("saved", out / "bge-m3-ft")
 
 

@@ -1,0 +1,39 @@
+{
+  "evalset": {
+    "name": "demo_v6",
+    "version": 6,
+    "items": 123
+  },
+  "corpus": "demo_corpus",
+  "index_signature": "d9cc57657a",
+  "embedder": "BAAI/bge-m3",
+  "chunking": {
+    "python": "ast",
+    "lines_per_chunk": 60,
+    "overlap_lines": 10,
+    "ast_max_chars": 1800,
+    "max_chunk_chars": 6000,
+    "output_max_chars": 2000,
+    "context_header": true,
+    "notebook_context": true,
+    "text_max_chars": 1500,
+    "docx": "structured"
+  },
+  "retrieval": {
+    "mode": "dense",
+    "top_k": 6,
+    "symbols": true,
+    "rerank": true,
+    "rerank_model": "BAAI/bge-reranker-v2-m3",
+    "rerank_pool": 40,
+    "rerank_max_length": 512,
+    "rerank_batch_size": 16,
+    "eval_k": 10
+  },
+  "route": "auto",
+  "llm": "ollama:huihui_ai/Qwen3.8-abliterated:latest",
+  "judge": "qwen3.6:27b",
+  "git": "cace233+dirty",
+  "date": "2026-09-28T02:44:41",
+  "name": "huihui-detailed"
+}

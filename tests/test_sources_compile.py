@@ -1,4 +1,4 @@
-"""Every module must at least compile — covers files the other tests never import (ui.py, cli.py)."""
+"""Every module must at least compile — covers files the other tests never import (cli.py, scripts)."""
 
 import pytest
 

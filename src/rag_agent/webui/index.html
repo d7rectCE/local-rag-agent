@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Local RAG</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/ui/fonts/fonts.css">
+<link rel="stylesheet" href="/ui/app.css">
+<script src="/ui/theme.js"></script>
+<script defer src="/ui/vendor/marked.min.js"></script>
+<script defer src="/ui/vendor/purify.min.js"></script>
+<script type="module" src="/ui/app.js"></script>
+</head>
+<body>
+<div class="app" id="app">
+
+<aside class="sidebar" id="sidebar" aria-label="Навигация">
+  <div class="brand">
+    <div class="brand-logo" data-icon="layers"></div>
+    <div class="brand-text"><span class="brand-name">Local RAG</span><span class="muted small">агент на вашем компьютере</span></div>
+    <button type="button" class="icon-btn only-narrow" id="close-sidebar" aria-label="Скрыть панель" data-icon="x"></button>
+  </div>
+  <button type="button" class="btn-primary" id="new-dialog"><span data-icon="plus"></span>Новый диалог</button>
+  <section class="card folder" id="folder" aria-label="Рабочая папка"></section>
+  <nav class="dialogs" id="dialogs" aria-label="Диалоги"></nav>
+  <div class="card model" id="model"></div>
+</aside>
+
+<main class="main" id="main">
+  <header class="main-header">
+    <button type="button" class="icon-btn only-narrow" id="open-sidebar" aria-label="Показать диалоги" data-icon="menu"></button>
+    <div class="title-block">
+      <h1 id="dialog-title">Новый диалог</h1>
+      <span class="muted small" id="dialog-meta"></span>
+    </div>
+    <div class="segmented" role="group" aria-label="Источник ответа" id="route"></div>
+    <button type="button" class="icon-btn only-mid" id="open-panel" aria-label="Ход ответа" data-icon="activity"></button>
+  </header>
+  <div class="messages" id="messages" tabindex="-1">
+    <div class="thread" id="thread"></div>
+  </div>
+  <div class="composer-wrap">
+    <form class="composer" id="composer">
+      <div class="attachments" id="attachments"></div>
+      <label for="msg" class="sr-only">Сообщение агенту</label>
+      <textarea id="msg" rows="2" placeholder="Спросите о файлах, попросите написать код или найти свежие данные…"></textarea>
+      <div class="toolbar">
+        <button type="button" class="round-btn" id="attach" aria-label="Прикрепить файл" data-icon="paperclip"></button>
+        <button type="button" class="round-btn" id="folder-btn" aria-label="Рабочая папка" data-icon="folder"></button>
+        <div class="segmented small think" role="group" aria-label="Режим рассуждений" id="reasoning"></div>
+        <button type="button" class="pill-toggle" id="web-toggle" aria-pressed="false"><span data-icon="globe"></span>Интернет</button>
+        <button type="button" class="pill-toggle" id="code-toggle" aria-pressed="false"><span data-icon="code"></span>Код</button>
+        <button type="submit" class="send" id="send" aria-label="Отправить" data-icon="arrow-up"></button>
+      </div>
+      <input type="file" id="file-input" multiple hidden>
+    </form>
+  </div>
+</main>
+
+<aside class="panel" id="panel" aria-label="Ход ответа">
+  <section class="card" id="trace-card"></section>
+  <section class="card" id="files-card"></section>
+  <section class="card" id="access-card"></section>
+  <button type="button" class="link-btn" id="open-trace">Открыть полную трассу →</button>
+</aside>
+
+</div>
+<div class="scrim" id="scrim" hidden></div>
+<dialog class="modal" id="modal" aria-labelledby="modal-title"></dialog>
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+</body>
+</html>

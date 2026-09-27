@@ -22,7 +22,6 @@ dependencies = [
     "pydantic>=2",
     "pyyaml",
     "typer",
-    "streamlit",
     "python-docx",
     "charset-normalizer",
     "docling",
@@ -45,6 +44,10 @@ rag = "rag_agent.cli:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+# the web UI is static: page, styles, script, vendored fonts and libraries with their licenses
+rag_agent = ["webui/*", "webui/fonts/*", "webui/vendor/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -17,7 +17,6 @@ from rag_agent.config import REPO_ROOT, load_settings
 app = typer.Typer(no_args_is_help=True, add_completion=False, help="Local RAG agent over a research archive.")
 
 DEMO_CORPUS = REPO_ROOT / "demo_corpus"
-UI_SCRIPT = Path(__file__).with_name("ui.py")
 
 
 def _engine():
@@ -356,54 +355,77 @@ def eval_validate(evalset: Path = typer.Argument(DEFAULT_EVALSET), root: Optiona
         raise typer.Exit(1)
 
 
-def _ui_command(port: int) -> list[str]:
-    return [
-        sys.executable, "-m", "streamlit", "run", str(UI_SCRIPT),
-        "--server.port", str(port),
-        "--browser.gatherUsageStats", "false",
-    ]
+def _ensure_api() -> tuple[str, subprocess.Popen | None]:
+    """Base URL of the API, starting ``rag serve`` in the background if nothing answers there."""
+    import httpx
+
+    settings = load_settings()
+    base = f"http://{settings.api.host}:{settings.api.port}"
+    try:
+        if httpx.get(f"{base}/health", timeout=2).status_code == 200:
+            return base, None
+    except httpx.HTTPError:
+        pass
+    proc = subprocess.Popen([sys.executable, "-m", "rag_agent.cli", "serve"])
+    for _ in range(180):
+        try:
+            if httpx.get(f"{base}/health", timeout=2).status_code == 200:
+                return base, proc
+        except httpx.HTTPError:
+            pass
+        if proc.poll() is not None:
+            raise typer.Exit(1)
+        time.sleep(1)
+    proc.terminate()
+    raise typer.Exit(1)
+
+
+def _open_and_wait(base: str, proc: subprocess.Popen | None) -> None:
+    import webbrowser
+
+    typer.echo(f"Интерфейс: {base}/")
+    webbrowser.open(f"{base}/")
+    if proc is None:
+        return
+    try:
+        proc.wait()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        proc.terminate()
 
 
 @app.command()
-def ui(port: int = 8501) -> None:
-    """Run the Streamlit UI (expects the API to be running)."""
-    raise typer.Exit(subprocess.call(_ui_command(port)))
+def ui() -> None:
+    """Open the web UI in the browser (starts the API if it is not running)."""
+    base, proc = _ensure_api()
+    _open_and_wait(base, proc)
 
 
 @app.command()
-def demo(port: int = 8501, rebuild_corpus: bool = typer.Option(False, help="Regenerate demo_corpus/")) -> None:
-    """One-command demo: build the demo corpus if needed, start the API, index, open the UI."""
+def demo(rebuild_corpus: bool = typer.Option(False, help="Regenerate demo_corpus/")) -> None:
+    """One-command demo: build the demo corpus if needed, start the API, index it, open the UI."""
     import httpx
 
     if rebuild_corpus or not DEMO_CORPUS.exists():
         typer.echo("Building demo corpus…")
         subprocess.check_call([sys.executable, str(REPO_ROOT / "scripts" / "build_demo_corpus.py")])
-
-    settings = load_settings()
-    base = f"http://{settings.api.host}:{settings.api.port}"
-    api_proc = subprocess.Popen([sys.executable, "-m", "rag_agent.cli", "serve"])
+    base, proc = _ensure_api()
     try:
         with httpx.Client(base_url=base, timeout=600) as client:
-            for _ in range(120):
-                try:
-                    if client.get("/health").status_code == 200:
-                        break
-                except httpx.HTTPError:
-                    pass
-                if api_proc.poll() is not None:
-                    raise typer.Exit(1)
-                time.sleep(1)
             client.post("/index", json={"root": str(DEMO_CORPUS)}).raise_for_status()
             while True:
                 prog = client.get("/index/progress").json()
                 typer.echo(f"\r{prog['state']}: {prog['files_done']}/{prog['files_total']}", nl=False)
-                if prog["state"] not in ("scanning", "indexing"):
+                if prog["state"] not in ("scanning", "indexing", "extracting"):
                     typer.echo("")
                     break
                 time.sleep(1)
-        subprocess.call(_ui_command(port))
-    finally:
-        api_proc.terminate()
+    except BaseException:
+        if proc is not None:
+            proc.terminate()
+        raise
+    _open_and_wait(base, proc)
 
 
 if __name__ == "__main__":

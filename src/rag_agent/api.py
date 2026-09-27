@@ -1,18 +1,27 @@
-"""HTTP API (FastAPI). Run with ``rag serve``; binds to localhost by default."""
+"""HTTP API (FastAPI) and the web UI. Run with ``rag serve`` (``rag ui`` also opens the browser);
+binds to localhost by default. The UI is a static page at ``/`` (``src/rag_agent/webui``) that talks
+to this API; its dialogs are stored server-side (``/dialogs``)."""
 
 from __future__ import annotations
 
 import logging
+import os
+import subprocess
+import sys
+import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from rag_agent.code.agent import CodeResult
 from rag_agent.code.sandbox import SandboxError
 from rag_agent.code.workspace import WorkspaceError
+from rag_agent.dialogs import DialogNotFound, DialogStore
 from rag_agent.engine import Engine, IndexingBusyError, NoCorpusError
 from rag_agent.generation import Answer
 from rag_agent.index.indexer import IndexProgress
@@ -39,6 +48,15 @@ class ChatTurn(BaseModel):
 
 class CodeRequest(BaseModel):
     task: str
+    dialog_id: str | None = None
+
+
+class DialogRequest(BaseModel):
+    title: str = ""
+
+
+class PickFolderRequest(BaseModel):
+    initial: str = ""
 
 
 class RollbackRequest(BaseModel):
@@ -63,15 +81,36 @@ class AskRequest(BaseModel):
     confirmed: list[str] = []  # keys of agent actions the user approved (FR17)
     web: Literal["off", "auto", "always"] | None = None
     session: str | None = None
+    # web UI: the history comes from the stored dialog and the turns are saved there; replace_last
+    # regenerates the last answer (after a confirmation) instead of adding the question again
+    dialog_id: str | None = None
+    replace_last: bool = False
+
+
+WEBUI = Path(__file__).with_name("webui")
+# rule 4 (ТЗ ч.2 S20) for the page itself: nothing is loaded from outside the machine, whatever an
+# answer contains; inline styles are allowed for the few computed widths (trace bars)
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+       "font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; "
+       "form-action 'self'")
+_PICKER = """
+import sys, tkinter as tk
+from tkinter import filedialog
+root = tk.Tk(); root.withdraw(); root.attributes("-topmost", True)
+path = filedialog.askdirectory(initialdir=sys.argv[1] or None, title="Выберите рабочую папку")
+sys.stdout.write(path or "")
+"""
 
 
 def create_app(engine: Engine | None = None) -> FastAPI:
-    state: dict[str, Engine] = {}
+    state: dict = {}
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         state["engine"] = engine or Engine()
+        state["dialogs"] = DialogStore(state["engine"].settings.data_dir / "dialogs.sqlite")
         yield
+        state["dialogs"].close()
         state["engine"].close()
 
     app = FastAPI(title="local-rag-agent", version="0.1.0", lifespan=lifespan)
@@ -79,13 +118,103 @@ def create_app(engine: Engine | None = None) -> FastAPI:
     def eng() -> Engine:
         return state["engine"]
 
+    def dialogs() -> DialogStore:
+        return state["dialogs"]
+
+    @app.middleware("http")
+    async def csp(request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path == "/" or request.url.path.startswith("/ui/"):
+            response.headers["Content-Security-Policy"] = CSP
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+
+    if WEBUI.is_dir():
+        app.mount("/ui", StaticFiles(directory=WEBUI), name="ui")
+
+    @app.get("/", include_in_schema=False)
+    def index() -> FileResponse:
+        return FileResponse(WEBUI / "index.html", media_type="text/html")
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon() -> Response:
+        return Response(status_code=204)
+
     @app.get("/health")
     def health() -> dict:
         return {"status": "ok"}
 
     @app.get("/status")
     def status() -> dict:
-        return eng().status()
+        return {**eng().status(), "gpu": _gpu_name(state)}
+
+    @app.get("/policy")
+    def policy() -> dict:
+        """What the agent may do, for the "access" panel of the UI (ТЗ ч.2 S20, FR17)."""
+        e = eng()
+        corpus = e.status()["corpus"]
+        now = time.monotonic()
+        if now - state.get("docker_checked", -1e9) > 60:
+            from rag_agent.code.sandbox import DockerSandbox
+
+            state["docker_ok"], state["docker_checked"] = DockerSandbox(e.settings.code).available(), now
+        return {
+            "corpus": {"name": Path(corpus["root"]).name if corpus else None, "access": "read"},
+            "writes": "confirm",  # apply_changes only after the user's approval
+            "sandbox": "no_network" if state["docker_ok"] else "unavailable",
+            "web": e.settings.web.mode,
+            "policies": e.settings.security.policies,
+        }
+
+    @app.post("/pick-folder")
+    def pick_folder(req: PickFolderRequest) -> dict:
+        """The native folder dialog of this machine (the UI is served to localhost only)."""
+        env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+        try:
+            res = subprocess.run([sys.executable, "-c", _PICKER, req.initial], capture_output=True, text=True,
+                                 encoding="utf-8", env=env, timeout=900)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise HTTPException(500, f"диалог выбора папки недоступен: {exc}") from exc
+        path = res.stdout.strip()
+        return {"path": os.path.normpath(path) if path else None}
+
+    # --- dialogs of the web UI ---------------------------------------------------------
+    @app.get("/dialogs")
+    def list_dialogs() -> list[dict]:
+        return dialogs().list()
+
+    @app.post("/dialogs")
+    def create_dialog(req: DialogRequest) -> dict:
+        try:
+            root = str(eng().index.root)  # the index only: status() would also load the embedder
+        except NoCorpusError:
+            root = None
+        return dialogs().create(req.title, root)
+
+    @app.get("/dialogs/{dialog_id}")
+    def get_dialog(dialog_id: str) -> dict:
+        try:
+            return dialogs().get(dialog_id)
+        except DialogNotFound as exc:
+            raise HTTPException(404, "диалог не найден") from exc
+
+    @app.patch("/dialogs/{dialog_id}")
+    def rename_dialog(dialog_id: str, req: DialogRequest) -> dict:
+        try:
+            return dialogs().rename(dialog_id, req.title)
+        except DialogNotFound as exc:
+            raise HTTPException(404, "диалог не найден") from exc
+
+    @app.delete("/dialogs/{dialog_id}")
+    def delete_dialog(dialog_id: str) -> dict:
+        try:
+            dialogs().delete(dialog_id)
+        except DialogNotFound as exc:
+            raise HTTPException(404, "диалог не найден") from exc
+        for info in eng().uploads.list(dialog_id):  # the dialog is the upload session
+            eng().uploads.delete(dialog_id, info.id)
+        return {"deleted": dialog_id}
 
     @app.get("/corpora")
     def corpora() -> list[dict]:
@@ -197,7 +326,16 @@ def create_app(engine: Engine | None = None) -> FastAPI:
     @app.post("/code")
     def code(req: CodeRequest) -> CodeResult:
         try:
-            return eng().code_task(req.task)
+            if req.dialog_id:
+                dialogs().get(req.dialog_id)  # 404 before the long run
+            res = eng().code_task(req.task)
+            if req.dialog_id:
+                dialogs().add_turn(req.dialog_id, "user", "code_task", req.task)
+                dialogs().add_turn(req.dialog_id, "assistant", "code", res.summary or res.status,
+                                   payload=res.model_dump(), ref=res.task_id)
+            return res
+        except DialogNotFound as exc:
+            raise HTTPException(404, "диалог не найден") from exc
         except NoCorpusError as exc:
             raise HTTPException(404, "Сначала выберите и проиндексируйте папку") from exc
         except SandboxError as exc:
@@ -216,16 +354,31 @@ def create_app(engine: Engine | None = None) -> FastAPI:
     def code_apply(task_id: str) -> CodeResult:
         """apply_changes: the explicit confirmation of the user (FR14)."""
         try:
-            return eng().apply_code(task_id)
+            res = eng().apply_code(task_id)
         except WorkspaceError as exc:
             raise HTTPException(400, str(exc)) from exc
+        dialogs().update_ref(task_id, res.model_dump())
+        return res
+
+    @app.post("/code/{task_id}/reject")
+    def code_reject(task_id: str) -> dict:
+        """The user declined the changes: nothing reaches the folder; the dialog remembers the decision."""
+        try:
+            res = eng().code_result(task_id)
+        except WorkspaceError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        payload = {**res.model_dump(), "rejected": True}
+        dialogs().update_ref(task_id, payload)
+        return payload
 
     @app.post("/code/{task_id}/rollback")
     def code_rollback(task_id: str, req: RollbackRequest) -> CodeResult:
         try:
-            return eng().rollback_code(task_id, req.commit)
+            res = eng().rollback_code(task_id, req.commit)
         except WorkspaceError as exc:
             raise HTTPException(400, str(exc)) from exc
+        dialogs().update_ref(task_id, res.model_dump())
+        return res
 
     @app.get("/code/{task_id}/file")
     def code_file(task_id: str, path: str) -> FileResponse:
@@ -236,10 +389,18 @@ def create_app(engine: Engine | None = None) -> FastAPI:
 
     @app.post("/ask")
     def ask(req: AskRequest) -> Answer:
+        history = [t.model_dump() for t in req.history]
         try:
-            return eng().ask(
+            if req.dialog_id:
+                if req.replace_last:
+                    dialogs().drop_last_answer(req.dialog_id)
+                stored = dialogs().history(req.dialog_id)
+                if req.replace_last and stored and stored[-1]["role"] == "user":
+                    stored = stored[:-1]  # the question being answered again is not its own history
+                history = history or stored
+            answer = eng().ask(
                 req.question,
-                history=[t.model_dump() for t in req.history],
+                history=history,
                 top_k=req.top_k,
                 mode=req.mode,
                 route=req.route,
@@ -252,6 +413,15 @@ def create_app(engine: Engine | None = None) -> FastAPI:
                 confirmed=req.confirmed,
                 web=req.web,
             )
+            if req.dialog_id:
+                if not req.replace_last:
+                    dialogs().add_turn(req.dialog_id, "user", "question", req.question,
+                                       payload={"uploads": req.uploads, "route": req.route, "web": req.web,
+                                                "reasoning": req.reasoning})
+                dialogs().add_turn(req.dialog_id, "assistant", "answer", answer.answer, payload=answer.model_dump())
+            return answer
+        except DialogNotFound as exc:
+            raise HTTPException(404, "диалог не найден") from exc
         except NoCorpusError as exc:
             raise HTTPException(404, "Сначала проиндексируйте папку") from exc
         except (ValueError, UploadError) as exc:
@@ -261,3 +431,21 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             raise HTTPException(502, f"LLM недоступна: {exc}") from exc
 
     return app
+
+
+def _gpu_name(state: dict) -> str | None:
+    """Name of the GPU the models run on, for the model badge; torch is already loaded by then."""
+    if "gpu" not in state:
+        name = None
+        try:
+            if "torch" in sys.modules:
+                import torch
+
+                if torch.cuda.is_available():
+                    name = torch.cuda.get_device_name(0).replace("AMD Radeon ", "").replace("NVIDIA GeForce ", "")
+        except Exception:  # noqa: BLE001 - a badge must never break /status
+            name = None
+        if name is None and "torch" not in sys.modules:
+            return None  # ask again once the embedder has loaded torch
+        state["gpu"] = name
+    return state["gpu"]

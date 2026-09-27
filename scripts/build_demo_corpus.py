@@ -1345,6 +1345,9 @@ def main() -> None:
 
         print("building documents …", flush=True)
         build_documents(OUT)
+        from demo_images import build_images  # a diagram, a screenshot, a photographed note, charts (Э5)
+
+        build_images(OUT)
     # no README inside: .md files are indexed and would become part of the corpus
     print(f"demo corpus written to {OUT}")
 

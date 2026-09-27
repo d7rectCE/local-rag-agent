@@ -203,7 +203,7 @@ rag ablate configs/ablations/e3.yaml       # таблица абляций: не
 rag rejudge configs/ablations/e13.yaml runs/ablations/<папка>   # заново к судье, ответы не генерируются
 rag ablate-code configs/ablations/e15.yaml # код-агент: задачи со скрытыми проверками в песочнице
 python scripts/redteam_code.py             # опасный код в песочнице (Э17), без модели
-python scripts/h9_monitoring.py            # мониторинг на канареечных запросах (Э9, нужен driftfdr)
+python scripts/h9_monitoring.py            # мониторинг на канареечных запросах (Э9, pip install driftfdr)
 make check                                 # секреты и личные пути в файлах репозитория (то же в CI)
 ```
 

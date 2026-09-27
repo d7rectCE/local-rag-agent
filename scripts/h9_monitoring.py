@@ -18,7 +18,7 @@ Fragment vectors are read from the built index; only canaries, distractors and t
 reranker run on the CPU (the GPU is busy): texts up to 256 tokens, the reranker in
 dynamic int8. Nothing is downloaded.
 
-Needs driftfdr (pip install -e ".[monitoring]").
+Needs driftfdr from PyPI (pip install driftfdr, or pip install -e ".[monitoring]").
 
     python scripts/h9_monitoring.py --out reports/e9
 """

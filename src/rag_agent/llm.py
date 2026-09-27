@@ -33,6 +33,7 @@ class LLMResponse:
     usage: dict[str, int] = field(default_factory=dict)
     latency_s: float = 0.0
     thinking_truncated: bool = False  # the reasoning hit its budget and the answer was forced
+    truncated: bool = False  # the answer itself hit max_tokens (Ollama done_reason "length")
 
     def json(self) -> Any:
         text = self.content.strip()
@@ -136,6 +137,7 @@ class OllamaLLM(BaseLLM):
             thinking=msg.get("thinking"),
             tool_calls=msg.get("tool_calls") or [],
             usage={"prompt_tokens": data.get("prompt_eval_count", 0), "completion_tokens": data.get("eval_count", 0)},
+            truncated=data.get("done_reason") == "length",
         )
 
     FORCE_ANSWER = (

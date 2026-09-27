@@ -63,7 +63,11 @@ def test_chat_hands_a_code_task_to_the_code_agent(settings, fake_embedder, proje
                {"role": "assistant", "content": "[Код-агент, ошибка] docker не запущен"}]
     ans = eng.ask("Исправь падение ratio.py", history=history)
     assert ans.route == "code" and ans.answerable and ans.code["status"] == "done"
-    assert ans.code["changed"] == [["M", "scripts/ratio.py"]] and ans.answer == ans.code["summary"]
+    assert ans.code["changed"] == [["M", "scripts/ratio.py"]]
+    # the answer is written by the model from everything the agent produced: its runs' output and files
+    report = next(c for c in eng.llm.calls if "Код-агент выполнил задачу" in c[0]["content"])
+    assert "0.5" in report[1]["content"] and "M scripts/ratio.py" in report[1]["content"]
+    assert ans.answer == "Общий ответ." and ans.code["summary"] == "исправлен вызов, скрипт печатает 0.5"
     assert [s.name for s in ans.trace][:3] == ["route", "route_code", "code_agent"]
     # the code agent saw the dialogue: "try again" continues the previous work
     first = next(c for c in eng.llm.calls if "Задача:" in str(c[-1].get("content")))
@@ -142,6 +146,44 @@ def test_general_answer_knows_the_capabilities(settings, fake_embedder, project:
     eng.llm.route = {**route, "web": False, "standalone_question": "Привет"}
     assert eng.ask("Привет", web="off").suggest == []
     eng.close()
+
+
+def test_explicit_web_request_and_sticky_uploads(settings, fake_embedder, project: Path):
+    route = {"route": "general", "standalone_question": "Найди статьи про ML за 2026 год", "web": False}
+    eng = chat_engine(settings, fake_embedder, project, route=route)
+    ans = eng.ask("А ты сам выйти в интернет не можешь и найти?", web="off")
+    assert ans.suggest == ["web"] and any(s.name == "web_request" for s in ans.trace)
+    # a file attached to the dialog that does not answer: the question is routed as usual (not refused)
+    info = eng.upload("s1", "notes.txt", "Протокол встречи: демо к пятнице.".encode("utf-8"))
+    eng.llm.reply = {"answerable": False, "answer": "Нет в файле.", "general": ""}
+    ans = eng.ask("Привет", uploads=[info.id], session="s1", upload_fallback=True)
+    assert ans.route == "general" and "upload_fallback" in [s.name for s in ans.trace] and ans.notice
+    ans = eng.ask("Привет", uploads=[info.id], session="s1")  # the eval sets: the upload answer as it is
+    assert ans.route == "upload" and not ans.answerable
+    eng.close()
+
+
+def test_web_post_check_keeps_the_layout():
+    from rag_agent.web_qa import mark_unsupported
+
+    text = ("Цены за неделю [1]:\n\n| Дата | USD |\n|---|---|\n| 2026-09-25 | 4285 |\n\n"
+            "- Золото подешевело за неделю более чем на 1% по данным источника [1].")
+    out, ok, bad = mark_unsupported(text, {1: "2026-09-25 gold 4285 USD, weekly drop more than 1%"})
+    assert out == text and ok == 1 and bad == 0  # lists and tables stay markdown, nothing is flagged
+
+
+def test_overview_of_a_long_upload(settings):
+    from rag_agent.schema import FileType, Location, Node, NodeType
+    from rag_agent.uploads import OVERVIEW, overview_nodes
+
+    assert OVERVIEW.search("Что можешь рассказать о файле") and OVERVIEW.search("Опиши концепцию")
+    assert not OVERVIEW.search("Какая дата в отчёте?")
+    nodes = [Node(id=f"n{i}", file_path="upload:x.pdf", file_type=FileType.PDF, node_type=NodeType.SECTION,
+                  title="", text="x" * 1000, location=Location(section=f"Раздел {i // 4}")) for i in range(40)]
+    picked = overview_nodes(nodes, 12_000)
+    ids = [n.id for n in picked]
+    assert ids[:3] == ["n0", "n1", "n2"] and "n4" in ids and "n36" in ids  # the start and every section's start
+    assert sum(len(n.text) for n in picked) <= 12_000 and ids == sorted(ids, key=lambda x: int(x[1:]))
 
 
 def test_model_switch_is_per_thread(settings):

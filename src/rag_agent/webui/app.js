@@ -204,10 +204,12 @@ async function openDialog(id) {
   const d = await guarded(() => api('GET', `/dialogs/${id}`));
   if (!d) return;
   S.dialog = d;
-  S.attachments = [];
   S.error = null;
   S.selected = null;
   await loadUploads();
+  // the files of the last question with attachments are still attached (they stay in the dialog's context)
+  const last = [...(d.turns || [])].reverse().find((t) => t.kind === 'question' && (t.payload?.uploads || []).length);
+  S.attachments = (last?.payload?.uploads || []).filter((id) => S.uploads.some((u) => u.id === id));
   closeSidebar();
   renderAll();
   scrollToBottom();
@@ -445,7 +447,7 @@ function renderAttachments() {
     const meta = u.fits_context ? fmtSize(u.size) : `${fmtSize(u.size)} · ${u.n_fragments} фрагм.`;
     box.append(h('span', { class: 'att', title: u.warnings?.length ? u.warnings.join('\n') : u.name },
       h('span', { class: 'ext', text: extBadge(u.name) }), h('b', { text: u.name }), h('span', { class: 'meta', text: meta }),
-      h('button', { type: 'button', class: 'mini-btn', 'aria-label': 'Убрать файл из вопроса', title: 'Убрать из вопроса (файл останется в сессии)', onclick: () => { S.attachments = S.attachments.filter((x) => x !== id); renderControls(); }, icon: ['x', 12, 2.2] })));
+      h('button', { type: 'button', class: 'mini-btn', 'aria-label': 'Убрать файл из контекста', title: 'Файл в контексте диалога: агент учитывает его в следующих вопросах. Убрать (файл останется в сессии)', onclick: () => { S.attachments = S.attachments.filter((x) => x !== id); renderControls(); }, icon: ['x', 12, 2.2] })));
   }
   for (const u of S.uploading) {
     box.append(h('span', { class: `att ${u.error ? 'error' : 'loading'}`, title: u.error || 'Разбираю файл…' },
@@ -595,7 +597,10 @@ function renderAnswer(turn, turns, idx) {
           h('button', { type: 'button', class: 'btn-pill', onclick: (e) => { e.currentTarget.closest('.notice').remove(); } }, 'Не надо')))));
   }
 
-  if (a.code) art.append(codeCard(a.code));  // the chat handed the task to the code agent
+  if (a.code) {  // the chat handed the task to the code agent: its result in words, then the card
+    if (a.answer && a.answer !== a.code.summary) art.append(renderMarkdown(a.answer, []));
+    art.append(codeCard(a.code));
+  }
   else if (a.answer && !(a.pending || []).some((p) => p.tool === 'run_code')) art.append(renderMarkdown(a.answer, a.sources));
   if ((a.suggest || []).includes('web') && !(a.pending || []).length) {
     const q = questionOf(turns, idx);
@@ -979,6 +984,7 @@ function askBody(text, opts = {}) {
     model: opts.replaceLast ? (from.model || null) : S.model,
     confirmed: opts.confirmed || [],
     replace_last: !!opts.replaceLast,
+    upload_fallback: true,  // files stay attached: a question they do not answer is routed as usual
   };
 }
 
@@ -1013,7 +1019,7 @@ async function send(text, kind = 'ask', opts = {}) {
   try {
     if (kind === 'code') await api('POST', '/code', { task: text, dialog_id: S.dialog.id, model: S.model });
     else await api('POST', '/ask', askBody(text, opts));
-    if (!opts.replaceLast) S.attachments = [];
+    // attached files stay in the dialog's context for the next questions until the user removes them
     await reloadDialog();
     S.selected = null;
   } catch (e) {

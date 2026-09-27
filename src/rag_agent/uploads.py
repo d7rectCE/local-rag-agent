@@ -405,6 +405,42 @@ def read_in_parts(question: str, nodes: list[Node], llm, budget_chars: int, max_
     return answer
 
 
+# "what is the file about": no fragment is "relevant" to such a question, so retrieval and the map step
+# find nothing in a long file; the answer is written from an overview of it instead
+OVERVIEW = re.compile(r"о\s+ч[её]м|расска[зж]|опиши|описа|суть|кратк|резюм|конспект|перескаж|основн\w+\s+(иде|мысл|вывод)|"
+                      r"концепци|иде[яюи]\b|что\s+(в\s+(нём|нем|файле|документе)|можешь\s+сказать)|"
+                      r"summar|overview|what\s+is\s+(it|this|the\s+file)\s+about|main\s+idea", re.IGNORECASE)
+
+
+def overview_nodes(nodes: list[Node], budget_chars: int) -> list[Node]:
+    """An overview of a long file within the budget: the beginning (title, abstract, introduction), then
+    the first fragment of every section, then the ends of sections, in document order."""
+    chosen: dict[str, Node] = {}
+    size = 0
+
+    def take(n: Node) -> bool:
+        nonlocal size
+        length = len(n.text or "")
+        if n.id in chosen or (chosen and size + length > budget_chars):
+            return False
+        chosen[n.id] = n
+        size += length
+        return True
+
+    for n in nodes[:3]:
+        take(n)
+    seen_sections: set[str] = set()
+    for n in nodes:
+        sec = n.location.section or n.title or ""
+        if sec and sec not in seen_sections:
+            seen_sections.add(sec)
+            take(n)
+    for n in nodes:  # what is left of the budget: further fragments in order
+        take(n)
+    order = {n.id: i for i, n in enumerate(nodes)}
+    return sorted(chosen.values(), key=lambda n: order[n.id])
+
+
 def answer_from_uploads(store: UploadStore, infos: list[UploadInfo], question: str, llm, *, reranker=None,
                         max_source_chars: int = 2500, reasoning_budget: int | None = None, route: str | None = None):
     """ТЗ ч.2 S16 routing: a file within the effective budget goes into the context whole; a larger one
@@ -417,7 +453,14 @@ def answer_from_uploads(store: UploadStore, infos: list[UploadInfo], question: s
     total = sum(len(n.text or "") for n in nodes)
     budget = store.budget_chars
     longest = max((len(n.text or "") for n in nodes), default=0)
-    if mode == "whole" or (mode == "self_route" and total <= budget):
+    if total > budget and mode != "index" and OVERVIEW.search(question):
+        picked = overview_nodes(nodes, budget)
+        hits = [Hit(node=n, score=1.0, rank=k) for k, n in enumerate(picked, start=1)]
+        answer = generate_answer(question, hits, llm, _longest(hits, max_source_chars), reasoning_budget,
+                                 note=UNTRUSTED_NOTE + " Вопрос обзорный: фрагменты — начало файла и начала его разделов; "
+                                 "опиши по ним, о чём файл, его цель, основные идеи и выводы.")
+        used = "overview"
+    elif mode == "whole" or (mode == "self_route" and total <= budget):
         if total <= budget:
             hits = [Hit(node=n, score=1.0, rank=k) for k, n in enumerate(nodes, start=1)]
             answer = generate_answer(question, hits, llm, max(max_source_chars, longest), reasoning_budget,

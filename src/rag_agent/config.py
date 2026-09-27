@@ -96,12 +96,16 @@ class LLMConfig(BaseModel):
     temperature: float = 0.0
     think: bool = False
     num_ctx: int = 16384
-    max_tokens: int = 1024
-    timeout_s: float = 300.0
+    # generated tokens per call when the caller sets no limit: answers (1024 cut long answers mid-sentence)
+    max_tokens: int = 4096
+    timeout_s: float = 600.0
 
 
 class GenerationConfig(BaseModel):
     max_source_chars: int = 2500
+    # detailed: explained answers with structure and tables (the chat); concise: the short answers of the
+    # evaluation runs up to Э17 (set it in an ablation spec to reproduce them)
+    style: Literal["detailed", "concise"] = "detailed"
 
 
 class ReasoningConfig(BaseModel):
@@ -218,13 +222,13 @@ class WebConfig(BaseModel):
     searxng_url: str = "http://127.0.0.1:8888"
     searxng_image: str = "searxng/searxng"
     results: int = 8
-    pages: int = 3  # pages read per question
+    pages: int = 4  # pages read per question
     page_max_mb: float = 3.0
     timeout_s: float = 15.0
     cache_days: float = 7.0
     search_cache_hours: float = 24.0  # the same query within a day is answered from the disk cache
     min_interval_s: float = 1.5  # between queries to SearXNG: its engines suspend clients that send bursts
-    passages: int = 6  # compressed fragments given to the answer
+    passages: int = 6  # pages (their compressed fragments) given to the answer
     # primary sources first, aggregators and SEO sites last (S19)
     prefer: list[str] = ["arxiv.org", "aclanthology.org", "openreview.net", "github.com", "pypi.org", "docs.python.org",
                          "readthedocs.io", "pytorch.org", "scikit-learn.org", "numpy.org", "pandas.pydata.org",

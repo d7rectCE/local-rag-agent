@@ -89,6 +89,7 @@ class AskRequest(BaseModel):
     code: Literal["off", "auto"] | None = None  # the chat may run code (code agent, run_code); config default
     sandbox_net: bool = False  # the UI toggle: code tasks may run with network, each after a confirmation
     model: str | None = None  # another installed chat model for this request
+    upload_fallback: bool = False  # files stay attached in the chat: when they do not answer, route as usual
 
 
 WEBUI = Path(__file__).with_name("webui")
@@ -425,6 +426,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
                 code=req.code,
                 sandbox_net=req.sandbox_net,
                 model=req.model,
+                upload_fallback=req.upload_fallback,
             )
             if req.dialog_id:
                 if not req.replace_last:

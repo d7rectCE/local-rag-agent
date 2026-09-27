@@ -64,17 +64,18 @@ retrieval:
 
 llm:
   provider: ollama                    # ollama | openai (any OpenAI-compatible endpoint)
-  model: qwen3.5:9b
+  model: huihui_ai/Qwen3.8-abliterated:latest  # 27B; the reports up to Э17 used qwen3.5:9b
   base_url: http://localhost:11434
   api_key_env: null                   # env var with the API key for provider=openai
   temperature: 0.0
   think: false
   num_ctx: 16384
-  max_tokens: 1024
-  timeout_s: 300
+  max_tokens: 4096
+  timeout_s: 600
 
 generation:
   max_source_chars: 2500              # per retrieved fragment in the prompt
+  style: detailed                     # detailed (chat) | concise (the eval runs up to Э17)
 
 reasoning:                            # ТЗ ч.2 S15
   mode: auto                          # off | on | auto: the router asks for reasoning on comparisons, "why", multi-fact questions
@@ -123,7 +124,7 @@ code:                                 # ТЗ ч.2 S17: code agent in a Docker sa
 web:                                  # ТЗ ч.2 S19: web gateway through a local SearXNG (rag searxng start)
   mode: "off"                         # off | auto (temporal / external questions, irrelevant corpus results) | always
   searxng_url: http://127.0.0.1:8888
-  pages: 3                            # pages read per question; main text extracted, cached for cache_days
+  pages: 4                            # pages read per question; main text extracted, cached for cache_days
   cache_days: 7
   search_cache_hours: 24               # the same query within a day comes from the disk cache
   min_interval_s: 1.5                  # between queries: upstream engines suspend clients that send bursts

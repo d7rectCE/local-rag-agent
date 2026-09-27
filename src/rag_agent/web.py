@@ -226,6 +226,21 @@ search:
   formats: [html, json]
 ui:
   static_use_hash: true
+engines:  # DuckDuckGo answers CAPTCHAs and Google CSE times out from a home IP; these respond
+  - name: google
+    disabled: false
+  - name: bing
+    disabled: false
+  - name: yahoo
+    disabled: false
+  - name: mojeek
+    disabled: false
+  - name: startpage
+    disabled: false
+  - name: duckduckgo
+    disabled: true
+  - name: google cse
+    disabled: true
 """
 CONTAINER = "rag-searxng"
 

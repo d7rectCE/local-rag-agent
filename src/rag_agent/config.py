@@ -201,6 +201,12 @@ class CodeConfig(BaseModel):
     # the whole corpus read-only at /corpus: off by default — it would expose folders excluded from indexing
     # (e.g. "Аккаунты"); the working copy already holds the filtered text files
     mount_corpus: bool = False
+    # the chat hands tasks that need running code to the code agent and gives the research agent run_code
+    # (one agent for the user, no separate code mode); off: code runs only through /code and `rag code`
+    chat: Literal["off", "auto"] = "auto"
+    # network in the sandbox: never (NFR8 as written) or confirm — the user turns it on per request and
+    # confirms every task that runs with it (downloads, pip install into the working copy)
+    network: Literal["never", "confirm"] = "confirm"
 
 
 class WebConfig(BaseModel):

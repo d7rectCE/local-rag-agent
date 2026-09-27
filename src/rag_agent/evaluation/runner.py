@@ -150,7 +150,7 @@ def evaluate_item(engine: Engine, item: EvalItem, *, retrieval_k: int, top_k: in
             return r
         uploads = [_upload(engine, es_dir, item.upload).id] if item.upload else None
         ans = engine.ask(item.question, history=item.history, top_k=top_k, mode=mode, route=route, reasoning=reasoning,
-                         uploads=uploads, session=EVAL_SESSION if uploads else None)
+                         uploads=uploads, session=EVAL_SESSION if uploads else None, code="off")
         if item.upload:
             r.upload = item.upload
             r.upload_route = next((s.detail.get("route") for s in ans.trace if s.name == "upload"), None)

@@ -110,7 +110,7 @@ function loadPrefs() {
   try { return JSON.parse(localStorage.getItem(PREFS_KEY) || '{}'); } catch { return {}; }
 }
 function savePrefs() {
-  const p = { route: S.route, reasoning: S.reasoning, web: S.web, settings: S.settings };
+  const p = { route: S.route, reasoning: S.reasoning, web: S.web, sandboxNet: S.sandboxNet, model: S.model, settings: S.settings };
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch { /* private mode */ }
 }
 
@@ -127,8 +127,10 @@ const S = {
   route: prefs.route || 'auto',
   reasoning: prefs.reasoning || null,
   web: !!prefs.web,
-  code: false,
-  settings: { agent: 'auto', webMode: 'auto', top_k: null, mode: null, rerank: null, symbols: null, ...(prefs.settings || {}) },
+  sandboxNet: !!prefs.sandboxNet,  // code may run with network; every such task is confirmed
+  model: prefs.model || null,      // null: the configured model
+  models: null,                    // {default, models: [...]} from /models
+  settings: { agent: 'auto', webMode: 'auto', code: 'auto', top_k: null, mode: null, rerank: null, symbols: null, ...(prefs.settings || {}) },
   busy: null,         // {kind, text, uploads, started}
   error: null,        // {kind, text, message}
   selected: null,     // id of the answer turn shown in the right panel
@@ -188,6 +190,10 @@ async function loadStatus() {
   return st;
 }
 async function loadPolicy() { S.policy = await api('GET', '/policy'); }
+async function loadModels() {
+  S.models = await api('GET', '/models');
+  if (S.model && !S.models.models.some((m) => m.name === S.model)) { S.model = null; savePrefs(); } // removed from Ollama
+}
 async function loadDialogs() { S.dialogs = await api('GET', '/dialogs'); renderDialogs(); }
 async function loadUploads() {
   S.uploads = S.dialog ? await api('GET', `/uploads?session=${encodeURIComponent(S.dialog.id)}`).catch(() => []) : [];
@@ -353,17 +359,23 @@ function renderDialogs() {
   }
 }
 
+const shortModel = (name) => (name || '').replace(/^ollama:/, '');
+
 function renderModel() {
   const el = $('#model');
   const llm = S.status?.llm || {};
-  if (!changed('model', [llm.name, llm.available, S.status?.gpu, S.status?.embedder?.device, document.documentElement.dataset.theme])) return;
+  const installed = S.models?.models?.map((m) => m.name);
+  if (!changed('model', [llm.name, llm.available, S.model, installed, S.status?.gpu, S.status?.embedder?.device, document.documentElement.dataset.theme])) return;
   el.replaceChildren();
   const dev = S.status?.gpu || (S.status?.embedder?.device === 'cpu' ? 'CPU' : S.status?.embedder?.device || '');
   const dark = document.documentElement.dataset.theme === 'dark';
+  const name = S.model || shortModel(llm.name) || '—';
+  const available = S.model ? (installed ? installed.includes(S.model) : true) : llm.available !== false;
   el.append(
     h('div', { class: 'model-icon', icon: 'chip' }),
-    h('div', { class: 'model-name', title: llm.name || '' }, h('b', { text: (llm.name || '—').replace(/^ollama:/, '') }), h('span', { text: ['Ollama', dev].filter(Boolean).join(' · ') })),
-    h('span', { class: `dot${llm.available === false ? ' off' : ''}`, role: 'img', 'aria-label': llm.available === false ? 'Модель недоступна' : 'Модель запущена', title: llm.available === false ? 'Модель недоступна: запустите Ollama' : 'Модель запущена' }),
+    h('button', { type: 'button', class: 'model-name', title: 'Выбрать модель', 'aria-label': `Модель ${name}. Выбрать другую`, onclick: openModelModal },
+      h('b', { text: name }), h('span', { text: ['Ollama', dev].filter(Boolean).join(' · ') + (S.model ? ' · выбрана' : '') })),
+    h('span', { class: `dot${available ? '' : ' off'}`, role: 'img', 'aria-label': available ? 'Модель запущена' : 'Модель недоступна', title: available ? 'Модель доступна' : 'Модель недоступна: запустите Ollama' }),
     h('button', { type: 'button', class: 'mini-btn', 'aria-label': dark ? 'Светлая тема' : 'Тёмная тема', title: dark ? 'Светлая тема' : 'Тёмная тема', onclick: toggleTheme, icon: [dark ? 'sun' : 'moon', 15] }),
     h('button', { type: 'button', class: 'mini-btn', 'aria-label': 'Параметры ответа', title: 'Параметры ответа', onclick: openSettingsModal, icon: ['gear', 15] }),
   );
@@ -407,11 +419,13 @@ function renderControls() {
   segmented($('#reasoning'), REASONING, S.reasoning || 'auto', (k) => { S.reasoning = k; savePrefs(); renderControls(); }, label);
   $('#web-toggle').setAttribute('aria-pressed', String(S.web));
   $('#web-toggle').title = S.web ? (S.settings.webMode === 'always' ? 'Интернет: искать всегда' : 'Интернет: когда нужен') : 'Интернет выключен';
-  $('#code-toggle').setAttribute('aria-pressed', String(S.code));
-  $('#composer').classList.toggle('code-mode', S.code);
-  $('#msg').placeholder = S.code
-    ? 'Опишите задачу для код-агента: что написать, исправить или запустить…'
-    : 'Спросите о файлах, попросите написать код или найти свежие данные…';
+  const net = $('#net-toggle');
+  const netAllowed = S.policy?.sandbox_network !== 'never' && S.settings.code !== 'off';
+  net.hidden = !netAllowed;
+  net.setAttribute('aria-pressed', String(S.sandboxNet && netAllowed));
+  net.title = S.sandboxNet
+    ? 'Код может выходить в интернет (скачать данные, pip install); каждый такой запуск нужно разрешить'
+    : 'Код в песочнице работает без интернета';
   renderAttachments();
   renderSend();
 }
@@ -491,6 +505,7 @@ function renderMarkdown(text, sources) {
 function sourceKind(s) {
   if (s.file_type === 'web') return 'веб';
   if (s.file_type === 'catalog') return 'каталог';
+  if (s.file_type === 'sandbox') return 'вычисление';
   if (s.node_type === 'log_chunk' || /\.log$/i.test(s.file_path)) return 'лог';
   return { py: 'код', ipynb: 'ноутбук', pdf: 'pdf', docx: 'docx', txt: 'текст', png: 'изображение' }[s.file_type] || s.file_type;
 }
@@ -499,6 +514,7 @@ function sourceName(s) {
     try { return new URL(s.file_path).hostname.replace(/^www\./, ''); } catch { return s.file_path; }
   }
   if (s.file_type === 'catalog') return 'SQL-запрос';
+  if (s.file_type === 'sandbox') return 'код в песочнице';
   return basename(s.file_path.replace(/^upload:/, ''));
 }
 function sourceLoc(s) {
@@ -508,6 +524,7 @@ function sourceLoc(s) {
 
 function routeLabel(a) {
   const web = (a.sources || []).some((s) => s.file_type === 'web');
+  if (a.route === 'code') return 'код-агент';
   if (a.route === 'general') return 'общие знания';
   if (a.route === 'web') return (a.sources || []).some((s) => s.file_type !== 'web') ? 'веб + мои файлы' : 'веб';
   if (a.route === 'upload') return 'загруженный файл';
@@ -534,11 +551,14 @@ function renderAnswer(turn, turns, idx) {
     S.selected = turn.id;
     renderPanel();
   });
-  const agent = (a.trace || []).some((st) => st.name === 'agent');
+  const agent = (a.trace || []).some((st) => st.name === 'agent' || st.name === 'code_agent');
+  const def = S.models?.default || shortModel(S.status?.llm?.name);
+  const model = shortModel(a.model);
   art.append(h('div', { class: 'answer-head' },
-    h('span', { class: 'avatar', icon: ['layers', 13, 2.2] }),
+    h('span', { class: 'avatar', icon: [a.route === 'code' ? 'terminal' : 'layers', 13, 2.2] }),
     h('span', { class: 'who', text: agent ? 'Агент' : 'Ответ' }),
     h('span', { class: 'badge', text: routeLabel(a) }),
+    model && def && model !== def ? h('span', { class: 'mono', title: 'Модель этого ответа', text: model }) : null,
     h('span', { text: fmtSec(a.latency_s) }),
     h('button', { type: 'button', class: 'trace-link', onclick: () => { S.selected = turn.id; renderPanel(); openTraceModal(a); } }, 'трасса')));
 
@@ -561,7 +581,9 @@ function renderAnswer(turn, turns, idx) {
   if (a.pending && a.pending.length) {
     const p = a.pending[0];
     const q = questionOf(turns, idx);
-    const what = p.tool === 'web_search' ? `поиск в интернете: «${p.args?.query || ''}»` : `${p.tool} ${JSON.stringify(p.args || {})}`;
+    const what = p.tool === 'web_search' ? `поиск в интернете: «${p.args?.query || ''}»`
+      : p.tool === 'run_code' && p.args?.network ? `код с доступом в интернет: «${p.args.task || ''}»`
+        : `${p.tool} ${JSON.stringify(p.args || {})}`;
     art.append(h('div', { class: 'notice warn' },
       h('span', { class: 'ic', icon: ['alert', 16, 2] }),
       h('div', { class: 'body' },
@@ -573,7 +595,23 @@ function renderAnswer(turn, turns, idx) {
           h('button', { type: 'button', class: 'btn-pill', onclick: (e) => { e.currentTarget.closest('.notice').remove(); } }, 'Не надо')))));
   }
 
-  if (a.answer) art.append(renderMarkdown(a.answer, a.sources));
+  if (a.code) art.append(codeCard(a.code));  // the chat handed the task to the code agent
+  else if (a.answer && !(a.pending || []).some((p) => p.tool === 'run_code')) art.append(renderMarkdown(a.answer, a.sources));
+  if ((a.suggest || []).includes('web') && !(a.pending || []).length) {
+    const q = questionOf(turns, idx);
+    art.append(h('div', { class: 'notice' }, h('span', { class: 'ic', icon: ['globe', 16, 2] }),
+      h('div', { class: 'body' },
+        h('span', { text: 'Для ответа, похоже, нужны свежие данные из интернета, а он выключен.' }),
+        h('div', { class: 'actions' },
+          h('button', { type: 'button', class: 'btn-pill accent', disabled: !!S.busy || !q, onclick: () => {
+            if (!q) return;
+            S.web = true;
+            savePrefs();
+            renderControls();
+            renderAccessCard();
+            ask(q.content, { replaceLast: true, from: { ...(q.payload || {}), web: S.settings.webMode || 'auto' } });
+          } }, 'Включить интернет и спросить снова')))));
+  }
   if (a.general) {
     art.append(h('div', { class: 'general-block' },
       h('span', { class: 'general-label', icon: ['info', 13, 2] }, 'Из общих знаний модели, не из ваших файлов'),
@@ -619,8 +657,11 @@ function diffView(diff) {
   return box;
 }
 
-function renderCode(turn) {
-  const r = turn.payload || {};
+function renderCode(turn) {  // a code task of the earlier explicit code mode
+  return codeCard(turn.payload || {});
+}
+
+function codeCard(r) {
   const card = h('article', { class: 'code-card', 'aria-label': 'Код-агент' });
   const passed = testsPassed(r);
   let status;
@@ -630,7 +671,8 @@ function renderCode(turn) {
   else status = h('span', { class: 'tag danger push', text: 'ошибка' });
   card.append(h('div', { class: 'code-head' },
     h('span', { class: 'code-icon', icon: ['terminal', 15, 2] }), h('span', { class: 'title', text: 'Код-агент' }),
-    h('span', { class: 'tag', text: 'без сети' }), h('span', { class: 'tag', text: 'корпус: чтение' }),
+    r.network ? h('span', { class: 'tag warn', title: 'Сеть была разрешена для этой задачи', text: 'с сетью' }) : h('span', { class: 'tag', text: 'без сети' }),
+    h('span', { class: 'tag', text: 'корпус: чтение' }),
     r.pipeline && r.pipeline !== 'free' ? h('span', { class: 'tag accent', text: `конвейер ${r.pipeline}` }) : null,
     status));
   if (r.diff) card.append(diffView(r.diff));
@@ -717,14 +759,13 @@ function renderWelcome() {
     { k: 'Мои файлы', q: 'В каком эксперименте лучший ROC-AUC и чем он отличается от остальных?' },
     { k: 'Код', q: 'Где определена функция подсчёта метрик и где она вызывается?' },
     { k: 'Интернет', q: 'Какая сейчас последняя версия scikit-learn?', web: true },
-    { k: 'Код-агент', q: 'Напиши скрипт, который соберёт метрики из всех ноутбуков в CSV', code: true },
+    { k: 'Запуск кода', q: 'Собери метрики из всех ноутбуков в CSV и построй по ним график' },
   ];
   return h('div', { class: 'welcome' },
     h('div', { class: 'brand-logo', icon: ['layers', 24, 2] }),
     h('h2', { text: c ? 'С чего начнём?' : 'Выберите рабочую папку' }),
-    h('p', { text: c ? `Спросите о файлах из «${basename(c.root)}», попросите написать код или найти свежие данные в интернете. Ответы по файлам — со ссылками на строку, ячейку или страницу.` : 'Агент проиндексирует код, ноутбуки и документы и будет отвечать по ним со ссылками. Общие вопросы работают и без папки.' }),
+    h('p', { text: c ? `Спросите о файлах из «${basename(c.root)}» или о чём угодно ещё. Агент сам решит, искать ли в файлах, в интернете или запустить код в песочнице. Ответы по файлам — со ссылками на строку, ячейку или страницу, изменения в папке — только после вашего подтверждения.` : 'Агент проиндексирует код, ноутбуки и документы и будет отвечать по ним со ссылками. Общие вопросы работают и без папки.' }),
     c ? h('div', { class: 'examples' }, examples.map((e) => h('button', { type: 'button', class: 'example', onclick: () => {
-      S.code = !!e.code;
       if (e.web) S.web = true;
       savePrefs();
       $('#msg').value = e.q;
@@ -754,7 +795,7 @@ function renderThread() {
     const label = h('span', { class: 'busy-label' });
     const update = () => {
       const s = (Date.now() - S.busy.started) / 1000;
-      label.textContent = `${S.busy.kind === 'code' ? 'Код-агент работает в песочнице' : 'Ищу и думаю'} · ${Math.floor(s)} с`;
+      label.textContent = `${S.busy.kind === 'code' ? 'Код-агент работает в песочнице' : s > 20 ? 'Работаю: поиск, рассуждение или запуск кода' : 'Ищу и думаю'} · ${Math.floor(s)} с`;
     };
     update();
     clearInterval(tickTimer);
@@ -790,7 +831,9 @@ function traceGroups(a) {
   for (const st of a.trace || []) {
     const d = st.detail || {};
     switch (st.name) {
-      case 'route': add('route', 'Маршрутизатор', 'c-router', st.duration_s, a.route === 'upload' ? 'загруженный файл' : (d.route === 'general' ? 'общие знания' : 'мои файлы') + (d.web ? ' + веб' : '')); break;
+      case 'route': add('route', 'Маршрутизатор', 'c-router', st.duration_s, a.route === 'upload' ? 'загруженный файл' : a.route === 'code' ? 'запуск кода' : (d.route === 'general' ? 'общие знания' : 'мои файлы') + (d.web ? ' + веб' : '')); break;
+      case 'route_code': add('route', 'Маршрутизатор', 'c-router', st.duration_s); break;
+      case 'code_agent': add('code', 'Код-агент', 'c-agent', st.duration_s, `${d.runs || 0} ${plural(d.runs || 0, 'запуск', 'запуска', 'запусков')}${d.network ? ' · с сетью' : ''}`); break;
       case 'retrieve': add('search', 'Поиск', 'c-search', st.duration_s, `${(d.hits || []).length} фрагм.`); break;
       case 'sql': add('sql', 'SQL к каталогу', 'c-search', st.duration_s, d.error ? 'ошибка' : `${d.rows} ${plural(d.rows || 0, 'строка', 'строки', 'строк')}`); break;
       case 'crag': add('crag', 'Проверка релевантности', 'c-ok', st.duration_s, { correct: 'релевантно', ambiguous: 'частично', incorrect: 'не найдено' }[d.verdict] || d.verdict || ''); break;
@@ -812,7 +855,7 @@ function traceGroups(a) {
       default: break;
     }
   }
-  if (a.route !== 'general' && a.answerable) {
+  if (a.route !== 'general' && a.route !== 'code' && a.answerable) {
     const markers = new Set([...(a.answer || '').matchAll(CITE_RE)].map((m) => m[1])).size;
     add('cite', 'Проверка ссылок', 'c-ok', 0, markers ? `${(a.citations || []).length} из ${markers}` : 'без ссылок');
   }
@@ -853,7 +896,7 @@ function renderFilesCard() {
     h('button', { type: 'button', class: 'mini-btn', 'aria-label': 'Загрузить файл', title: 'Загрузить файл', onclick: () => $('#file-input').click(), icon: ['upload', 15] })));
   const rows = [];
   for (const t of S.dialog?.turns || []) {
-    const r = t.kind === 'code' ? t.payload : null;
+    const r = t.kind === 'code' ? t.payload : t.kind === 'answer' ? t.payload?.code : null;
     if (r && (r.changed || []).length && !(r.applied || []).length && !r.rejected) {
       for (const [st, path] of r.changed) {
         rows.push(h('div', { class: 'file-row' }, h('span', { class: 'ext', text: extBadge(path) }),
@@ -883,7 +926,11 @@ function renderAccessCard() {
   const row = (label, text, cls, title) => h('div', { class: 'access-row', title: title || '' }, h('span', { text: label }), h('span', { class: `pill ${cls}`, text }));
   el.append(row(c ? `Папка ${basename(c.root)}` : 'Рабочая папка', c ? 'чтение' : 'не выбрана', c ? 'ok' : 'tag', 'Агент читает файлы корпуса и ничего в них не меняет'));
   el.append(row('Запись файлов', 'спрашивать', 'warn', 'Изменения код-агента попадают в папку только по кнопке «Применить»'));
-  const sandbox = p?.sandbox === 'no_network' ? ['без сети', 'tag', 'Код исполняется в контейнере Docker без сети, с лимитами'] : ['нет Docker', 'danger', 'Запустите Docker Desktop, чтобы код-агент мог исполнять код'];
+  let sandbox;
+  if (p?.sandbox !== 'no_network') sandbox = ['нет Docker', 'danger', 'Запустите Docker Desktop, чтобы агент мог исполнять код'];
+  else if (S.settings.code === 'off') sandbox = ['не запускать', 'tag', 'Выполнение кода выключено в параметрах'];
+  else if (S.sandboxNet && p?.sandbox_network !== 'never') sandbox = ['сеть по запросу', 'warn', 'Код исполняется в контейнере Docker; доступ в интернет — только после вашего подтверждения для каждой задачи'];
+  else sandbox = ['без сети', 'tag', 'Код исполняется в контейнере Docker без сети, с лимитами'];
   el.append(row('Песочница', ...sandbox));
   const web = S.web ? (S.settings.webMode === 'always' ? ['всегда', 'accent'] : ['адаптивно', 'accent']) : ['выключен', 'tag'];
   el.append(row('Интернет', ...web, 'Наружу уходят только поисковые запросы из вопроса и загрузки страниц; запрос с именами из ваших файлов требует подтверждения'));
@@ -926,6 +973,10 @@ function askBody(text, opts = {}) {
     mode: st.mode || null,
     rerank: st.rerank,
     symbols: st.symbols,
+    code: opts.replaceLast ? (from.code || st.code || null) : (st.code || null),
+    // a confirmation re-asks exactly as asked: the same network toggle and model
+    sandbox_net: opts.replaceLast ? !!from.sandbox_net : S.sandboxNet,
+    model: opts.replaceLast ? (from.model || null) : S.model,
     confirmed: opts.confirmed || [],
     replace_last: !!opts.replaceLast,
   };
@@ -935,7 +986,7 @@ async function ask(text, opts = {}) {
   return send(text, 'ask', opts);
 }
 
-async function send(text, kind = S.code ? 'code' : 'ask', opts = {}) {
+async function send(text, kind = 'ask', opts = {}) {
   text = (text || '').trim();
   if (!text || S.busy) return;
   // busy at once: a second Enter while the dialog is being created must not send the question twice
@@ -960,7 +1011,7 @@ async function send(text, kind = S.code ? 'code' : 'ask', opts = {}) {
   renderAll();
   scrollToBottom();
   try {
-    if (kind === 'code') await api('POST', '/code', { task: text, dialog_id: S.dialog.id });
+    if (kind === 'code') await api('POST', '/code', { task: text, dialog_id: S.dialog.id, model: S.model });
     else await api('POST', '/ask', askBody(text, opts));
     if (!opts.replaceLast) S.attachments = [];
     await reloadDialog();
@@ -1176,6 +1227,9 @@ function openSettingsModal() {
   const agentSeg = h('div', { class: 'segmented', role: 'group', 'aria-label': 'Агент' });
   const drawAgent = (v) => segmented(agentSeg, { off: 'Выкл', auto: 'Авто', always: 'Всегда' }, v, (k) => { st.agent = k; savePrefs(); drawAgent(k); });
   drawAgent(st.agent || 'auto');
+  const codeSeg = h('div', { class: 'segmented', role: 'group', 'aria-label': 'Выполнение кода' });
+  const drawCode = (v) => segmented(codeSeg, { auto: 'Когда нужно', off: 'Не запускать' }, v, (k) => { st.code = k; savePrefs(); drawCode(k); renderControls(); renderAccessCard(); });
+  drawCode(st.code || 'auto');
   const webSeg = h('div', { class: 'segmented', role: 'group', 'aria-label': 'Интернет' });
   const drawWeb = (v) => segmented(webSeg, { auto: 'Когда нужен', always: 'Всегда искать' }, v, (k) => { st.webMode = k; savePrefs(); drawWeb(k); renderControls(); renderAccessCard(); });
   drawWeb(st.webMode || 'auto');
@@ -1194,7 +1248,9 @@ function openSettingsModal() {
     h('div', { class: 'field' }, h('span', { class: 'label', text: 'Тема' }), themeSeg),
     h('div', { class: 'field' }, h('span', { class: 'label', text: 'Акцент' }), accents),
     h('div', { class: 'field' }, h('span', { class: 'label', text: 'Агент' }), agentSeg,
-      h('span', { class: 'hint', text: 'Агент сам вызывает поиск, точный поиск имён, SQL к каталогу и чтение файлов. «Авто» — только для агрегатных и многошаговых вопросов.' })),
+      h('span', { class: 'hint', text: 'Агент сам вызывает поиск, точный поиск имён, SQL к каталогу, чтение файлов и расчёт в песочнице. «Авто» — только для агрегатных и многошаговых вопросов.' })),
+    h('div', { class: 'field' }, h('span', { class: 'label', text: 'Выполнение кода' }), codeSeg,
+      h('span', { class: 'hint', text: 'Агент сам решает, когда запустить код: задачу с файлами (построить график, исправить ошибку, запустить ноутбук) выполняет код-агент в копии папки, расчёт для ответа — в песочнице. В вашу папку изменения попадают только по кнопке «Применить». Сеть для кода включается переключателем под полем ввода.' })),
     h('div', { class: 'field' }, h('span', { class: 'label', text: 'Интернет, когда включён' }), webSeg,
       h('span', { class: 'hint', text: '«Когда нужен» — только для свежих и внешних фактов или когда в файлах ничего нет. Запрос с именами из ваших файлов всегда требует подтверждения.' })),
     h('div', { class: 'field' }, h('span', { class: 'label', text: 'Поиск по файлам' }), modeSeg,
@@ -1202,9 +1258,35 @@ function openSettingsModal() {
       sw('Реранкер', 'rerank', retr.rerank ?? true, 'Кросс-энкодер переупорядочивает найденное: точнее, но медленнее'),
       sw('Точный поиск имён', 'symbols', retr.symbols ?? true, 'Для имён функций и классов из вопроса добавляет их определения и места вызова')),
   ], [
-    h('button', { type: 'button', class: 'btn ghost', onclick: () => { S.settings = { agent: 'auto', webMode: 'auto', top_k: null, mode: null, rerank: null, symbols: null }; savePrefs(); closeModal(); toast('Параметры сброшены'); } }, 'По умолчанию'),
+    h('button', { type: 'button', class: 'btn ghost', onclick: () => { S.settings = { agent: 'auto', webMode: 'auto', code: 'auto', top_k: null, mode: null, rerank: null, symbols: null }; savePrefs(); closeModal(); renderControls(); renderAccessCard(); toast('Параметры сброшены'); } }, 'По умолчанию'),
     h('button', { type: 'button', class: 'btn accent', onclick: closeModal }, 'Готово'),
   ]);
+}
+
+async function openModelModal() {
+  if (!S.models) await guarded(loadModels);
+  const def = S.models?.default || shortModel(S.status?.llm?.name);
+  const cur = S.model || def;
+  const list = h('div', { class: 'list models' });
+  for (const m of S.models?.models || []) {
+    const meta = [m.parameters, m.quantization, m.size ? fmtSize(m.size) : ''].filter(Boolean).join(' · ');
+    list.append(h('button', { type: 'button', 'aria-pressed': String(m.name === cur), onclick: () => {
+      S.model = m.name === def ? null : m.name;
+      savePrefs();
+      closeModal();
+      renderModel();
+      toast(`Модель: ${m.name}`);
+    } },
+    h('span', { class: 'folder-icon', icon: m.name === cur ? 'check' : 'chip' }),
+    h('span', { style: 'display:flex;flex-direction:column;min-width:0' },
+      h('b', {}, m.name, m.name === def ? h('span', { class: 'tag', style: 'margin-left:8px', text: 'по умолчанию' }) : null),
+      h('span', { class: 'path', text: meta }))));
+  }
+  if (!list.childElementCount) list.append(h('p', { class: 'small muted', style: 'margin:0', text: 'Ollama не отвечает или в ней нет моделей: ollama pull qwen3.5:9b' }));
+  openModal('Модель', [
+    list,
+    h('p', { class: 'hint', style: 'margin:0' }, `Выбранная модель отвечает на новые вопросы в этом браузере и работает код-агентом. Индексация и каталог экспериментов остаются на модели по умолчанию (${def}), на ней же сделаны все замеры в отчётах. Две модели одновременно в память видеокарты могут не поместиться: Ollama выгрузит прежнюю, и первый ответ новой будет дольше.`),
+  ], [h('button', { type: 'button', class: 'btn accent', onclick: closeModal }, 'Готово')]);
 }
 
 function renameDialog(d) {
@@ -1298,7 +1380,13 @@ function bindEvents() {
   $('#file-input').addEventListener('change', (e) => { uploadFiles([...e.target.files]); e.target.value = ''; });
   $('#folder-btn').addEventListener('click', openFolderModal);
   $('#web-toggle').addEventListener('click', () => { S.web = !S.web; savePrefs(); renderControls(); renderAccessCard(); });
-  $('#code-toggle').addEventListener('click', () => { S.code = !S.code; renderControls(); $('#msg').focus(); });
+  $('#net-toggle').addEventListener('click', () => {
+    S.sandboxNet = !S.sandboxNet;
+    savePrefs();
+    renderControls();
+    renderAccessCard();
+    if (S.sandboxNet) toast('Код сможет выходить в интернет — каждый такой запуск нужно будет разрешить');
+  });
   $('#open-trace').addEventListener('click', () => { const t = selectedAnswer(); if (t) openTraceModal(t.payload); else toast('Ответов в этом диалоге пока нет'); });
   $('#open-sidebar').addEventListener('click', () => { $('#sidebar').classList.add('open'); $('#scrim').hidden = false; });
   $('#close-sidebar').addEventListener('click', closeSidebar);
@@ -1316,7 +1404,7 @@ async function boot() {
   bindEvents();
   renderControls();
   try {
-    await Promise.all([loadStatus(), loadPolicy().catch(() => {}), loadDialogs()]);
+    await Promise.all([loadStatus(), loadPolicy().catch(() => {}), loadModels().catch(() => {}), loadDialogs()]);
   } catch (e) {
     toast(e.message, 'error');
   }

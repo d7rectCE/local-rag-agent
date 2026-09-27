@@ -6,10 +6,16 @@ Routes:
     general — general knowledge, new code, conversation -> answered by the LLM directly
 
 Stage 7 adds agentic routes (SQL, multi-step) on top of the same interface.
+
+In the chat a separate check decides whether the request needs running code (the task then
+goes to the code agent). It is not a field of the router's answer: adding it to the router
+prompt shifted the 9B router's other decisions on the eval sets (route accuracy 104 -> 100
+of 115, twice the web false positives), so the evaluated router stays as it was.
 """
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass
 from typing import Literal
@@ -106,3 +112,45 @@ def route_question(question: str, history: list[dict] | None, llm: BaseLLM) -> R
                              aggregate=bool(data.get("aggregate", False)), web=bool(data.get("web", False)))
     except LLMError:
         return RouteDecision("corpus", question, time.perf_counter() - t0, fallback=True)
+
+
+# --- does the request need running code (the chat's hand-off to the code agent, Э15) ---------------
+
+# cheap pre-filter: only requests with an action word reach the model check
+CODE_HINT = re.compile(
+    r"запус|выполни|прогон|построй|нарисуй|сохрани|создай|исправь|почини|посчитай|пересчитай|вычисли|собери|"
+    r"сгенерируй|экспортир|конвертир|преобразуй|скачай|установи|протестируй|попробуй|"
+    r"\b(run|execute|plot|fix|save|compute|create|generate|convert|download|install)\b",
+    re.IGNORECASE)
+
+CODE_PROMPT = """Реши, нужно ли для выполнения просьбы пользователя запустить код над его файлами или данными.
+
+true — просят сделать действие: запустить скрипт, ноутбук или тесты; исправить ошибку, из-за которой падает запуск; построить график и сохранить картинку; посчитать что-то по файлам или логам и сохранить результат; создать, изменить или преобразовать файлы в папке; скачать данные.
+false — достаточно ответа текстом: вопрос о содержимом файлов или о том, что в них есть («покажи график…», «какой результат…», «почему упало и как исправить?»); объяснение; просьба написать код прямо в ответе («напиши функцию…»).
+
+Примеры: «Построй график loss по логу обучения» — true; «Запусти 02_baseline.ipynb и проверь, что он выполняется» — true; «Исправь ошибку в train.py» — true; «Напиши функцию бинарного поиска» — false; «Покажи график ROC-AUC из ноутбука» — false; «Почему упала ячейка и как это исправить?» — false.
+
+Верни JSON: {"code": true | false}"""
+
+CODE_SCHEMA = {"type": "object", "properties": {"code": {"type": "boolean"}}, "required": ["code"],
+               "additionalProperties": False}
+
+
+@dataclass
+class CodeDecision:
+    code: bool
+    latency_s: float = 0.0
+    checked: bool = False  # the model was asked (the pre-filter matched)
+
+
+def needs_code(question: str, llm: BaseLLM) -> CodeDecision:
+    """``question`` is the standalone question (follow-ups like "try again" are already rewritten)."""
+    if not CODE_HINT.search(question or ""):
+        return CodeDecision(False)
+    t0 = time.perf_counter()
+    try:
+        data = llm.chat([{"role": "system", "content": CODE_PROMPT}, {"role": "user", "content": question}],
+                        json_schema=CODE_SCHEMA, max_tokens=20, purpose="route_code").json()
+        return CodeDecision(bool(data.get("code", False)), time.perf_counter() - t0, True)
+    except LLMError:
+        return CodeDecision(False, time.perf_counter() - t0, True)

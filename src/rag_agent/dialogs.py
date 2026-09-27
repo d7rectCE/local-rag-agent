@@ -1,7 +1,8 @@
 """Dialogs of the web UI: the list in the sidebar and the turns of each conversation.
 
 Stored in ``data_dir/dialogs.sqlite``. A turn keeps its text (the history for follow-up
-questions is the plain text of the question and answer turns) and a JSON payload with
+questions is the plain text of the turns; a code task is summarised with its status, files
+and whether the user applied it, so "what did you do?" has an answer) and a JSON payload with
 everything the UI shows: the whole answer with sources and trace, or the result of a code
 task. A reopened dialog is rendered exactly as it was answered; nothing is recomputed.
 """
@@ -145,16 +146,49 @@ class DialogStore:
                 self._conn.execute("DELETE FROM turns WHERE id = ?", (row["id"],))
 
     def update_ref(self, ref: str, payload: dict) -> int:
-        """Replace the payload of the turns that refer to ``ref`` (a code task after apply / rollback)."""
+        """Replace the code result of the turns that refer to ``ref`` (a code task after apply / reject /
+        rollback): the whole payload of a code turn, the ``code`` field of an answer from the chat."""
         with self._lock, self._conn:
-            cur = self._conn.execute("UPDATE turns SET payload = ? WHERE ref = ?",
-                                     (json.dumps(payload, ensure_ascii=False), ref))
-        return cur.rowcount
+            rows = self._conn.execute("SELECT id, kind, payload FROM turns WHERE ref = ?", (ref,)).fetchall()
+            for r in rows:
+                new = payload
+                if r["kind"] == "answer":
+                    new = {**(json.loads(r["payload"]) if r["payload"] else {}), "code": payload}
+                self._conn.execute("UPDATE turns SET payload = ? WHERE id = ?",
+                                   (json.dumps(new, ensure_ascii=False), r["id"]))
+        return len(rows)
 
     def history(self, did: str, max_turns: int = 12) -> list[dict]:
-        """Plain question / answer turns for follow-up questions, oldest first."""
+        """Turns as plain text for follow-up questions, oldest first; code tasks with their outcome."""
         with self._lock:
             rows = self._conn.execute(
-                "SELECT role, content FROM turns WHERE dialog_id = ? AND kind IN ('question', 'answer') "
-                "ORDER BY id DESC LIMIT ?", (did, max_turns)).fetchall()
-        return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
+                "SELECT role, kind, content, payload FROM turns WHERE dialog_id = ? ORDER BY id DESC LIMIT ?",
+                (did, max_turns)).fetchall()
+        out = []
+        for r in reversed(rows):
+            payload = json.loads(r["payload"]) if r["payload"] else {}
+            code = payload if r["kind"] == "code" else (payload or {}).get("code") if r["kind"] == "answer" else None
+            out.append({"role": r["role"], "content": code_summary(code) if code else r["content"]})
+        return out
+
+
+CODE_STATUS = {"done": "готово", "failed": "не удалось", "limit": "лимит шагов", "error": "ошибка", "running": "идёт"}
+
+
+def code_summary(res: dict) -> str:
+    """A code task as one assistant turn: what was done, which files, and what the user decided."""
+    parts = [f"[Код-агент, {CODE_STATUS.get(res.get('status'), res.get('status'))}] {res.get('summary') or ''}".strip()]
+    changed = [f"{st} {path}" for st, path in res.get("changed") or []]
+    if changed:
+        parts.append("Изменения в рабочей копии: " + ", ".join(changed[:12]))
+    if res.get("artifacts"):
+        parts.append("Созданы: " + ", ".join(res["artifacts"][:12]))
+    if res.get("applied"):
+        parts.append("Пользователь применил изменения к папке.")
+    elif res.get("rejected"):
+        parts.append("Пользователь отклонил изменения, в папку ничего не записано.")
+    elif changed:
+        parts.append("Изменения ждут подтверждения пользователя, в папку пока ничего не записано.")
+    if res.get("runs"):
+        parts.append(f"Запусков: {res['runs']}, неудачных: {res.get('failed_runs', 0)}.")
+    return "\n".join(parts)

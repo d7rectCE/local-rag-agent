@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from rag_agent.llm import BaseLLM, LLMError
 from rag_agent.retrieval import Hit
 
-SYSTEM_PROMPT = """Ты — ассистент по личному архиву исследовательских файлов пользователя: код на Python, Jupyter-ноутбуки, PDF и изображения.
+SYSTEM_PROMPT = """Ты — ассистент по файлам из рабочей папки пользователя: код на Python, Jupyter-ноутбуки, документы, логи и заметки.
 
 Правила:
 1. Отвечай только по фрагментам из блока <sources>. Не добавляй факты о файлах пользователя из собственных знаний.
@@ -22,9 +22,9 @@ SYSTEM_PROMPT = """Ты — ассистент по личному архиву 
 
 Верни JSON: {"answerable": true|false, "answer": "<ответ по файлам в markdown со ссылками [n]>", "general": "<дополнение из общих знаний или пустая строка>"}"""
 
-GENERAL_PROMPT = """Ты — ассистент исследователя и ML-инженера. Отвечай по существу, на языке вопроса; код оформляй блоками markdown.
-Этот ответ даётся из общих знаний, без поиска по файлам пользователя: не утверждай ничего о его файлах, коде, экспериментах и результатах. Если пользователь спрашивает о своих файлах, предложи задать вопрос в режиме «Мои файлы».
-Ты умеешь: отвечать на вопросы по файлам пользователя (код .py, ноутбуки .ipynb) со ссылками на источники, а также на общие вопросы по ML, статистике и программированию."""
+GENERAL_PROMPT = """Ты — локальный ассистент, который работает на компьютере пользователя. Помогаешь с любыми задачами: отвечаешь на вопросы по любой теме, объясняешь, советуешь, пишешь и разбираешь код и тексты. Отвечай по существу, на языке вопроса; код оформляй блоками markdown.
+Этот ответ даётся из общих знаний и истории диалога, без поиска по файлам пользователя: не утверждай ничего о содержимом его файлов, если этого нет в истории. Не говори, что что-то посмотрел, запустил или сделал, если этого нет в истории диалога. Если нужны свежие сведения (курсы, цены, новости, погода, последние версии), а интернет выключен, честно скажи, что актуального значения не знаешь, и предложи включить переключатель «Интернет» под полем ввода.
+{capabilities}"""
 
 ANSWER_SCHEMA = {
     "type": "object",
@@ -94,6 +94,10 @@ class Answer(BaseModel):
     pending: list[dict] = Field(default_factory=list)
     # web gateway (ТЗ ч.2 S19, FR16): disagreements between the user's files and the web, shown explicitly
     conflicts: list[dict] = Field(default_factory=list)
+    # actions the UI offers next to the answer: "web" — the question needs the internet, which is off
+    suggest: list[str] = Field(default_factory=list)
+    # the chat handed the task to the code agent (Э15): its result (CodeResult) with diff and artifacts
+    code: dict | None = None
 
 
 def _call(llm: BaseLLM, messages: list[dict], json_schema: dict | None, purpose: str, reasoning_budget: int | None):
@@ -214,10 +218,13 @@ def generate_answer(
 
 
 def generate_general(
-    question: str, history: list[dict], llm: BaseLLM, reasoning_budget: int | None = None
+    question: str, history: list[dict], llm: BaseLLM, reasoning_budget: int | None = None, capabilities: str = ""
 ) -> Answer:
-    """Answer from the model's general knowledge (no retrieval), with the dialogue history."""
-    messages = [{"role": "system", "content": GENERAL_PROMPT}, *history, {"role": "user", "content": question}]
+    """Answer from the model's general knowledge (no retrieval), with the dialogue history. ``capabilities``
+    tells the model what the app can do right now (folder, internet, code), so it neither denies
+    abilities it has nor claims ones that are off."""
+    system = GENERAL_PROMPT.format(capabilities=capabilities).rstrip()
+    messages = [{"role": "system", "content": system}, *history, {"role": "user", "content": question}]
     resp = _call(llm, messages, None, "general", reasoning_budget)
     return Answer(
         question=question,

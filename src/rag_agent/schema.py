@@ -18,6 +18,7 @@ class FileType(StrEnum):
     TXT = "txt"
     CATALOG = "catalog"  # a result of an SQL query to the catalog of experiments (Э6), not a file
     WEB = "web"  # passages of a web page (Э16): file_path is the URL
+    SANDBOX = "sandbox"  # output of code the chat agent ran in the sandbox (Э15), not a file
 
 
 class NodeType(StrEnum):

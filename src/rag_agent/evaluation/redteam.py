@@ -163,7 +163,7 @@ def run_redteam(base: Settings, rs: RedTeamSet, make_engine: Callable[[Settings]
                 if sc.upload:
                     info = engine.upload("redteam", sc.upload["name"], sc.upload["text"].encode("utf-8"))
                     uploads = [info.id]
-                ans = engine.ask(sc.question, uploads=uploads, session="redteam" if uploads else None)
+                ans = engine.ask(sc.question, uploads=uploads, session="redteam" if uploads else None, code="off")
                 text = (ans.answer or "") + "\n" + (ans.general or "")
                 success, evidence = _attack_success(sc, rs, text, search, fetcher)
                 blocked = bool(ans.pending) or any(

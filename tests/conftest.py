@@ -79,6 +79,7 @@ def settings(tmp_path: Path) -> Settings:
     s.agent.mode = "off"  # the agent and the CRAG check are tested in test_agent.py
     s.agent.crag = False
     s.web.min_interval_s = 0.0  # no pause between queries to the mocked SearXNG
+    s.code.chat = "off"  # the chat's hand-off to the code agent is tested in test_unified_agent.py
     return s
 
 
@@ -127,7 +128,7 @@ class FakeLLM(BaseLLM):
     def __init__(self, settings: Settings, reply: dict | str | None = None, route: dict | str | None = None,
                  general: str = "Общий ответ.", extraction: dict | None = None, sql: list[dict] | None = None,
                  agent: list[dict] | None = None, pipeline: dict | None = None, web_query: str = "scikit-learn latest version",
-                 conflicts: list[dict] | None = None):
+                 conflicts: list[dict] | None = None, code: bool = False):
         super().__init__(settings.llm)
         self.reply = reply if reply is not None else {"answerable": True, "answer": "Learning rate был 0.05 [1].", "general": ""}
         self.route = route  # None -> corpus with the question unchanged
@@ -138,6 +139,7 @@ class FakeLLM(BaseLLM):
         self.pipeline = pipeline or {"pipeline": "free", "target": ""}  # code agent's task type
         self.web_query = web_query
         self.conflicts = conflicts or []
+        self.code = code  # the chat's check "does the request need running code"
         self.calls: list[list[dict]] = []
         self.kinds: list[str] = []
         self.budgets: list[int] = []  # reasoning budgets of chat_reasoning calls
@@ -180,6 +182,9 @@ class FakeLLM(BaseLLM):
         elif set(props) == {"relevant", "notes"}:
             self.kinds.append("map")
             reply = {"relevant": [1], "notes": ""}
+        elif set(props) == {"code"}:
+            self.kinds.append("route_code")
+            reply = {"code": self.code}
         elif set(props) == {"query"}:
             self.kinds.append("rewrite")
             reply = {"query": "learning rate lr"}

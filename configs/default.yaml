@@ -117,6 +117,8 @@ code:                                 # ТЗ ч.2 S17: code agent in a Docker sa
   max_steps: 20
   aci: true                           # view / search / edit with syntax check (false: overwrite whole files)
   workspace_max_mb: 50                # text files of the corpus copied into the git working copy
+  chat: auto                          # the chat itself hands code tasks to the agent (off: only /code)
+  network: confirm                    # never | confirm: the UI toggle, every task with network is confirmed
 
 web:                                  # ТЗ ч.2 S19: web gateway through a local SearXNG (rag searxng start)
   mode: "off"                         # off | auto (temporal / external questions, irrelevant corpus results) | always

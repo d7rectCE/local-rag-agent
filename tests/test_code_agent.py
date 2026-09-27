@@ -21,7 +21,7 @@ class HostSandbox:
     def __init__(self):
         self.commands: list[list[str]] = []
 
-    def run(self, command, work, corpus=None, timeout_s=None) -> RunResult:
+    def run(self, command, work, corpus=None, timeout_s=None, network=False) -> RunResult:
         self.commands.append(command)
         argv = [sys.executable, *command[1:]] if command[0] == "python" else command
         env = {**os.environ, "MPLBACKEND": "Agg", "PYTHONIOENCODING": "utf-8"}

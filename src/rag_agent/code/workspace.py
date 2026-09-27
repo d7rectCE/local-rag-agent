@@ -16,9 +16,12 @@ from __future__ import annotations
 import ast
 import fnmatch
 import json
+import os
 import re
 import shutil
+import stat
 import subprocess
+import sys
 from pathlib import Path
 
 TEXT_EXTS = {".py", ".ipynb", ".txt", ".md", ".log", ".csv", ".tsv", ".json", ".yaml", ".yml", ".toml", ".cfg", ".ini"}
@@ -91,6 +94,17 @@ class Workspace:
         ws.git("commit", "-q", "--allow-empty", "-m", "начальное состояние")
         ws.git("tag", INITIAL)
         return ws
+
+    def remove(self) -> None:
+        """Delete the working copy (a throwaway one of run_code); git objects are read-only on Windows."""
+        def force(func, path, _exc):
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+
+        if sys.version_info >= (3, 12):
+            shutil.rmtree(self.root, onexc=force)
+        else:
+            shutil.rmtree(self.root, onerror=force)
 
     def git(self, *args: str) -> str:
         proc = subprocess.run(["git", "-C", str(self.root), *args], capture_output=True, encoding="utf-8",

@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -265,3 +268,82 @@ def make_llm(cfg: LLMConfig, tracer: Tracer = NULL_TRACER) -> BaseLLM:
     if cfg.provider == "openai":
         return OpenAICompatLLM(cfg, tracer)
     raise ValueError(f"unknown LLM provider {cfg.provider!r}")
+
+
+MODEL_NAME = re.compile(r"[\w.:/-]{1,120}")
+
+
+class ModelSwitch:
+    """The chat model chosen in the UI, per request: a thread-local choice among the installed models.
+
+    Everything that talks to the model holds this object and resolves the model at call time, so
+    one request can run on another model while others (and background indexing, which keeps the
+    configured model: the catalog is cached per extraction model) are unaffected."""
+
+    def __init__(self, base: BaseLLM, tracer: Tracer = NULL_TRACER):
+        self.base, self.tracer = base, tracer
+        self._local = threading.local()
+        self._models: dict[str, BaseLLM] = {}
+        self._lock = threading.Lock()
+
+    @property
+    def current(self) -> BaseLLM:
+        return getattr(self._local, "llm", None) or self.base
+
+    def get(self, model: str) -> BaseLLM:
+        if model == getattr(getattr(self.base, "cfg", None), "model", None):
+            return self.base
+        if not MODEL_NAME.fullmatch(model or ""):
+            raise LLMError(f"неверное имя модели: {model!r}")
+        with self._lock:
+            if model not in self._models:
+                self._models[model] = make_llm(self.base.cfg.model_copy(update={"model": model}), self.tracer)
+            return self._models[model]
+
+    @contextmanager
+    def use(self, model: str | None):
+        """``with engine.llm.use("qwen3.6:27b"):`` — calls in this thread go to that model."""
+        if not model:
+            yield self.current
+            return
+        prev = getattr(self._local, "llm", None)
+        self._local.llm = self.get(model)
+        try:
+            yield self._local.llm
+        finally:
+            self._local.llm = prev
+
+    def installed(self) -> list[dict]:
+        """Chat models on the Ollama server (embedding models are left out); [] for other providers."""
+        cfg = self.base.cfg
+        if cfg.provider != "ollama":
+            return [{"name": cfg.model}]
+        try:
+            r = httpx.get(f"{cfg.base_url.rstrip('/')}/api/tags", timeout=3)
+            models = r.json().get("models", [])
+        except (httpx.HTTPError, ValueError):
+            return []
+        out = []
+        for m in models:
+            d = m.get("details") or {}
+            if "embed" in m.get("name", "") or "bert" in (d.get("family") or ""):
+                continue
+            out.append({"name": m.get("name"), "size": m.get("size"), "parameters": d.get("parameter_size"),
+                        "quantization": d.get("quantization_level"), "family": d.get("family")})
+        return sorted(out, key=lambda m: m["size"] or 0)
+
+    def close(self) -> None:
+        self.base.close()
+        for m in self._models.values():
+            m.close()
+
+    _OWN = frozenset({"base", "tracer", "_local", "_models", "_lock"})
+
+    def __getattr__(self, name: str):  # chat, chat_reasoning, name, cfg, unload, is_available…
+        return getattr(self.current, name)
+
+    def __setattr__(self, name: str, value) -> None:  # transparent: other attributes belong to the model
+        if name in self._OWN:
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self.current, name, value)

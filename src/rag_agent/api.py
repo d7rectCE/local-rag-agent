@@ -8,7 +8,6 @@ import logging
 import os
 import subprocess
 import sys
-import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
@@ -49,6 +48,8 @@ class ChatTurn(BaseModel):
 class CodeRequest(BaseModel):
     task: str
     dialog_id: str | None = None
+    model: str | None = None
+    network: bool = False  # an explicit request for a run with network (the chat asks for confirmation first)
 
 
 class DialogRequest(BaseModel):
@@ -85,6 +86,9 @@ class AskRequest(BaseModel):
     # regenerates the last answer (after a confirmation) instead of adding the question again
     dialog_id: str | None = None
     replace_last: bool = False
+    code: Literal["off", "auto"] | None = None  # the chat may run code (code agent, run_code); config default
+    sandbox_net: bool = False  # the UI toggle: code tasks may run with network, each after a confirmation
+    model: str | None = None  # another installed chat model for this request
 
 
 WEBUI = Path(__file__).with_name("webui")
@@ -154,18 +158,21 @@ def create_app(engine: Engine | None = None) -> FastAPI:
         """What the agent may do, for the "access" panel of the UI (ТЗ ч.2 S20, FR17)."""
         e = eng()
         corpus = e.status()["corpus"]
-        now = time.monotonic()
-        if now - state.get("docker_checked", -1e9) > 60:
-            from rag_agent.code.sandbox import DockerSandbox
-
-            state["docker_ok"], state["docker_checked"] = DockerSandbox(e.settings.code).available(), now
         return {
             "corpus": {"name": Path(corpus["root"]).name if corpus else None, "access": "read"},
             "writes": "confirm",  # apply_changes only after the user's approval
-            "sandbox": "no_network" if state["docker_ok"] else "unavailable",
+            "sandbox": "no_network" if e.sandbox_available() else "unavailable",
+            "sandbox_network": e.settings.code.network,  # never | confirm (the toggle may be offered)
+            "code": e.settings.code.chat,
             "web": e.settings.web.mode,
             "policies": e.settings.security.policies,
         }
+
+    @app.get("/models")
+    def models() -> dict:
+        """Installed chat models for the UI picker; ``default`` is the configured one (the eval runs use it)."""
+        e = eng()
+        return {"default": e.settings.llm.model, "models": e.llm.installed()}
 
     @app.post("/pick-folder")
     def pick_folder(req: PickFolderRequest) -> dict:
@@ -326,9 +333,12 @@ def create_app(engine: Engine | None = None) -> FastAPI:
     @app.post("/code")
     def code(req: CodeRequest) -> CodeResult:
         try:
+            context = ""
             if req.dialog_id:
                 dialogs().get(req.dialog_id)  # 404 before the long run
-            res = eng().code_task(req.task)
+                context = "\n".join(f"{'Пользователь' if t['role'] == 'user' else 'Ассистент'}: {t['content']}"
+                                     for t in dialogs().history(req.dialog_id, 6))[-4000:]
+            res = eng().code_task(req.task, context=context, network=req.network, model=req.model)
             if req.dialog_id:
                 dialogs().add_turn(req.dialog_id, "user", "code_task", req.task)
                 dialogs().add_turn(req.dialog_id, "assistant", "code", res.summary or res.status,
@@ -412,13 +422,18 @@ def create_app(engine: Engine | None = None) -> FastAPI:
                 session=req.session,
                 confirmed=req.confirmed,
                 web=req.web,
+                code=req.code,
+                sandbox_net=req.sandbox_net,
+                model=req.model,
             )
             if req.dialog_id:
                 if not req.replace_last:
                     dialogs().add_turn(req.dialog_id, "user", "question", req.question,
                                        payload={"uploads": req.uploads, "route": req.route, "web": req.web,
-                                                "reasoning": req.reasoning})
-                dialogs().add_turn(req.dialog_id, "assistant", "answer", answer.answer, payload=answer.model_dump())
+                                                "reasoning": req.reasoning, "code": req.code,
+                                                "sandbox_net": req.sandbox_net, "model": req.model})
+                dialogs().add_turn(req.dialog_id, "assistant", "answer", answer.answer, payload=answer.model_dump(),
+                                   ref=answer.code["task_id"] if answer.code else None)
             return answer
         except DialogNotFound as exc:
             raise HTTPException(404, "диалог не найден") from exc

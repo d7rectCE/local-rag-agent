@@ -43,9 +43,20 @@ def test_dialog_store(tmp_path: Path):
     assert store.history(d["id"]) == [{"role": "user", "content": got["turns"][0]["content"]},
                                       {"role": "assistant", "content": "0.05 [1]"}]
     store.add_turn(d["id"], "assistant", "code", "done", payload={"task_id": "t1", "applied": []}, ref="t1")
-    assert store.update_ref("t1", {"task_id": "t1", "applied": ["a.py"]}) == 1
-    assert store.get(d["id"])["turns"][-1]["payload"]["applied"] == ["a.py"]
-    assert len(store.history(d["id"])) == 2  # code turns are not the history of questions
+    assert store.update_ref("t1", {"task_id": "t1", "status": "done", "summary": "Построил график",
+                                   "changed": [["A", "plot.py"]], "applied": ["plot.py"]}) == 1
+    assert store.get(d["id"])["turns"][-1]["payload"]["applied"] == ["plot.py"]
+    # a code task is history too: "what did you do?" is answered from its summary and the user's decision
+    last = store.history(d["id"])[-1]["content"]
+    assert "Построил график" in last and "A plot.py" in last and "применил" in last
+    # a code result inside a chat answer: apply / reject update the answer's "code" field, not the answer
+    store.add_turn(d["id"], "assistant", "answer", "Готово", payload={"answer": "Готово", "code": {"task_id": "t2"}},
+                   ref="t2")
+    assert store.update_ref("t2", {"task_id": "t2", "rejected": True, "changed": [["M", "a.py"]]}) == 1
+    payload = store.get(d["id"])["turns"][-1]["payload"]
+    assert payload["answer"] == "Готово" and payload["code"]["rejected"]
+    assert "отклонил" in store.history(d["id"])[-1]["content"]
+    store.drop_last_answer(d["id"])
     store.drop_last_answer(d["id"])
     assert [t["kind"] for t in store.get(d["id"])["turns"]] == ["question", "answer"]
     assert store.rename(d["id"], "Новое имя")["title"] == "Новое имя"

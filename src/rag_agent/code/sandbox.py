@@ -5,6 +5,11 @@ no capabilities, no privilege escalation, limits on memory, CPU, processes and
 time. Only the task's working copy is mounted writable; the corpus can be mounted
 read-only for scripts that read the user's data. Host environment variables (and so
 secrets) are never passed in.
+
+Network is the one exception, and only on the user's word: with ``network=True`` (the
+UI toggle, confirmed for every task) the container gets the default bridge, so a
+script can download data and ``pip install`` puts packages into the working copy
+(``.agent/pkgs``, on PYTHONPATH of every run of the task; never into the image).
 """
 
 from __future__ import annotations
@@ -17,6 +22,8 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from rag_agent.config import CodeConfig
+
+PKGS = ".agent/pkgs"  # packages installed by a task with network, inside its working copy
 
 
 class RunResult(BaseModel):
@@ -59,15 +66,17 @@ class DockerSandbox:
         except (OSError, subprocess.TimeoutExpired):
             return False
 
-    def run(self, command: list[str], work: Path, corpus: Path | None = None, timeout_s: float | None = None) -> RunResult:
+    def run(self, command: list[str], work: Path, corpus: Path | None = None, timeout_s: float | None = None,
+            network: bool = False) -> RunResult:
         timeout = timeout_s or self.cfg.timeout_s
         name = f"rag-sbx-{uuid.uuid4().hex[:12]}"
         args = [
             "docker", "run", "--rm", "--name", name,
-            "--network", "none", "--read-only", "--tmpfs", "/tmp:rw,size=256m",
+            "--network", "bridge" if network else "none", "--read-only", "--tmpfs", "/tmp:rw,size=256m",
             "--user", "1000:1000", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
             "--memory", self.cfg.memory, "--cpus", str(self.cfg.cpus), "--pids-limit", str(self.cfg.pids),
             "-v", f"{docker_path(work)}:/work:rw", "-w", "/work",
+            "-e", f"PYTHONPATH=/work/{PKGS}",
         ]
         if corpus is not None:
             args += ["-v", f"{docker_path(corpus)}:/corpus:ro"]

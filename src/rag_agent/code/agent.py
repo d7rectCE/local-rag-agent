@@ -11,6 +11,10 @@ the rest of the task (Reflexion). Typical tasks go through fixed pipelines first
 
 Nothing leaves the working copy: the result is a diff, and ``apply_changes`` copies
 it into the user's folder only after an explicit confirmation (policy: always).
+
+In the chat the task comes rewritten by the router into a standalone one, together with
+the recent dialogue and the results of earlier code tasks of the same dialogue, so "try
+again" or "now plot it" continue the previous work instead of starting blind.
 """
 
 from __future__ import annotations
@@ -25,7 +29,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from rag_agent.code.sandbox import DockerSandbox, RunResult, SandboxError
+from rag_agent.code.sandbox import PKGS, DockerSandbox, RunResult, SandboxError
 from rag_agent.code.workspace import TEXT_EXTS, Workspace, WorkspaceError
 from rag_agent.config import Settings
 from rag_agent.llm import BaseLLM, LLMError
@@ -51,7 +55,7 @@ TOOLS_OVERWRITE = {  # H14 baseline: no syntax check, the whole file is rewritte
     "finish": TOOLS_ACI["finish"],
 }
 
-CODE_PROMPT = """Ты — код-агент. Решаешь задачу пользователя в рабочей копии его проекта. Рабочая копия под git: все изменения покажут пользователю как diff и перенесут в его папку только после подтверждения. Код исполняется в песочнице без сети: Python 3.12, numpy, pandas, scikit-learn, matplotlib, pytest, nbclient. Текущая папка — рабочая копия (/work) с текстовыми файлами проекта пользователя.
+CODE_PROMPT = """Ты — код-агент. Решаешь задачу пользователя в рабочей копии его проекта. Рабочая копия под git: все изменения покажут пользователю как diff и перенесут в его папку только после подтверждения. Код исполняется в песочнице {network}: Python 3.12, numpy, pandas, scikit-learn, matplotlib, pytest, nbclient. Текущая папка — рабочая копия (/work) с текстовыми файлами проекта пользователя.
 
 Инструменты (один вызов за шаг):
 {tools}
@@ -125,6 +129,11 @@ def _schema(actions: list[str]) -> dict:
     }
 
 
+NETWORK_OFF = "без сети"
+NETWORK_ON = ("с доступом в интернет (пользователь разрешил его для этой задачи): можно скачивать данные; "
+              'недостающий пакет ставь командой run "pip install пакет"')
+
+
 class CodeResult(BaseModel):
     task_id: str
     task: str
@@ -143,14 +152,27 @@ class CodeResult(BaseModel):
     applied: list[str] = Field(default_factory=list)
     latency_s: float = 0.0
     created_at: str = ""
+    network: bool = False  # the runs had network (the user's confirmed toggle)
 
 
-def parse_command(command: str) -> list[str]:
-    """Only scripts, tests and notebooks run as commands; everything else goes through run_code."""
+def parse_command(command: str, network: bool = False) -> list[str]:
+    """Only scripts, tests and notebooks run as commands; everything else goes through run_code.
+    With network, ``pip install`` puts packages into the working copy (never into the image)."""
     parts = shlex.split(command.strip().removeprefix("!"), posix=True)
     if not parts:
         raise WorkspaceError("пустая команда")
     head, rest = parts[0], parts[1:]
+    if head in ("python", "python3") and rest[:2] == ["-m", "pip"]:
+        head, rest = "pip", rest[2:]
+    if head in ("pip", "pip3"):
+        if not network:
+            raise WorkspaceError("установка пакетов недоступна: в песочнице нет сети; обойдись установленными "
+                                 "(numpy, pandas, scikit-learn, matplotlib, scipy)")
+        pkgs = [a for a in rest[1:] if not a.startswith("-")] if rest[:1] == ["install"] else []
+        if not pkgs:
+            raise WorkspaceError("разрешено только pip install <пакеты>")
+        return ["python", "-m", "pip", "install", "--no-cache-dir", "--disable-pip-version-check", "--target", PKGS,
+                *pkgs]
     if head in ("python", "python3") and rest and rest[0] not in ("-c",):
         return ["python", *rest]
     if head in ("pytest", "py.test") or (head in ("python", "python3") and rest[:2] == ["-m", "pytest"]):
@@ -183,17 +205,21 @@ def _error_line(run: RunResult) -> str:
 
 class CodeAgent:
     def __init__(self, settings: Settings, llm: BaseLLM, sandbox: DockerSandbox, ws: Workspace, task: str,
-                 task_id: str, corpus: Path | None = None, catalog_rows: list[dict] | None = None):
+                 task_id: str, corpus: Path | None = None, catalog_rows: list[dict] | None = None,
+                 context: str = "", network: bool = False):
         self.settings, self.cfg, self.llm, self.sandbox, self.ws = settings, settings.code, llm, sandbox, ws
         self.corpus = corpus if settings.code.mount_corpus else None
         self.catalog_rows = catalog_rows or []
         self.tools = TOOLS_ACI if self.cfg.aci else TOOLS_OVERWRITE
-        self.result = CodeResult(task_id=task_id, task=task, created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+        self.context = context.strip()  # the recent dialogue and earlier code tasks of the dialogue
+        self.network = network
+        self.result = CodeResult(task_id=task_id, task=task, network=network,
+                                 created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
         self._files_before = set(ws.files())
 
     # --- running --------------------------------------------------------------------
     def _run(self, command: list[str]) -> RunResult:
-        run = self.sandbox.run(command, self.ws.root, self.corpus)
+        run = self.sandbox.run(command, self.ws.root, self.corpus, network=self.network)
         self.result.runs += 1
         if not run.ok:
             self.result.failed_runs += 1
@@ -225,7 +251,7 @@ class CodeAgent:
             self.ws.commit(f"шаг {step}: выполнен фрагмент кода")
             return run.report()
         if action == "run":
-            run = self._run(parse_command(str(args.get("command", ""))))
+            run = self._run(parse_command(str(args.get("command", "")), self.network))
             self.ws.commit(f"шаг {step}: запуск {str(args.get('command'))[:60]}")
             return run.report()
         raise WorkspaceError(f"неизвестный инструмент {action}")
@@ -336,7 +362,8 @@ class CodeAgent:
     def loop(self, seed: str | None) -> None:
         res, cfg = self.result, self.cfg
         schema = _schema(list(self.tools))
-        first = f"Задача: {res.task}" + (f"\n\nПодготовка:\n{seed}" if seed else "") + \
+        first = f"Задача: {res.task}" + (f"\n\nКонтекст из диалога с пользователем (для справки):\n{self.context}"
+                                          if self.context else "") + (f"\n\nПодготовка:\n{seed}" if seed else "") + \
                 f"\n\nФайлы рабочей копии (первые):\n" + "\n".join(self.ws.files()[:80])
         history: list[dict] = []
         for step in range(1, cfg.max_steps + 1):
@@ -347,7 +374,8 @@ class CodeAgent:
             lessons = ("\n\nВыводы из прошлых попыток в этой задаче:\n" + "\n".join(f"- {l}" for l in res.lessons[-6:])
                        if res.lessons else "")
             system = CODE_PROMPT.format(tools="\n".join(f"- {d}" for d in self.tools.values()),
-                                        max_iterations=cfg.max_iterations, lessons=lessons)
+                                        max_iterations=cfg.max_iterations, lessons=lessons,
+                                        network=NETWORK_ON if self.network else NETWORK_OFF)
             messages = [{"role": "system", "content": system}, {"role": "user", "content": first}, *history[-14:]]
             t1 = time.perf_counter()
             try:

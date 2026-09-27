@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import logging
@@ -19,10 +20,10 @@ from rag_agent.policy import Policy, Provenance, defang_markdown
 from rag_agent.generation import Answer, TraceStep, generate_answer, generate_general
 from rag_agent.index.embedder import Embedder
 from rag_agent.index.indexer import CorpusIndex, IndexProgress, corpus_key, run_indexing
-from rag_agent.llm import BaseLLM, make_llm
+from rag_agent.llm import BaseLLM, ModelSwitch, make_llm
 from rag_agent.index.reranker import Reranker
 from rag_agent.retrieval import Hit, Mode, corpus_mentions, search
-from rag_agent.router import RouteChoice, route_question, trim_history
+from rag_agent.router import RouteChoice, needs_code, route_question, trim_history
 from rag_agent.schema import FileType, Location, Node, NodeType
 from rag_agent.structured.analytics import ANALYTICS_FILE, build_analytics
 from rag_agent.structured.extract import update_catalog
@@ -95,7 +96,10 @@ class Engine:
         tr = self.settings.tracing
         self.tracer = Tracer(data_dir / "traces", tr.log_prompts) if tr.enabled else NULL_TRACER
         self.embedder = embedder or Embedder(self.settings.embedding)
-        self.llm = llm or make_llm(self.settings.llm, self.tracer)
+        # the chat model can be switched per request (UI model picker); indexing keeps the configured one
+        self.llm = ModelSwitch(llm or make_llm(self.settings.llm, self.tracer), self.tracer)
+        self._sandbox: DockerSandbox | None = None
+        self._sandbox_ok: tuple[bool, float] = (False, -1e9)
         self._reranker = reranker
         self.registry = CorpusRegistry(data_dir / "corpora.json")
         self.progress = IndexProgress()
@@ -286,22 +290,96 @@ class Engine:
             raise WorkspaceError(f"задача {task_id} не найдена")
         return Workspace(root)
 
-    def code_task(self, task: str, sandbox: DockerSandbox | None = None) -> CodeResult:
-        """Solve a code task in a fresh git working copy of the corpus; the user's folder is untouched."""
+    @property
+    def sandbox(self) -> DockerSandbox:
+        if self._sandbox is None:
+            self._sandbox = DockerSandbox(self.settings.code)
+        return self._sandbox
+
+    def sandbox_available(self) -> bool:
+        """Docker running and the sandbox image built; checked at most once a minute."""
+        ok, checked = self._sandbox_ok
+        if time.monotonic() - checked > 60:
+            ok = self.sandbox.available()
+            self._sandbox_ok = (ok, time.monotonic())
+        return ok
+
+    def code_task(self, task: str, sandbox: DockerSandbox | None = None, *, context: str = "", network: bool = False,
+                  model: str | None = None) -> CodeResult:
+        """Solve a code task in a fresh git working copy of the corpus; the user's folder is untouched.
+        ``context``: the recent dialogue for a task from the chat; ``network``: the user's confirmed toggle."""
         index = self.index
         cfg = self.settings.code
+        network = network and cfg.network != "never"
         task_id = new_task_id()
-        ws = Workspace.create(self.settings.data_dir / "workspaces" / task_id, index.root,
-                              exclude=self.corpus_prefs(index.root)["exclude"], max_mb=cfg.workspace_max_mb,
-                              file_max_mb=cfg.file_max_mb)
-        agent = CodeAgent(self.settings, self.llm, sandbox or DockerSandbox(cfg), ws, task, task_id,
-                          corpus=index.root, catalog_rows=catalog_metric_rows(self))
-        res = agent.run()
+        with self.llm.use(model):
+            ws = Workspace.create(self.settings.data_dir / "workspaces" / task_id, index.root,
+                                  exclude=self.corpus_prefs(index.root)["exclude"], max_mb=cfg.workspace_max_mb,
+                                  file_max_mb=cfg.file_max_mb)
+            agent = CodeAgent(self.settings, self.llm, sandbox or self.sandbox, ws, task, task_id,
+                              corpus=index.root, catalog_rows=catalog_metric_rows(self), context=context,
+                              network=network)
+            res = agent.run()
         self._save_code(ws, res)
         self.tracer.log("code_task", task=task if self.tracer.log_prompts else None, task_id=task_id, status=res.status,
                         pipeline=res.pipeline, steps=len(res.steps), runs=res.runs, failed_runs=res.failed_runs,
-                        changed=len(res.changed), broken=len(res.broken_files), latency_s=res.latency_s)
+                        changed=len(res.changed), broken=len(res.broken_files), latency_s=res.latency_s,
+                        network=network)
         return res
+
+    def _answer_code(self, question: str, standalone: str, turns: list[dict], *, network: bool,
+                     confirmed: list[str] | None) -> Answer:
+        """The chat hands a task that needs running code to the code agent (one agent for the user)."""
+        if network:
+            key = "sandbox_network:" + hashlib.sha256(question.encode()).hexdigest()[:16]
+            if key not in (confirmed or []):  # plan, then execute: network only after the user's yes (FR17)
+                return Answer(question=question, answer="Для этой задачи код будет выполнен в песочнице с доступом "
+                              "в интернет. Разрешить?", answerable=False, grounded=True, route="code",
+                              model=self.llm.name, pending=[{
+                                  "key": key, "tool": "run_code", "args": {"network": True, "task": standalone},
+                                  "rule": "S17", "reason": "в песочнице будет сеть: скачивание данных и установка "
+                                                           "пакетов; файлы папки по-прежнему меняются только после "
+                                                           "вашего подтверждения"}])
+        context = "\n".join(f"{'Пользователь' if t['role'] == 'user' else 'Ассистент'}: {t['content']}"
+                             for t in turns)[-4000:]
+        res = self.code_task(standalone, context=context, network=network)
+        status = {"done": "готово", "failed": "не удалось", "limit": "лимит шагов", "error": "ошибка"}.get(res.status)
+        return Answer(question=question, answer=res.summary or status or res.status, answerable=res.status == "done",
+                      route="code", model=self.llm.name, code=res.model_dump(),
+                      trace=[TraceStep(name="code_agent", duration_s=res.latency_s, detail={
+                          "task_id": res.task_id, "task": standalone, "status": res.status, "pipeline": res.pipeline,
+                          "steps": len(res.steps), "runs": res.runs, "failed_runs": res.failed_runs,
+                          "changed": len(res.changed), "network": res.network})])
+
+    def capabilities(self, web_mode: str, code_mode: str, sandbox_net: bool) -> str:
+        """What the app can do right now, for the general answer: it must neither deny abilities the
+        user has turned on (the internet, running code) nor claim ones that are off."""
+        lines = ["Что ты умеешь в этом приложении сейчас:"]
+        try:
+            idx = self.index
+        except NoCorpusError:
+            idx = None
+        if idx is not None:
+            n = idx.catalog.stats()["n_files"]
+            lines.append(f"- рабочая папка «{idx.root.name}» ({n} файлов: код, ноутбуки, документы) — на вопросы о её "
+                         "содержимом отвечаешь по файлам со ссылками на источники;")
+        else:
+            lines.append("- рабочая папка не выбрана: пользователь может выбрать её слева, тогда ты будешь отвечать по "
+                         "его файлам со ссылками;")
+        lines.append("- интернет: " + ("включён — для свежих сведений ищешь через локальный SearXNG и читаешь страницы;"
+                                       if web_mode != "off" else
+                                       "выключен — его включает переключатель «Интернет» под полем ввода;"))
+        if code_mode != "off":
+            if self.sandbox_available():
+                lines.append("- код: запускаешь Python в изолированной песочнице (Docker) над копией файлов папки — "
+                             "считаешь, строишь графики, запускаешь скрипты, ноутбуки и тесты, исправляешь ошибки; "
+                             "изменения попадают в папку только после подтверждения пользователя; "
+                             + ("сеть в песочнице — по подтверждению;" if sandbox_net else "сети в песочнице нет;"))
+            else:
+                lines.append("- код: песочница сейчас недоступна (не запущен Docker Desktop) — код пишешь, но не "
+                             "запускаешь;")
+        lines.append("- к вопросу можно прикрепить файл скрепкой: по нему отвечаешь в этом диалоге.")
+        return "\n".join(lines)
 
     @staticmethod
     def _save_code(ws: Workspace, res: CodeResult) -> None:
@@ -412,7 +490,7 @@ class Engine:
     def _answer_corpus(self, standalone: str, index: CorpusIndex, steps: list[TraceStep], *, top_k: int | None,
                        mode: str | None, agent: str | None, rerank: bool | None, symbols: bool | None, aggregate: bool,
                        complexity: str, budget: int | None, escalate: bool, web_mode: str,
-                       confirmed: list[str] | None) -> tuple[Answer, bool]:
+                       confirmed: list[str] | None, code: bool = False) -> tuple[Answer, bool]:
         """The user's files: the agent loop for aggregate and multi-step questions, direct retrieval otherwise;
         in the auto web mode irrelevant results send the question to the web (S19)."""
         top_k = top_k or self.settings.retrieval.top_k
@@ -423,7 +501,7 @@ class Engine:
         # ТЗ S7: only aggregate and multi-step questions go through the agent loop
         if agent_mode == "always" or (agent_mode == "auto" and (aggregate or complexity != "none")):
             loop = Agent(self, index, top_k=top_k, mode=mode, sql=sql_ok, reasoning_budget=budget,
-                         confirmed=set(confirmed or []), web=web_mode != "off")
+                         confirmed=set(confirmed or []), web=web_mode != "off", code=code)
             answer = loop.run(standalone, aggregate=aggregate)
         else:
             answer, escalated = self._answer_direct(standalone, index, steps, top_k=top_k, mode=mode, rerank=rerank,
@@ -509,11 +587,23 @@ class Engine:
         session: str | None = None,
         confirmed: list[str] | None = None,
         web: str | None = None,
+        code: str | None = None,
+        sandbox_net: bool = False,
+        model: str | None = None,
     ) -> Answer:
         """Route the question, then answer it from the user's files (with citations)
         or from general knowledge. ``history`` is the previous chat turns
         (``{"role": "user"|"assistant", "content": ...}``) for follow-up questions.
-        ``reasoning`` is off / on / auto (the router decides); defaults to the config."""
+        ``reasoning`` is off / on / auto (the router decides); defaults to the config.
+        ``code`` auto: a request that needs running code goes to the code agent and the research
+        agent gets run_code (off for the eval sets); ``sandbox_net``: the user's network toggle;
+        ``model``: another installed chat model for this request."""
+        with self.llm.use(model):
+            return self._ask(question, history, top_k, mode, route, rerank, symbols, reasoning, agent, uploads, session,
+                             confirmed, web, code, sandbox_net)
+
+    def _ask(self, question, history, top_k, mode, route, rerank, symbols, reasoning, agent, uploads, session,
+             confirmed, web, code, sandbox_net) -> Answer:
         question = question.strip()
         if not question:
             raise ValueError("empty question")
@@ -560,6 +650,21 @@ class Engine:
         if chosen == "corpus" and index is None and not uploads:
             chosen, notice = "general", "Папка ещё не проиндексирована, поэтому ответ дан из общих знаний модели."
 
+        # one agent for the user (Э15 in the chat): a request that needs running code goes to the code agent
+        code_mode = code or self.settings.code.chat
+        wants_code = False
+        if code_mode == "auto" and index is not None and not uploads:
+            cd = needs_code(standalone, self.llm)
+            if cd.checked:
+                steps.append(TraceStep(name="route_code", duration_s=round(cd.latency_s, 3), detail={"code": cd.code}))
+            wants_code = cd.code
+        # the research agent gets run_code when it runs at all (aggregate / multi-step questions, or always)
+        agent_loop = aggregate or complexity != "none" or (agent or self.settings.agent.mode) == "always"
+        sandbox_ok = code_mode == "auto" and (wants_code or agent_loop) and self.sandbox_available()
+        if wants_code and not sandbox_ok:
+            wants_code = False
+            notice = "Для этого нужно запустить код, но песочница недоступна: запустите Docker Desktop. Ниже — ответ без запуска."
+
         budget = rcfg.budget(level) if level != "none" else None
         if uploads:  # Э13: the question is about files uploaded into this conversation
             infos = [self.uploads.get(session or "", u) for u in uploads]
@@ -572,6 +677,9 @@ class Engine:
             dups = [f"{i.name} = {i.duplicate_of}" for i in infos if i.duplicate_of]
             if dups:
                 notice = "Загруженный файл уже есть в корпусе: " + "; ".join(dups)
+        elif wants_code:
+            answer = self._answer_code(question, standalone, turns, confirmed=confirmed,
+                                       network=sandbox_net and self.settings.code.network != "never")
         elif web_mode == "always" or (web_mode == "auto" and wants_web):
             answer = self._answer_web(standalone, index, budget, confirmed)
             blocked = bool(answer.pending) or any(s.name == "web_error" for s in answer.trace)
@@ -591,15 +699,21 @@ class Engine:
                 notice = web_answer.answer
             answer.question = question
         elif chosen == "general":
-            answer = generate_general(question, turns, self.llm, reasoning_budget=budget)
+            answer = generate_general(question, turns, self.llm, reasoning_budget=budget,
+                                      capabilities=self.capabilities(web_mode, code_mode, sandbox_net))
         else:
             answer, escalated = self._answer_corpus(
                 standalone, index, steps, top_k=top_k, mode=mode, agent=agent, rerank=rerank, symbols=symbols,
                 aggregate=aggregate, complexity=complexity, budget=budget,
-                escalate=reasoning_mode == "auto" and rcfg.escalate, web_mode=web_mode, confirmed=confirmed)
+                escalate=reasoning_mode == "auto" and rcfg.escalate, web_mode=web_mode, confirmed=confirmed,
+                code=sandbox_ok)
             if escalated:
                 level = "deep"
             answer.question = question
+        # the question needs fresh or external facts, the internet is off, and the files did not answer:
+        # the UI offers to turn it on and ask again
+        if wants_web and web_mode == "off" and not uploads and (answer.route == "general" or not answer.answerable):
+            answer.suggest.append("web")
 
         answer.standalone_question = standalone if standalone != question else None
         # rule 4 (ТЗ ч.2 S20): rendering the answer must not load images or follow links by itself
@@ -684,6 +798,7 @@ class Engine:
             "reasoning": self.settings.reasoning.model_dump(),
             "agent": self.settings.agent.model_dump(),
             "web": {"mode": self.settings.web.mode, "searxng_url": self.settings.web.searxng_url},
+            "code": {"chat": self.settings.code.chat, "network": self.settings.code.network},
             "defaults": {"include_ext": self.settings.corpus.include_ext, "exclude": self.settings.corpus.exclude},
         }
 

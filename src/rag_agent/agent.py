@@ -14,6 +14,11 @@ found when the loop ends, the agent refuses instead of answering from noise.
 
 Limits: number of steps, generated tokens of tool calls, wall-clock time. Every
 step (thought, call, observation, relevance) is kept in the answer's trace.
+
+In the chat (code mode on and Docker running) the agent also has ``run_code``: a Python
+snippet runs in the sandbox over a throwaway copy of the folder's text files, for a
+calculation that no file holds ready; its output becomes evidence like a SQL result.
+Tasks that must leave files behind go to the code agent before the loop starts.
 """
 
 from __future__ import annotations
@@ -22,6 +27,7 @@ import hashlib
 import json
 import logging
 import time
+import uuid
 from typing import TYPE_CHECKING, Literal
 
 from rag_agent.config import AgentConfig
@@ -29,7 +35,7 @@ from rag_agent.generation import Answer, TraceStep, generate_answer
 from rag_agent.llm import LLMError
 from rag_agent.policy import Policy, Provenance, urls_in
 from rag_agent.retrieval import Hit
-from rag_agent.schema import Node
+from rag_agent.schema import FileType, Location, Node, NodeType
 
 if TYPE_CHECKING:
     from rag_agent.engine import Engine
@@ -46,6 +52,8 @@ TOOLS = {
     "list_dir": 'list_dir {"path": "..."} — файлы архива в папке (пустой path — корень)',
     "web_search": 'web_search {"query": "..."} — поиск в интернете: список страниц с URL и кратким описанием',
     "fetch_page": 'fetch_page {"url": "..."} — прочитать страницу из результатов web_search (выписываются фрагменты по вопросу)',
+    "run_code": 'run_code {"code": "..."} — выполнить фрагмент Python в песочнице над копией файлов папки (текущая папка '
+                '— копия, изменения не сохраняются): расчёт по данным, логам, CSV; результат печатай через print',
     "answer": "answer {} — улик достаточно, перейти к ответу",
     "refuse": 'refuse {"reason": "..."} — в архиве этого нет (только после нескольких разных попыток поиска)',
 }
@@ -77,6 +85,7 @@ def _schema(actions: list[str]) -> dict:
                     "query": {"type": "string"}, "file_type": {"type": "string"}, "name": {"type": "string"},
                     "question": {"type": "string"}, "path": {"type": "string"}, "cell": {"type": "integer"},
                     "page": {"type": "integer"}, "reason": {"type": "string"}, "url": {"type": "string"},
+                    "code": {"type": "string"},
                 },
             },
         },
@@ -121,11 +130,14 @@ class RelevanceEvaluator:
 
 class Agent:
     def __init__(self, engine: Engine, index, *, top_k: int, mode: str, sql: bool, reasoning_budget: int | None,
-                 policy: Policy | None = None, confirmed: set[str] | None = None, web: bool = False):
+                 policy: Policy | None = None, confirmed: set[str] | None = None, web: bool = False,
+                 code: bool = False):
         self.engine, self.index = engine, index
         self.cfg: AgentConfig = engine.settings.agent
         self.top_k, self.mode, self.reasoning_budget = top_k, mode, reasoning_budget
-        self.policy = policy or Policy.for_catalog(index.catalog, web=web, enabled=engine.settings.security.policies)
+        self.policy = policy or Policy.for_catalog(index.catalog, web=web, code=code,
+                                                   enabled=engine.settings.security.policies)
+        self.scratch = None  # the throwaway working copy for run_code, created on the first call
         self.prov = Provenance()  # filled for the question in run()
         self.confirmed = confirmed or set()  # keys of calls the user has approved (FR17)
         self.pending: list[dict] = []
@@ -227,6 +239,8 @@ class Agent:
                         location=Location(section=f"обращение {page.fetched_at[:10]}"), metadata={"trust": "untrusted"})
             scores = self._add(question, [node])
             return self._list_fragments([node], scores), {"url": url, "passages": len(passages), "hits": [node.id]}
+        if action == "run_code":
+            return self._run_code(str(args.get("code") or ""))
         if action == "list_dir":
             prefix = str(args.get("path") or "").strip("/").replace("\\", "/")
             rows = self.index.catalog.query("SELECT path, file_type FROM files WHERE path LIKE ? ORDER BY path LIMIT 60",
@@ -234,11 +248,57 @@ class Agent:
             return "\n".join(f"- {r['path']} ({r['file_type']})" for r in rows) or "пусто", {"path": prefix, "files": len(rows)}
         return f"неизвестный инструмент {action}", {}
 
+    def _run_code(self, code: str) -> tuple[str, dict]:
+        from rag_agent.code.sandbox import SandboxError
+        from rag_agent.code.workspace import Workspace, WorkspaceError
+
+        if not code.strip():
+            return "пустой код", {}
+        cfg = self.engine.settings.code
+        try:
+            if self.scratch is None:
+                self.scratch = Workspace.create(
+                    self.engine.settings.data_dir / "workspaces" / f"qa-{uuid.uuid4().hex[:12]}", self.index.root,
+                    exclude=self.engine.corpus_prefs(self.index.root)["exclude"], max_mb=cfg.workspace_max_mb,
+                    file_max_mb=cfg.file_max_mb)
+            snippet = self.scratch.root / ".agent" / f"run_{uuid.uuid4().hex[:8]}.py"
+            snippet.parent.mkdir(exist_ok=True)
+            snippet.write_text(code, encoding="utf-8")
+            run = self.engine.sandbox.run(["python", f".agent/{snippet.name}"], self.scratch.root)
+        except (SandboxError, WorkspaceError, OSError) as exc:
+            return f"песочница недоступна: {exc}", {"error": str(exc)}
+        report = run.report(limit=2500)
+        detail = {"exit_code": run.exit_code, "timed_out": run.timed_out, "duration_s": run.duration_s}
+        if run.ok and run.stdout.strip():
+            # the output answers the question by construction (like a SQL result): evidence with the code
+            node = Node(id="sandbox:" + hashlib.sha256(code.encode()).hexdigest()[:16], file_path="песочница: вычисление",
+                        file_type=FileType.SANDBOX, node_type=NodeType.CODE_CHUNK, title="Результат выполнения кода",
+                        text=f"Код:\n{code}\n\nВывод:\n{run.stdout[-3000:]}", location=Location())
+            self.evidence[node.id] = (node, 1.0)
+            detail["hits"] = [node.id]
+        return report, detail
+
+    def close(self) -> None:
+        if self.scratch is not None:
+            try:
+                self.scratch.remove()
+            except OSError:
+                log.warning("could not remove %s", self.scratch.root, exc_info=True)
+            self.scratch = None
+
     # --- loop -------------------------------------------------------------------
     def run(self, question: str, *, aggregate: bool = False) -> Answer:
+        try:
+            return self._run(question, aggregate=aggregate)
+        finally:
+            self.close()
+
+    def _run(self, question: str, *, aggregate: bool = False) -> Answer:
         t0 = time.perf_counter()
         sql_rule = ("\n- для вопросов «лучший / сколько / все / среднее» по многим экспериментам начинай с sql_query;"
                     if "sql_query" in self.tools else "")
+        if "run_code" in self.tools:
+            sql_rule += "\n- run_code — только для расчёта, которого нет готовым в файлах; читай файлы из текущей папки;"
         system = AGENT_PROMPT.format(tools="\n".join(f"- {TOOLS[t]}" for t in self.tools), max_steps=self.cfg.max_steps,
                                      sql_rule=sql_rule)
         hint = "\nПодсказка маршрутизатора: вопрос агрегатный, начни с sql_query." if aggregate and "sql_query" in self.tools else ""

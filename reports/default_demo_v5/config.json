@@ -1,0 +1,39 @@
+{
+  "evalset": {
+    "name": "demo_v5",
+    "version": 5,
+    "items": 115
+  },
+  "corpus": "demo_corpus",
+  "index_signature": "4ed7d1380c",
+  "embedder": "BAAI/bge-m3",
+  "chunking": {
+    "python": "ast",
+    "lines_per_chunk": 60,
+    "overlap_lines": 10,
+    "ast_max_chars": 1800,
+    "max_chunk_chars": 6000,
+    "output_max_chars": 2000,
+    "context_header": true,
+    "notebook_context": true,
+    "text_max_chars": 1500,
+    "docx": "structured"
+  },
+  "retrieval": {
+    "mode": "dense",
+    "top_k": 6,
+    "symbols": true,
+    "rerank": true,
+    "rerank_model": "BAAI/bge-reranker-v2-m3",
+    "rerank_pool": 40,
+    "rerank_max_length": 512,
+    "rerank_batch_size": 16,
+    "eval_k": 10
+  },
+  "route": "auto",
+  "llm": "ollama:qwen3.5:9b",
+  "judge": "qwen3.6:27b",
+  "git": "5a69e5a",
+  "date": "2026-09-27T07:46:03",
+  "name": "night-default"
+}

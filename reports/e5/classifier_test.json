@@ -1,0 +1,56 @@
+{
+  "n": 1000,
+  "accuracy": 0.977,
+  "macro_f1": 0.9767,
+  "classes": [
+    "chart",
+    "diagram",
+    "photo",
+    "scan",
+    "screenshot"
+  ],
+  "confusion": [
+    [
+      200,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      200,
+      0,
+      0,
+      0
+    ],
+    [
+      5,
+      0,
+      177,
+      18,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      200,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      200
+    ]
+  ],
+  "per_class_recall": {
+    "chart": 1.0,
+    "diagram": 1.0,
+    "photo": 0.885,
+    "scan": 1.0,
+    "screenshot": 1.0
+  }
+}

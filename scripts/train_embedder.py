@@ -31,16 +31,17 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-QUERY_PROMPT = """Ты составляешь вопросы, которые исследователь мог бы задать своему архиву файлов (код, ноутбуки, документы, логи). По фрагменту ниже напиши ОДИН естественный вопрос, ответ на который содержится в этом фрагменте. Вопрос — как его задал бы человек, не видящий фрагмента: без номеров строк и ячеек, без слов «в этом фрагменте», можно на русском или английском. Не копируй фрагмент дословно.
+QUERY_PROMPT = """Ты составляешь вопросы, которые исследователь мог бы задать своему архиву файлов (код, ноутбуки, документы, логи). По фрагменту ниже напиши ДВА разных естественных вопроса, ответ на которые содержится в этом фрагменте: первый на русском, второй на английском. Вопрос — как его задал бы человек, не видящий фрагмента: без номеров строк и ячеек, без слов «в этом фрагменте». Не копируй фрагмент дословно.
 
 Примеры:
 Фрагмент: def calc_metrics(y_true, y_pred, y_proba=None, average="macro"): ... roc_auc_score ...
 Вопрос: Где считаются метрики классификации и считается ли там ROC-AUC?
 Фрагмент: epoch=27 val_loss=0.1823 val_acc=0.9639 ... restored best epoch 27
-Вопрос: На какой эпохе была лучшая точность на валидации у MLP?
+Вопрос: Which epoch had the best validation accuracy for the MLP?
 
-Верни JSON: {"question": "..."}"""
-QUERY_SCHEMA = {"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]}
+Верни JSON: {"questions": ["...", "..."]}"""
+QUERY_SCHEMA = {"type": "object", "properties": {"questions": {"type": "array", "items": {"type": "string"}}},
+                "required": ["questions"]}
 
 
 def held_out(path: str, share: float = 0.3) -> bool:
@@ -84,14 +85,15 @@ def cmd_synth(args) -> None:
     for k, n in enumerate(nodes, start=1):
         text = n.text[:1500]
         try:
-            q = llm.chat([{"role": "system", "content": QUERY_PROMPT},
-                          {"role": "user", "content": f"Файл: {n.file_path}\nФрагмент:\n{text}"}],
-                         json_schema=QUERY_SCHEMA, max_tokens=120, purpose="synth_query").json()["question"].strip()
+            qs = llm.chat([{"role": "system", "content": QUERY_PROMPT},
+                           {"role": "user", "content": f"Файл: {n.file_path}\nФрагмент:\n{text}"}],
+                          json_schema=QUERY_SCHEMA, max_tokens=200, purpose="synth_query").json()["questions"]
         except (LLMError, KeyError):
             continue
-        if len(q) < 10:
-            continue
-        rows.append({"query": q, "node_id": n.id, "file": n.file_path, "split": "test" if held_out(n.file_path) else "train"})
+        for q in [str(x).strip() for x in qs[:2]]:
+            if len(q) >= 10:
+                rows.append({"query": q, "node_id": n.id, "file": n.file_path,
+                             "split": "test" if held_out(n.file_path) else "train"})
         if k % 20 == 0:
             print(f"{k}/{len(nodes)} {time.time() - t0:.0f}s", flush=True)
     llm.unload()

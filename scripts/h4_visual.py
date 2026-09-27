@@ -8,7 +8,12 @@ Four ways to find image evidence, on the Q4 questions of an eval set (retrieval 
     fusion    — both, merged by RRF (images.channel = fusion).
 
 Metrics: Recall@5, hit@5 and MRR over the reference sources, with bootstrap CIs, and paired bootstrap
-differences between the variants. The visual index is built first (the VLM is unloaded from Ollama to
+differences between the variants.
+
+The variants above are whole-system rankings; in "visual" an image found by its pixels ties in RRF with
+the best text hit and the tie goes to the text, so its MRR is capped near 0.5. The head-to-head of the
+two representations is therefore also measured on the image items alone (images and PDF pages):
+ColQwen2 MaxSim over the pixels against BGE-M3 cosine over the VLM descriptions (and their RRF). The visual index is built first (the VLM is unloaded from Ollama to
 make room for ColQwen2). The server must be stopped: the local Qdrant index is single-process.
 
     python scripts/h4_visual.py --eval evalsets/demo_v6.yaml --out runs/h4
@@ -41,6 +46,51 @@ def unload_ollama(base_url: str) -> None:
             httpx.post(f"{base_url}/api/generate", json={"model": m["name"], "keep_alive": 0}, timeout=30)
     except httpx.HTTPError:
         pass
+
+
+def image_only(engine, index, settings, items) -> dict:
+    """Ranks of the reference among the image items only: pixels (ColQwen2) vs descriptions (BGE-M3)."""
+    import numpy as np
+
+    from rag_agent.images.visual import VisualIndex
+    from rag_agent.schema import Location, Node
+
+    vindex = VisualIndex(index, settings)
+    manifest = vindex.manifest()["items"]
+    keys = list(manifest)
+    nodes, texts = [], []
+    for key in keys:
+        meta = manifest[key]
+        if "node_id" in meta:
+            n = index.catalog.get_node(meta["node_id"])
+            nodes.append(n)
+            texts.append(n.embedding_text(settings.chunking.context_header))
+        else:  # a PDF page: its text nodes stand for it on the text side
+            page_nodes = [n for n in index.catalog.file_nodes(meta["file_path"]) if n.location.page == meta["page"]]
+            nodes.append(Node(id=key, file_path=meta["file_path"], file_type="pdf", node_type="section",
+                              text="\n".join(n.text for n in page_nodes)[:4000], location=Location(page=meta["page"])))
+            texts.append(nodes[-1].text)
+    doc = engine.embedder.encode(texts).dense
+    per = {"pixels": [], "descriptions": [], "rrf": []}
+    for it in items:
+        q = engine.embedder.encode([it.retrieval_query]).dense[0]
+        by_text = list(np.argsort(-(doc @ q)))
+        vis = {tuple(sorted(m.items())): s for m, s in vindex.search(it.retrieval_query, top_k=len(keys))}
+        by_pix = sorted(range(len(keys)), key=lambda i: -vis.get(tuple(sorted(manifest[keys[i]].items())), -1e9))
+        rrf = {}
+        for ranking in (by_text, by_pix):
+            for r, i in enumerate(ranking, start=1):
+                rrf[i] = rrf.get(i, 0.0) + 1.0 / (60 + r)
+        by_rrf = sorted(rrf, key=lambda i: -rrf[i])
+        for name, order in (("pixels", by_pix), ("descriptions", by_text), ("rrf", by_rrf)):
+            m = retrieval_metrics([nodes[i] for i in order], it.sources, ks=(1, 3, 5))
+            per[name].append({"id": it.id, **m})
+    summary = {"items": len(keys), "questions": len(items),
+               "variants": {k: {m: mean_ci([r[m] for r in v]) for m in ("hit@1", "recall@3", "mrr")} for k, v in per.items()},
+               "paired": {f"{a}-{b}": paired_bootstrap([r["mrr"] for r in per[a]], [r["mrr"] for r in per[b]])
+                          for a, b in (("pixels", "descriptions"), ("rrf", "descriptions"))}}
+    print("image only:", json.dumps(summary, ensure_ascii=False), flush=True)
+    return {"summary": summary, "items": per}
 
 
 def main() -> None:
@@ -78,7 +128,9 @@ def main() -> None:
                                   "top": [f"{n.file_path} {n.location.describe()}".strip() for n in nodes[:5]]})
         print(variant, round(sum(r["recall@5"] for r in rows[variant]) / len(items), 3), flush=True)
 
-    summary = {"eval": es.name, "n": len(items), "k": args.k, "visual_index": build,
+    pure = image_only(engine, index, settings, items)
+
+    summary = {"eval": es.name, "n": len(items), "k": args.k, "visual_index": build, "image_only": pure["summary"],
                "llm_free": True, "elapsed_s": round(time.perf_counter() - t0, 1), "variants": {}, "paired": {}}
     for v in VARIANTS:
         summary["variants"][v] = {m: mean_ci([r[m] for r in rows[v]]) for m in ("recall@5", "hit@5", "recall@10", "mrr")}
@@ -88,7 +140,8 @@ def main() -> None:
     out = ROOT / args.out
     out.mkdir(parents=True, exist_ok=True)
     (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
-    (out / "items.json").write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out / "items.json").write_text(json.dumps({**rows, "image_only": pure["items"]}, ensure_ascii=False, indent=2),
+                                    encoding="utf-8")
     print(json.dumps(summary["variants"], ensure_ascii=False, indent=1))
     print(json.dumps(summary["paired"], ensure_ascii=False, indent=1))
     engine.close()

@@ -1,0 +1,236 @@
+{
+  "n": 30,
+  "accuracy": 0.9333,
+  "macro_f1": 0.9348,
+  "classes": [
+    "chart",
+    "diagram",
+    "photo",
+    "scan",
+    "screenshot"
+  ],
+  "confusion": [
+    [
+      6,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      4,
+      0,
+      0
+    ],
+    [
+      2,
+      0,
+      0,
+      18,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  ],
+  "per_class_recall": {
+    "chart": 1.0,
+    "photo": 1.0,
+    "scan": 0.9
+  },
+  "items": [
+    {
+      "source": "01_eda_breast_cancer.ipynb#cell8",
+      "label": "chart",
+      "pred": "chart",
+      "p": 0.928
+    },
+    {
+      "source": "02_logreg_baseline.ipynb#cell8",
+      "label": "chart",
+      "pred": "chart",
+      "p": 0.803
+    },
+    {
+      "source": "03_gradient_boosting.ipynb#cell6",
+      "label": "chart",
+      "pred": "chart",
+      "p": 0.882
+    },
+    {
+      "source": "04_digits_augmentation.ipynb#cell9",
+      "label": "chart",
+      "pred": "chart",
+      "p": 0.884
+    },
+    {
+      "source": "05_wine_clustering.ipynb#cell7",
+      "label": "chart",
+      "pred": "chart",
+      "p": 0.917
+    },
+    {
+      "source": "08_numpy_mlp.ipynb#cell6",
+      "label": "chart",
+      "pred": "chart",
+      "p": 0.885
+    },
+    {
+      "source": "000000.jpg",
+      "label": "scan",
+      "pred": "scan",
+      "p": 0.771
+    },
+    {
+      "source": "000002.jpg",
+      "label": "scan",
+      "pred": "scan",
+      "p": 0.902
+    },
+    {
+      "source": "000004.jpg",
+      "label": "scan",
+      "pred": "scan",
+      "p": 0.867
+    },
+    {
+      "source": "000006.jpg",
+      "label": "scan",
+      "pred": "scan",
+      "p": 0.779
+    },
+    {
+      "source": "000008.jpg",
+      "label": "scan",
+      "pred": "scan",
+      "p": 0.842
+    },
+    {
+      "source": "000010.jpg",
+      "label": "scan",
+      "pred": "scan",
+      "p": 0.899
+    },
+    {
+      "source": "000012.jpg",
+      "label": "scan",
+      "pred": "scan",
+      "p": 0.497
+    },
+    {
+      "source": "000014.jpg",
+      "label": "scan",
+      "pred": "scan",
+      "p": 0.898
+    },
+    {
+      "source": "000016.jpg",
+      "label": "scan",
+      "pred": "scan",
+      "p": 0.943
+    },
+    {
+      "source": "000018.jpg",
+      "label": "scan",
+      "pred": "scan",
+      "p": 0.952
+    },
+    {
+      "source": "000020.jpg",
+      "label": "scan",
+      "pred": "scan",
+      "p": 0.895
+    },
+    {
+      "source": "000022.jpg",
+      "label": "scan",
+      "pred": "scan",
+      "p": 0.928
+    },
+    {
+      "source": "000024.jpg",
+      "label": "scan",
+      "pred": "scan",
+      "p": 0.906
+    },
+    {
+      "source": "000026.jpg",
+      "label": "scan",
+      "pred": "scan",
+      "p": 0.893
+    },
+    {
+      "source": "000028.jpg",
+      "label": "scan",
+      "pred": "chart",
+      "p": 1.0
+    },
+    {
+      "source": "000030.jpg",
+      "label": "scan",
+      "pred": "scan",
+      "p": 0.932
+    },
+    {
+      "source": "000032.jpg",
+      "label": "scan",
+      "pred": "scan",
+      "p": 0.916
+    },
+    {
+      "source": "000034.jpg",
+      "label": "scan",
+      "pred": "scan",
+      "p": 0.895
+    },
+    {
+      "source": "000036.jpg",
+      "label": "scan",
+      "pred": "chart",
+      "p": 0.504
+    },
+    {
+      "source": "000038.jpg",
+      "label": "scan",
+      "pred": "scan",
+      "p": 0.879
+    },
+    {
+      "source": "coffee",
+      "label": "photo",
+      "pred": "photo",
+      "p": 0.964
+    },
+    {
+      "source": "camera",
+      "label": "photo",
+      "pred": "photo",
+      "p": 0.378
+    },
+    {
+      "source": "clock",
+      "label": "photo",
+      "pred": "photo",
+      "p": 0.78
+    },
+    {
+      "source": "sk:china",
+      "label": "photo",
+      "pred": "photo",
+      "p": 0.494
+    }
+  ]
+}

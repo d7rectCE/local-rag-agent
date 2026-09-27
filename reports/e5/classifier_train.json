@@ -1,0 +1,70 @@
+{
+  "classes": [
+    "chart",
+    "diagram",
+    "photo",
+    "scan",
+    "screenshot"
+  ],
+  "backbone": "hf-hub:timm/mobilenetv3_small_100.lamb_in1k",
+  "best_val_acc": 1.0,
+  "history": [
+    {
+      "epoch": 1,
+      "loss": 1.3182,
+      "val_acc": 0.9398,
+      "s": 115.3
+    },
+    {
+      "epoch": 2,
+      "loss": 0.6041,
+      "val_acc": 0.991,
+      "s": 27.9
+    },
+    {
+      "epoch": 3,
+      "loss": 0.4529,
+      "val_acc": 0.9925,
+      "s": 27.8
+    },
+    {
+      "epoch": 4,
+      "loss": 0.4362,
+      "val_acc": 0.9985,
+      "s": 27.6
+    },
+    {
+      "epoch": 5,
+      "loss": 0.4223,
+      "val_acc": 1.0,
+      "s": 27.6
+    },
+    {
+      "epoch": 6,
+      "loss": 0.4061,
+      "val_acc": 1.0,
+      "s": 27.9
+    },
+    {
+      "epoch": 7,
+      "loss": 0.4045,
+      "val_acc": 1.0,
+      "s": 27.9
+    },
+    {
+      "epoch": 8,
+      "loss": 0.4043,
+      "val_acc": 1.0,
+      "s": 27.9
+    }
+  ],
+  "args": {
+    "cmd": "train",
+    "data": "runs/images/data",
+    "out": "runs/images/mnv3s",
+    "epochs": 8,
+    "batch": 64,
+    "lr": 0.002,
+    "workers": 0
+  }
+}

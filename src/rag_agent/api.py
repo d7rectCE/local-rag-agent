@@ -23,6 +23,7 @@ from rag_agent.code.workspace import WorkspaceError
 from rag_agent.dialogs import DialogNotFound, DialogStore
 from rag_agent.engine import Engine, IndexingBusyError, NoCorpusError
 from rag_agent.generation import Answer
+from rag_agent.hardware import gpu_name
 from rag_agent.index.indexer import IndexProgress
 from rag_agent.llm import LLMError
 from rag_agent.structured.sql import SQLResult
@@ -163,7 +164,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
 
     @app.get("/status")
     def status() -> dict:
-        return {**eng().status(), "gpu": _gpu_name(state)}
+        return {**eng().status(), "gpu": gpu_name()}  # this machine's card, detected (not configured)
 
     @app.get("/policy")
     def policy() -> dict:
@@ -179,6 +180,24 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             "code": e.settings.code.chat,
             "web": e.settings.web.mode,
             "policies": e.settings.security.policies,
+        }
+
+    @app.get("/imagegen")
+    def imagegen_info() -> dict:
+        """The picture generator for the UI: its models, the device it computes on, the sizes of the model
+        card with the expected time of each on this machine (learned from the pictures made here)."""
+        from rag_agent.imagegen import MAX_AREA, MAX_SIDE, OFFICIAL_SIZES
+
+        g = eng().imagegen
+        if not g.available:
+            return {"available": False, "missing": g.missing()}
+        return {
+            "available": True,
+            "models": g.models(),
+            "device": g.device(),
+            "sizes": [{"id": ratio, "width": w, "height": h} for ratio, (w, h) in OFFICIAL_SIZES.items()],
+            "max_side": MAX_SIDE,
+            "max_area": MAX_AREA,
         }
 
     @app.get("/models")
@@ -488,20 +507,3 @@ def create_app(engine: Engine | None = None) -> FastAPI:
 
     return app
 
-
-def _gpu_name(state: dict) -> str | None:
-    """Name of the GPU the models run on, for the model badge; torch is already loaded by then."""
-    if "gpu" not in state:
-        name = None
-        try:
-            if "torch" in sys.modules:
-                import torch
-
-                if torch.cuda.is_available():
-                    name = torch.cuda.get_device_name(0).replace("AMD Radeon ", "").replace("NVIDIA GeForce ", "")
-        except Exception:  # noqa: BLE001 - a badge must never break /status
-            name = None
-        if name is None and "torch" not in sys.modules:
-            return None  # ask again once the embedder has loaded torch
-        state["gpu"] = name
-    return state["gpu"]

@@ -23,9 +23,11 @@ from __future__ import annotations
 import io
 import json
 import logging
+import math
 import os
 import re
 import shutil
+import statistics
 import subprocess
 import tempfile
 import time
@@ -36,6 +38,7 @@ from pathlib import Path
 import httpx
 from pydantic import BaseModel
 
+from rag_agent.hardware import short_name
 from rag_agent.llm import BaseLLM, LLMError
 
 log = logging.getLogger(__name__)
@@ -43,6 +46,22 @@ log = logging.getLogger(__name__)
 MODES = ("generate", "edit", "redraw", "inpaint", "outpaint")
 ASPECTS = {"square": (1024, 1024), "portrait": (832, 1216), "landscape": (1216, 832), "wide": (1344, 768),
            "tall": (768, 1344)}
+# the sizes of the model card (Qwen/Qwen-Image-2.1): what the model is trained for; ASPECTS above are the fast
+# default (about a megapixel), chosen by the chat model when the user has not picked a size
+OFFICIAL_SIZES = {"1:1": (2048, 2048), "4:3": (2400, 1792), "3:4": (1792, 2400), "3:2": (2528, 1696),
+                  "2:3": (1696, 2528), "16:9": (2752, 1536), "9:16": (1536, 2752)}
+MAX_SIDE, MAX_AREA = 3072, 2752 * 1536  # larger sizes are scaled down, keeping the proportions
+_SIZE = re.compile(r"^\s*(\d{2,5})\s*[x×хX*]\s*(\d{2,5})\s*$")
+
+# the time of a picture on this machine: overhead + steps * k * cost, where a step grows faster than the pixel
+# count (attention over all the patches); k is learned from the pictures already made here
+OVERHEAD_S = 16.0  # the prompt encoded on the CPU, the weights read, the VAE decode
+DEFAULT_K = 3.9  # a first guess until this machine has made a picture (measured on an RX 7900 XTX, Vulkan)
+
+# weights in the model folder that are not diffusion models: text encoders, VAEs, vision projectors
+_NOT_DIT = re.compile(r"vae|text[_-]?enc|qwen[\d._-]*vl|mmproj|clip|llava|umt5|(^|[^a-z0-9])t5", re.IGNORECASE)
+_QUANT = re.compile(r"(?<![A-Za-z0-9])(IQ\d\w*|Q\d(?:_K)?(?:_[SML0-9])?|BF16|FP16|F16|FP8\w*|F32|INT8)(?![A-Za-z0-9])",
+                    re.IGNORECASE)
 _ID = re.compile(r"^[0-9a-f]{12}$")
 _SESSION = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
@@ -101,6 +120,8 @@ class GeneratedImage(BaseModel):
     seed: int
     steps: int
     source: str | None = None  # the image it was made from: "upload:<id>" or "generated:<id>"
+    model: str = ""  # the diffusion model's file name
+    strength: float | None = None  # redraw / inpaint: sd.cpp runs steps x strength of them
     elapsed_s: float = 0.0
     created_at: str = ""
 
@@ -160,9 +181,11 @@ def unload_ollama(base_url: str) -> None:
         pass
 
 
-def outpaint_canvas(image: bytes, sides: list[str], share: float = 0.25) -> tuple[bytes, bytes, bytes, int, int]:
+def outpaint_canvas(image: bytes, sides: list[str], share: float = 0.25,
+                    area: int | None = None) -> tuple[bytes, bytes, bytes, int, int]:
     """The image on a larger canvas, the mask of what the model draws (white) and the alpha of what stays from
-    the old image when the result is assembled. Sizes are multiples of 32.
+    the old image when the result is assembled. Sizes are multiples of 32; ``area`` (pixels) scales the canvas
+    to a chosen size, otherwise it keeps the picture's scale unless it exceeds the model's range.
 
     The mask reaches a band into the old image: the model redraws that band in the light of both sides, and
     the old image fades into the new one across it, so there is no hard seam where the canvas was cut."""
@@ -177,7 +200,8 @@ def outpaint_canvas(image: bytes, sides: list[str], share: float = 0.25) -> tupl
         left, right = (dx if "left" in sides else 0), (dx if "right" in sides else 0)
         top, bottom = (dy if "top" in sides else 0), (dy if "bottom" in sides else 0)
         W, H = w + left + right, h + top + bottom
-        W32, H32 = max(32, W // 32 * 32), max(32, H // 32 * 32)
+        k = (area / (W * H)) ** 0.5 if area else 1.0
+        W32, H32 = snap32(W * k, H * k, floor=True)
         band = max(32, min(w, h) // 12)
         xs, ys = np.arange(W, dtype=np.float32), np.arange(H, dtype=np.float32)
         keep = np.ones((H, W), dtype=np.float32)
@@ -246,6 +270,47 @@ def ascii_workdir(base: str = "") -> Path:
     return d
 
 
+def snap32(w: float, h: float, floor: bool = False) -> tuple[int, int]:
+    """Multiples of 32 near w x h (the model's patch grid), scaled down to MAX_SIDE and MAX_AREA."""
+    if w <= 0 or h <= 0:
+        raise ImageGenError("размер должен быть положительным")
+    scale = min(1.0, MAX_SIDE / max(w, h), (MAX_AREA / (w * h)) ** 0.5)
+    to32 = (lambda v: math.floor(v / 32) * 32) if floor else (lambda v: round(v / 32) * 32)
+    return max(256, to32(w * scale)), max(256, to32(h * scale))
+
+
+def parse_size(value: str | None) -> tuple[int, int] | str | None:
+    """The size the user picked: None (auto: the chat model picks a format near a megapixel), "source" (the
+    size of the picture being changed), an official ratio ("16:9") or width x height ("1920x1080")."""
+    if not value or value == "auto":
+        return None
+    if value == "source":
+        return "source"
+    if value in OFFICIAL_SIZES:
+        return OFFICIAL_SIZES[value]
+    m = _SIZE.match(value)
+    if not m:
+        raise ImageGenError(f"непонятный размер «{value}»: нужно ширина×высота, например 1920x1080")
+    return snap32(int(m.group(1)), int(m.group(2)))
+
+
+def fit_source(src: tuple[int, int], choice: tuple[int, int] | str | None) -> tuple[int, int]:
+    """The size of a change that keeps the picture's proportions (redraw, inpaint, auto edit): auto -> near a
+    megapixel, "source" -> the picture's own size, a chosen size -> its pixel count in these proportions."""
+    w, h = src
+    if choice is None:
+        return fit32(src)
+    if choice == "source":
+        return snap32(w, h)
+    k = (choice[0] * choice[1] / (w * h)) ** 0.5
+    return snap32(w * k, h * k)
+
+
+def step_cost(width: int, height: int, mode: str = "generate") -> float:
+    mp = width * height / 1e6 * (2 if mode == "edit" else 1)  # an edit also attends to the reference picture
+    return mp * (1 + mp / 4.4)
+
+
 def fit32(size: tuple[int, int], limit: int = 1344, least: int = 1024) -> tuple[int, int]:
     """A generation size with the source's proportions, within the model's range and divisible by 32: a small
     photo is drawn larger (the model gives little detail far below a megapixel), a large one smaller."""
@@ -260,6 +325,7 @@ class ImageGenerator:
     def __init__(self, settings):
         self.settings, self.cfg = settings, settings.imagegen
         self.root = settings.data_dir / "generated"
+        self._device: dict | None = None
 
     @property
     def available(self) -> bool:
@@ -272,6 +338,78 @@ class ImageGenerator:
         if not c.enabled:
             return ["imagegen.enabled"]
         return [k for k in ("sd_cli", "diffusion_model", "vae", "llm") if not getattr(c, k) or not Path(getattr(c, k)).exists()]
+
+    def _model_files(self) -> dict[str, Path]:
+        c = self.cfg
+        if not c.diffusion_model:
+            return {}
+        default = Path(c.diffusion_model)
+        skip = {Path(p).name.lower() for p in (c.vae, c.llm) if p}
+        found = {default.name: default}
+        for d in dict.fromkeys([default.parent, *([Path(c.models_dir)] if c.models_dir else [])]):
+            if d.is_dir():
+                for f in sorted(d.iterdir()):
+                    if (f.suffix.lower() in (".gguf", ".safetensors") and f.name.lower() not in skip
+                            and not _NOT_DIT.search(f.name)):
+                        found.setdefault(f.name, f)
+        return found
+
+    def models(self) -> list[dict]:
+        """The diffusion models to choose from: the configured one and the other weights of its folder (and of
+        ``imagegen.models_dir``) — other builds of the same model family, which share its VAE and text encoder."""
+        default = Path(self.cfg.diffusion_model) if self.cfg.diffusion_model else None
+        out = []
+        for name, p in self._model_files().items():
+            m = _QUANT.search(p.stem)
+            out.append({"name": name, "size": p.stat().st_size if p.exists() else 0,
+                        "quant": m.group(1).upper() if m else "", "default": p == default})
+        return out
+
+    def model_path(self, name: str | None) -> str:
+        if not name:
+            return self.cfg.diffusion_model
+        found = self._model_files().get(name)
+        if found is None or not found.exists():
+            raise ImageGenError(f"модель картинок «{name}» не найдена в папке моделей")
+        return str(found)
+
+    def device(self) -> dict:
+        """Where sd-cli computes: its first GPU device, asked from sd-cli itself (``--list-devices``), e.g.
+        {"backend": "Vulkan", "name": "RX 7900 XTX"}; the answer is cached."""
+        if self._device is None:
+            self._device = {}
+            if self.cfg.sd_cli and Path(self.cfg.sd_cli).exists():
+                try:
+                    out = subprocess.run([self.cfg.sd_cli, "--list-devices"], capture_output=True, text=True,
+                                         encoding="utf-8", errors="replace", timeout=60,
+                                         cwd=str(Path(self.cfg.sd_cli).parent)).stdout
+                except (OSError, subprocess.TimeoutExpired):
+                    out = ""
+                devices = [m.groups() for m in re.finditer(r"^([A-Za-z]+)(\d*)\t(.+)$", out, re.MULTILINE)]
+                gpu = next((d for d in devices if d[0].upper() != "CPU"), devices[0] if devices else None)
+                if gpu:
+                    self._device = {"backend": gpu[0], "name": short_name(gpu[2])}
+        return self._device
+
+    def speed(self) -> float:
+        """Seconds per step per unit of cost: the median over the last pictures made on this machine."""
+        metas = sorted(self.root.glob("*/*.json"), key=lambda p: p.stat().st_mtime)[-30:] if self.root.exists() else []
+        ks = []
+        for meta in metas:
+            try:
+                g = GeneratedImage.model_validate_json(meta.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            steps = g.steps * (g.strength if g.mode == "redraw" and g.strength else 1.0)
+            cost = steps * step_cost(g.width, g.height, g.mode)
+            if cost > 0 and g.elapsed_s > OVERHEAD_S:
+                ks.append((g.elapsed_s - OVERHEAD_S) / cost)
+        return statistics.median(ks) if ks else DEFAULT_K
+
+    def estimate(self, mode: str, width: int, height: int, steps: int | None = None) -> float:
+        """Expected seconds for a picture of this size on this machine."""
+        steps = (steps or self.cfg.steps) * (self.cfg.strength if mode == "redraw" else 1.0)
+        return OVERHEAD_S + steps * self.speed() * step_cost(width, height, mode)
 
     def _dir(self, dialog: str) -> Path:
         if not _SESSION.match(dialog or ""):
@@ -297,7 +435,9 @@ class ImageGenerator:
     def run(self, dialog: str, mode: str, prompt: str, *, request: str = "", width: int | None = None,
             height: int | None = None, source: bytes | None = None, source_ref: str | None = None,
             mask: bytes | None = None, sides: list[str] | None = None, strength: float | None = None,
-            seed: int | None = None, steps: int | None = None) -> GeneratedImage:
+            seed: int | None = None, steps: int | None = None, size: tuple[int, int] | str | None = None,
+            model: str | None = None) -> GeneratedImage:
+        """``size``: the user's choice (see parse_size); ``model``: a file name from models()."""
         if mode not in MODES:
             raise ImageGenError(f"неизвестный режим {mode}")
         if not self.available:
@@ -305,6 +445,7 @@ class ImageGenerator:
         if mode != "generate" and source is None:
             raise ImageGenError("для этого режима нужна картинка-источник")
         c = self.cfg
+        dit = self.model_path(model)
         out_dir = self._dir(dialog)
         out_dir.mkdir(parents=True, exist_ok=True)
         image_id = uuid.uuid4().hex[:12]
@@ -313,7 +454,7 @@ class ImageGenerator:
         w = short_path(work)
         seed = int(seed if seed is not None else uuid.uuid4().int % 2**31)
         steps = int(steps or c.steps)
-        args = [c.sd_cli, "--diffusion-model", c.diffusion_model, "--vae", c.vae, "--llm", c.llm,
+        args = [c.sd_cli, "--diffusion-model", dit, "--vae", c.vae, "--llm", c.llm,
                 "--cfg-scale", str(c.cfg_scale), "--sampling-method", c.sampler, "--steps", str(steps),
                 "-s", str(seed), "-p", prompt, "-o", os.path.join(w, "out.png")]
         if c.negative_prompt:
@@ -335,8 +476,15 @@ class ImageGenerator:
                 with Image.open(io.BytesIO(source)) as im:
                     src_size = im.size
                     (work / "source.png").write_bytes(_png(im.convert("RGB")))
+            if mode == "inpaint":
+                strength = strength if strength is not None else 1.0
+            elif mode == "redraw":
+                strength = strength if strength is not None else c.strength
+            else:
+                strength = None
             if mode == "outpaint":
-                canvas, mask_png, keep, width, height = outpaint_canvas(source, sides or [])
+                area = size[0] * size[1] if isinstance(size, tuple) else None
+                canvas, mask_png, keep, width, height = outpaint_canvas(source, sides or [], area=area)
                 (work / "init.png").write_bytes(canvas)
                 (work / "mask.png").write_bytes(mask_png)
                 (work / "keep.png").write_bytes(keep)
@@ -344,29 +492,34 @@ class ImageGenerator:
             elif mode == "inpaint":
                 if mask is None:
                     raise ImageGenError("для дорисовки области нужна маска")
-                width, height = fit32(src_size)
+                width, height = fit_source(src_size, size)
                 self._resized(work / "source.png", work / "init.png", (width, height))
                 (work / "mask_in.png").write_bytes(mask)
                 self._resized(work / "mask_in.png", work / "mask.png", (width, height), mask=True)
                 args += ["-i", os.path.join(w, "init.png"), "--mask", os.path.join(w, "mask.png"),
-                         "--strength", str(strength if strength is not None else 1.0)]
+                         "--strength", str(strength)]
             elif mode == "redraw":
-                width, height = fit32(src_size)
+                width, height = fit_source(src_size, size)
                 self._resized(work / "source.png", work / "init.png", (width, height))
-                args += ["-i", os.path.join(w, "init.png"), "--strength", str(strength if strength is not None else c.strength)]
+                args += ["-i", os.path.join(w, "init.png"), "--strength", str(strength)]
             elif mode == "edit":
-                width, height = width or fit32(src_size)[0], height or fit32(src_size)[1]
+                # the model recomposes an edit, so any chosen size goes; auto keeps the picture's proportions
+                width, height = size if isinstance(size, tuple) else fit_source(src_size, size)
                 args += ["-r", os.path.join(w, "source.png")]
+            elif isinstance(size, tuple):
+                width, height = size
             width, height = int(width or c.width), int(height or c.height)
             args += ["-W", str(width), "-H", str(height)]
             if c.unload_llm:
                 unload_ollama(self.settings.llm.base_url)
+            # a 2K picture takes ten times longer than a 1K one: the limit grows with the expected time
+            limit = max(c.timeout_s, 3 * self.estimate(mode, width, height, steps))
             t0 = time.perf_counter()
             try:
                 proc = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                                      timeout=c.timeout_s, cwd=str(Path(c.sd_cli).parent))
+                                      timeout=limit, cwd=str(Path(c.sd_cli).parent))
             except subprocess.TimeoutExpired as exc:
-                raise ImageGenError(f"генерация не уложилась в {c.timeout_s:.0f} с") from exc
+                raise ImageGenError(f"генерация не уложилась в {limit:.0f} с") from exc
             elapsed = round(time.perf_counter() - t0, 1)
             produced = work / "out.png"
             if proc.returncode != 0 or not produced.exists():
@@ -380,7 +533,8 @@ class ImageGenerator:
         finally:
             shutil.rmtree(work, ignore_errors=True)
         info = GeneratedImage(id=image_id, dialog=dialog, mode=mode, prompt=prompt, request=request, width=width,
-                              height=height, seed=seed, steps=steps, source=source_ref, elapsed_s=elapsed,
+                              height=height, seed=seed, steps=steps, source=source_ref, model=Path(dit).name,
+                              strength=strength, elapsed_s=elapsed,
                               created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
         out.with_suffix(".json").write_text(info.model_dump_json(indent=1), encoding="utf-8")
         log.info("image %s (%s) in %.1f s", image_id, mode, elapsed)

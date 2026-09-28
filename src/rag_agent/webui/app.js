@@ -31,6 +31,8 @@ const ICONS = {
   database: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
   upload: '<path d="M12 15V3M7 8l5-5 5 5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>',
   external: '<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+  image: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-9 8"/>',
+  frame: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
 };
 
 function icon(name, size = 16, width = 1.8) {
@@ -110,7 +112,8 @@ function loadPrefs() {
   try { return JSON.parse(localStorage.getItem(PREFS_KEY) || '{}'); } catch { return {}; }
 }
 function savePrefs() {
-  const p = { route: S.route, reasoning: S.reasoning, web: S.web, sandboxNet: S.sandboxNet, model: S.model, settings: S.settings };
+  const p = { route: S.route, reasoning: S.reasoning, web: S.web, sandboxNet: S.sandboxNet, model: S.model, settings: S.settings,
+    imageModel: S.imageModel, imageSize: S.imageSize };
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch { /* private mode */ }
 }
 
@@ -130,6 +133,9 @@ const S = {
   sandboxNet: !!prefs.sandboxNet,  // code may run with network; every such task is confirmed
   model: prefs.model || null,      // null: the configured model
   models: null,                    // {default, models: [...]} from /models
+  imagegen: null,                  // the picture generator: models, device, sizes, time model (/imagegen)
+  imageModel: prefs.imageModel || null,  // null: the configured diffusion model
+  imageSize: prefs.imageSize || 'auto',  // auto | source | an official ratio ("16:9") | "WxH"
   settings: { agent: 'auto', webMode: 'auto', code: 'auto', top_k: null, mode: null, rerank: null, symbols: null, ...(prefs.settings || {}) },
   busy: null,         // {kind, text, uploads, started}
   error: null,        // {kind, text, message}
@@ -194,6 +200,11 @@ async function loadPolicy() { S.policy = await api('GET', '/policy'); }
 async function loadModels() {
   S.models = await api('GET', '/models');
   if (S.model && !S.models.models.some((m) => m.name === S.model)) { S.model = null; savePrefs(); } // removed from Ollama
+}
+async function loadImagegen() {
+  S.imagegen = await api('GET', '/imagegen');
+  const names = (S.imagegen.models || []).map((m) => m.name);
+  if (S.imageModel && !names.includes(S.imageModel)) { S.imageModel = null; savePrefs(); } // the file is gone
 }
 async function loadDialogs() { S.dialogs = await api('GET', '/dialogs'); renderDialogs(); }
 async function loadUploads() {
@@ -384,6 +395,109 @@ function renderModel() {
   );
 }
 
+const stem = (name) => (name || '').replace(/\.(gguf|safetensors)$/i, '');
+
+// the picture generator's model: a second card under the dialogs; the device is what sd-cli reports
+function renderImageModel() {
+  const el = $('#image-model');
+  const ig = S.imagegen;
+  el.hidden = !ig?.available;
+  if (!ig?.available) return;
+  const def = (ig.models || []).find((m) => m.default)?.name;
+  const name = stem(S.imageModel || def) || '—';
+  const dev = ig.device || {};
+  el.replaceChildren(
+    h('div', { class: 'model-icon', icon: 'image' }),
+    h('button', { type: 'button', class: 'model-name', title: 'Выбрать модель для картинок', 'aria-label': `Модель картинок ${name}. Выбрать другую`, onclick: openImageModelModal },
+      h('b', { text: name }), h('span', { text: ['sd.cpp', dev.backend, dev.name].filter(Boolean).join(' · ') + (S.imageModel ? ' · выбрана' : '') })),
+    h('span', { class: 'dot', role: 'img', 'aria-label': 'Генератор картинок настроен', title: 'Генератор картинок настроен' }));
+}
+
+function openImageModelModal() {
+  const ig = S.imagegen || {};
+  const def = (ig.models || []).find((m) => m.default)?.name;
+  const cur = S.imageModel || def;
+  const list = h('div', { class: 'list models' });
+  for (const m of ig.models || []) {
+    list.append(h('button', { type: 'button', 'aria-pressed': String(m.name === cur), onclick: () => {
+      S.imageModel = m.name === def ? null : m.name;
+      savePrefs();
+      closeModal();
+      renderImageModel();
+      toast(`Модель картинок: ${stem(m.name)}`);
+    } },
+    h('span', { class: 'folder-icon', icon: m.name === cur ? 'check' : 'image' }),
+    h('span', { style: 'display:flex;flex-direction:column;min-width:0' },
+      h('b', {}, stem(m.name), m.default ? h('span', { class: 'tag', style: 'margin-left:8px', text: 'по умолчанию' }) : null),
+      h('span', { class: 'path', text: [m.quant, m.size ? fmtSize(m.size) : ''].filter(Boolean).join(' · ') }))));
+  }
+  openModal('Модель для картинок', [
+    list,
+    h('p', { class: 'hint', style: 'margin:0' }, 'В списке — сборки той же модели (Qwen-Image-2.1 с другим квантованием или другим файн-тюном): у них общий VAE и текстовый энкодер. Чтобы модель появилась здесь, положите её файл .gguf или .safetensors рядом с моделью по умолчанию или в папку imagegen.models_dir (configs/local.yaml).'),
+  ], [h('button', { type: 'button', class: 'btn accent', onclick: closeModal }, 'Готово')]);
+}
+
+// the same grid as imagegen.snap32: multiples of 32, scaled down to the model's range
+function snap32(w, hgt) {
+  const ig = S.imagegen || {};
+  const k = Math.min(1, (ig.max_side || 3072) / Math.max(w, hgt), Math.sqrt((ig.max_area || 2752 * 1536) / (w * hgt)));
+  return [Math.max(256, Math.round((w * k) / 32) * 32), Math.max(256, Math.round((hgt * k) / 32) * 32)];
+}
+
+function sizeOf(v) {
+  const off = (S.imagegen?.sizes || []).find((s) => s.id === v);
+  if (off) return [off.width, off.height];
+  const m = /^(\d+)x(\d+)$/.exec(v || '');
+  return m ? [+m[1], +m[2]] : null;
+}
+
+function sizeLabel(v) {
+  if (!v || v === 'auto') return 'Размер: авто';
+  if (v === 'source') return 'Как у картинки';
+  const wh = sizeOf(v);
+  const off = (S.imagegen?.sizes || []).some((s) => s.id === v);
+  return wh ? `${off ? `${v} · ` : ''}${wh[0]}×${wh[1]}` : v;
+}
+
+function openSizeModal() {
+  const ig = S.imagegen || {};
+  const pick = (v) => { S.imageSize = v; savePrefs(); closeModal(); renderControls(); };
+  const row = (v, title, meta) => h('button', { type: 'button', 'aria-pressed': String(S.imageSize === v), onclick: () => pick(v) },
+    h('span', { class: 'folder-icon', icon: S.imageSize === v ? 'check' : 'frame' }),
+    h('span', { style: 'display:flex;flex-direction:column;min-width:0' }, h('b', { text: title }), h('span', { class: 'path', text: meta })));
+  const list = h('div', { class: 'list models' },
+    row('auto', 'Авто', 'формат по просьбе (квадрат, портрет, пейзаж), около 1 Мп'),
+    ...(ig.sizes || []).map((s) => row(s.id, `${s.id} · ${s.width}×${s.height}`, 'размер из карточки модели')),
+    row('source', 'Как у картинки', 'для правки: размер исходной фотографии или картинки'));
+  const cur = sizeOf(S.imageSize) && !(ig.sizes || []).some((s) => s.id === S.imageSize) ? sizeOf(S.imageSize) : null;
+  const wIn = h('input', { class: 'input', type: 'number', min: 256, max: ig.max_side || 3072, step: 32, value: cur ? cur[0] : '', placeholder: 'ширина', 'aria-label': 'Ширина' });
+  const hIn = h('input', { class: 'input', type: 'number', min: 256, max: ig.max_side || 3072, step: 32, value: cur ? cur[1] : '', placeholder: 'высота', 'aria-label': 'Высота' });
+  const note = h('span', { class: 'hint' });
+  const snapped = () => {
+    const w = +wIn.value, hgt = +hIn.value;
+    return w > 0 && hgt > 0 ? snap32(w, hgt) : null;
+  };
+  const update = () => {
+    const s = snapped();
+    note.textContent = s ? `Будет ${s[0]}×${s[1]}` : 'Стороны округляются до кратных 32; больше 4,2 Мп — уменьшается с сохранением пропорций.';
+  };
+  wIn.addEventListener('input', update);
+  hIn.addEventListener('input', update);
+  const apply = () => {
+    const s = snapped();
+    if (!s) { toast('Укажите ширину и высоту', 'error'); return; }
+    pick(`${s[0]}x${s[1]}`);
+  };
+  for (const inp of [wIn, hIn]) inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') apply(); });
+  update();
+  openModal('Размер картинки', [
+    list,
+    h('div', { class: 'field' }, h('span', { class: 'label', text: 'Свой размер' }),
+      h('div', { class: 'size-row' }, wIn, h('span', { text: '×' }), hIn, h('button', { type: 'button', class: 'btn ghost', onclick: apply }, 'Применить')), note),
+    h('p', { class: 'hint', style: 'margin:0' }, 'Размер действует на новые картинки и на правки по описанию. «Дорисовать область» и перерисовка («перерисуй детальнее») сохраняют пропорции исходной картинки — выбранный размер задаёт у них число пикселей; «Расширить» масштабирует весь новый холст.'),
+  ], [h('button', { type: 'button', class: 'btn accent', onclick: closeModal }, 'Готово')]);
+}
+
 function setTheme(pref) {
   try { localStorage.setItem('rag.theme', pref); } catch { /* ignore */ }
   window.ragTheme.apply();
@@ -429,6 +543,11 @@ function renderControls() {
   net.title = S.sandboxNet
     ? 'Код может выходить в интернет (скачать данные, pip install); каждый такой запуск нужно разрешить'
     : 'Код в песочнице работает без интернета';
+  const sizeBtn = $('#size-btn');
+  sizeBtn.hidden = !S.imagegen?.available;
+  sizeBtn.setAttribute('aria-pressed', String(S.imageSize !== 'auto'));
+  sizeBtn.querySelector('.size-label').textContent = sizeLabel(S.imageSize);
+  sizeBtn.title = S.imageSize === 'auto' ? 'Размер картинки: формат выбирает модель, около 1 Мп' : `Размер картинки: ${sizeLabel(S.imageSize)}`;
   renderAttachments();
   renderSend();
 }
@@ -716,7 +835,7 @@ function imageCard(img) {
     h('button', { type: 'button', class: 'btn accent', onclick: closeModal }, 'Закрыть')], { wide: true }));
   const source = `generated:${img.id}`;
   return h('figure', { class: 'gen-image' }, pic,
-    h('figcaption', {}, h('span', { class: 'muted small', text: `${IMAGE_MODES[img.mode] || img.mode} · ${img.width}×${img.height} · seed ${img.seed} · ${fmtSec(img.elapsed_s)}` }),
+    h('figcaption', {}, h('span', { class: 'muted small', text: [IMAGE_MODES[img.mode] || img.mode, `${img.width}×${img.height}`, stem(img.model), `seed ${img.seed}`, fmtSec(img.elapsed_s)].filter(Boolean).join(' · ') }),
       h('span', { class: 'gen-actions' },
         h('a', { class: 'btn-pill', href: img.url, download: `image-${img.id}.png` }, 'Скачать'),
         h('button', { type: 'button', class: 'btn-pill', disabled: !!S.busy, onclick: () => setImageTarget({ source, mode: 'edit', url: img.url }) }, 'Изменить'),
@@ -981,7 +1100,8 @@ function renderThread() {
     const label = h('span', { class: 'busy-label' });
     const update = () => {
       const s = (Date.now() - S.busy.started) / 1000;
-      label.textContent = `${S.busy.drawing ? 'Рисую картинку: обычно 2–5 минут' : S.busy.kind === 'code' ? 'Код-агент работает в песочнице' : s > 20 ? 'Работаю: поиск, рассуждение или запуск кода' : 'Ищу и думаю'} · ${Math.floor(s)} с`;
+      const spent = s < 90 ? `${Math.floor(s)} с` : `${Math.floor(s / 60)} мин ${Math.floor(s % 60)} с`;
+      label.textContent = `${S.busy.drawing ? 'Рисую картинку' : S.busy.kind === 'code' ? 'Код-агент работает в песочнице' : s > 20 ? 'Работаю: поиск, рассуждение или запуск кода' : 'Ищу и думаю'} · ${spent}`;
     };
     update();
     clearInterval(tickTimer);
@@ -1139,6 +1259,7 @@ function renderAll() {
   renderFolder();
   renderDialogs();
   renderModel();
+  renderImageModel();
   renderHeader();
   renderControls();
   renderThread();
@@ -1170,8 +1291,17 @@ function askBody(text, opts = {}) {
     confirmed: opts.confirmed || [],
     replace_last: !!opts.replaceLast,
     upload_fallback: true,  // files stay attached: a question they do not answer is routed as usual
-    image: opts.replaceLast ? (from.image || null) : (opts.image || null),
+    image: opts.replaceLast ? (from.image || null) : imageRequest(opts.image),
   };
+}
+
+// the picture part of a request: an explicit action (a mode) and the user's model and size, which count
+// only if the question turns out to be about a picture
+function imageRequest(explicit) {
+  const extra = {};
+  if (S.imageModel) extra.model = S.imageModel;
+  if (S.imageSize && S.imageSize !== 'auto') extra.size = S.imageSize;
+  return explicit || Object.keys(extra).length ? { ...extra, ...(explicit || {}) } : null;
 }
 
 async function ask(text, opts = {}) {
@@ -1574,6 +1704,7 @@ function bindEvents() {
   $('#attach').addEventListener('click', () => $('#file-input').click());
   $('#file-input').addEventListener('change', (e) => { uploadFiles([...e.target.files]); e.target.value = ''; });
   $('#folder-btn').addEventListener('click', openFolderModal);
+  $('#size-btn').addEventListener('click', openSizeModal);
   $('#web-toggle').addEventListener('click', () => { S.web = !S.web; savePrefs(); renderControls(); renderAccessCard(); });
   $('#net-toggle').addEventListener('click', () => {
     S.sandboxNet = !S.sandboxNet;
@@ -1599,7 +1730,7 @@ async function boot() {
   bindEvents();
   renderControls();
   try {
-    await Promise.all([loadStatus(), loadPolicy().catch(() => {}), loadModels().catch(() => {}), loadDialogs()]);
+    await Promise.all([loadStatus(), loadPolicy().catch(() => {}), loadModels().catch(() => {}), loadImagegen().catch(() => {}), loadDialogs()]);
   } catch (e) {
     toast(e.message, 'error');
   }

@@ -14,7 +14,8 @@ from rag_agent import imagegen
 from rag_agent.api import create_app
 from rag_agent.dialogs import DialogStore
 from rag_agent.engine import Engine
-from rag_agent.imagegen import outpaint_canvas, wants_edit, wants_image
+from rag_agent.imagegen import (MAX_AREA, ImageGenError, fit32, fit_source, outpaint_canvas, parse_size, wants_edit,
+                                wants_image)
 from tests.conftest import FakeLLM
 
 
@@ -35,6 +36,11 @@ class FakeSd:
     def __call__(self, args, **kwargs):
         if not str(args[0]).endswith("sd-cli.exe"):  # docker checks and the like
             return self.real(args, **kwargs)
+        if "--list-devices" in args:
+            class Devices:
+                returncode, stderr = 0, ""
+                stdout = "ggml_vulkan: Found 1 Vulkan devices\nVulkan0\tAMD Radeon RX 9070 XT\nCPU\tSome CPU\n"
+            return Devices()
         self.calls.append(list(args))
         opt = {args[i]: args[i + 1] for i in range(1, len(args) - 1) if args[i].startswith("-")}
         for flag in ("-i", "--mask", "-r"):
@@ -183,3 +189,50 @@ def test_api_serves_and_deletes_pictures(gen_engine):
         assert client.get("/policy").json()["imagegen"] is True
         client.delete(f"/dialogs/{d['id']}")
         assert client.get(a["image"]["url"]).status_code == 404
+
+
+def test_sizes():
+    assert parse_size(None) is None and parse_size("auto") is None and parse_size("source") == "source"
+    assert parse_size("16:9") == (2752, 1536) and parse_size("1920x1080") == (1920, 1088)
+    assert parse_size("1920 х 1080") == (1920, 1088)  # a Cyrillic "х" typed by hand
+    w, h = parse_size("6000x4000")  # beyond the model's range: scaled down, the proportions kept
+    assert w * h <= MAX_AREA * 1.02 and abs(w / h - 1.5) < 0.03 and w % 32 == h % 32 == 0
+    with pytest.raises(ImageGenError):
+        parse_size("большой")
+    assert fit_source((640, 480), None) == fit32((640, 480)) and fit_source((640, 480), "source") == (640, 480)
+    w, h = fit_source((640, 480), (2048, 2048))  # the chosen size gives the pixel count, the picture its proportions
+    assert abs(w / h - 4 / 3) < 0.02 and abs(w * h - 2048 * 2048) / (2048 * 2048) < 0.05
+
+
+def test_the_chosen_model_and_size_reach_sd_cli(gen_engine):
+    default = Path(gen_engine.settings.imagegen.diffusion_model)
+    other = default.with_name("qwen-image-2.1-Q4_K_M.gguf")
+    other.write_bytes(b"x")
+    default.with_name("Qwen3VL-8B-Instruct-Q4_K_M.gguf").write_bytes(b"x")  # a text encoder, not a model
+    models = {m["name"]: m for m in gen_engine.imagegen.models()}
+    assert set(models) == {"dit.gguf", other.name} and models["dit.gguf"]["default"]
+    assert models[other.name]["quant"] == "Q4_K_M" and not models[other.name]["default"]
+    ans = gen_engine.ask("Нарисуй лису", session="d6", image={"model": other.name, "size": "16:9"})
+    args = gen_engine.fake_sd.calls[-1]
+    assert args[args.index("--diffusion-model") + 1] == str(other) and ans.image["model"] == other.name
+    assert (ans.image["width"], ans.image["height"]) == (2752, 1536)
+    # an edit takes a custom size as it is (the model recomposes the picture)
+    gen_engine.llm.image_plan = {**gen_engine.llm.image_plan, "action": "edit"}
+    ans = gen_engine.ask("Сделай её в стиле акварели", session="d6", image={"size": "1920x1080"})
+    assert ans.image["mode"] == "edit" and (ans.image["width"], ans.image["height"]) == (1920, 1088)
+    # only the files of the model folders: a name is not a path
+    bad = gen_engine.ask("Нарисуй лису", session="d6", image={"model": "../../secret.gguf"})
+    assert bad.route == "image" and not bad.image and "не найдена" in bad.answer
+
+
+def test_a_chosen_size_alone_is_not_a_picture_request(gen_engine):
+    ans = gen_engine.ask("Какой learning rate был в эксперименте?", session="d7", image={"size": "16:9", "model": "dit.gguf"})
+    assert ans.route != "image" and "image_plan" not in gen_engine.llm.kinds and gen_engine.fake_sd.calls == []
+
+
+def test_the_generator_reports_its_device_and_sizes(gen_engine):
+    assert gen_engine.imagegen.device() == {"backend": "Vulkan", "name": "RX 9070 XT"}  # asked from sd-cli
+    with TestClient(create_app(gen_engine)) as client:
+        info = client.get("/imagegen").json()
+    assert info["available"] and info["device"] == {"backend": "Vulkan", "name": "RX 9070 XT"}
+    assert {"id": "16:9", "width": 2752, "height": 1536} in info["sizes"] and info["models"][0]["name"] == "dit.gguf"

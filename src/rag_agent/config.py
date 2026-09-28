@@ -261,7 +261,8 @@ class ImageGenConfig(BaseModel):
 
     enabled: bool = False
     sd_cli: str = ""  # stable-diffusion.cpp's sd-cli executable
-    diffusion_model: str = ""  # the DiT (GGUF or safetensors)
+    diffusion_model: str = ""  # the DiT (GGUF or safetensors): the default one
+    models_dir: str = ""  # more DiT files to choose from in the UI (besides the folder of diffusion_model)
     vae: str = ""
     llm: str = ""  # the text encoder (Qwen3-VL-8B for Qwen-Image-2.1)
     width: int = 1024

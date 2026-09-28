@@ -27,6 +27,7 @@
   <button type="button" class="btn-primary" id="new-dialog"><span data-icon="plus"></span>Новый диалог</button>
   <section class="card folder" id="folder" aria-label="Рабочая папка"></section>
   <nav class="dialogs" id="dialogs" aria-label="Диалоги"></nav>
+  <div class="card model" id="image-model" hidden></div>
   <div class="card model" id="model"></div>
 </aside>
 
@@ -54,6 +55,7 @@
         <div class="segmented small think" role="group" aria-label="Режим рассуждений" id="reasoning"></div>
         <button type="button" class="pill-toggle" id="web-toggle" aria-pressed="false"><span data-icon="globe"></span>Интернет</button>
         <button type="button" class="pill-toggle" id="net-toggle" aria-pressed="false"><span data-icon="terminal"></span>Сеть для кода</button>
+        <button type="button" class="pill-toggle" id="size-btn" aria-pressed="false" hidden><span data-icon="frame"></span><span class="size-label">Размер: авто</span></button>
         <button type="submit" class="send" id="send" aria-label="Отправить" data-icon="arrow-up"></button>
       </div>
       <input type="file" id="file-input" multiple hidden>

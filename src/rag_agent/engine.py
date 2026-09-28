@@ -16,7 +16,8 @@ from rag_agent.agent import Agent, RelevanceEvaluator, rewrite_query
 from rag_agent.code.agent import CodeAgent, CodeResult, catalog_metric_rows, new_task_id
 from rag_agent.code.sandbox import DockerSandbox
 from rag_agent.code.workspace import Workspace, WorkspaceError
-from rag_agent.imagegen import ASPECTS, ImageGenerator, ImageGenError, plan_image, wants_edit, wants_image
+from rag_agent.imagegen import (ASPECTS, ImageGenerator, ImageGenError, parse_size, plan_image, wants_edit,
+                                wants_image)
 from rag_agent.config import REPO_ROOT, Settings, load_settings
 from rag_agent.policy import Policy, Provenance, defang_markdown
 from rag_agent import generation
@@ -472,7 +473,8 @@ class Engine:
                                      height=height, source=source if mode != "generate" else None,
                                      source_ref=source_ref if mode != "generate" else None, mask=mask,
                                      sides=request.get("sides") or plan.sides, strength=request.get("strength"),
-                                     seed=request.get("seed"))
+                                     seed=request.get("seed"), size=parse_size(request.get("size")),
+                                     model=request.get("model"))
         except (ImageGenError, OSError) as exc:
             return Answer(question=question, answer=f"Не удалось нарисовать: {exc}", answerable=False, grounded=True,
                           route="image", model=self.llm.name)
@@ -847,10 +849,12 @@ class Engine:
         budget = rcfg.budget(level) if level != "none" else None
         answer = None
         upload_trace: list[TraceStep] = []
-        # pictures: an explicit request from the UI (mask, sides), words like "нарисуй" / "перерисуй", or words of
-        # a change ("в стиле акварели", "убери фон") when the dialog has a picture to change
+        # pictures: an explicit request from the UI (a mode: edit, inpaint with a mask, outpaint with sides), words
+        # like "нарисуй" / "перерисуй", or words of a change ("в стиле акварели", "убери фон") when the dialog has
+        # a picture to change; the UI's choice of model and size alone ({"model", "size"}) is not a request
+        explicit = bool(image and image.get("mode"))
         if session and self.imagegen.available and (
-                image or wants_image(question) or (wants_edit(question) and self._has_picture(session, uploads))):
+                explicit or wants_image(question) or (wants_edit(question) and self._has_picture(session, uploads))):
             answer = self._answer_image(question, turns, session, uploads, image, steps)
         # a question for the internet does not go to the files that merely stay attached to the dialog
         if answer is None and uploads and not (upload_fallback and wants_web and web_mode != "off"):

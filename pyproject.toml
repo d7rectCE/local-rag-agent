@@ -49,7 +49,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 # the web UI is static: page, styles, script, vendored fonts and libraries with their licenses
-rag_agent = ["webui/*", "webui/fonts/*", "webui/vendor/*"]
+rag_agent = ["webui/*", "webui/fonts/*", "webui/vendor/*", "webui/vendor/katex/*", "webui/vendor/katex/fonts/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

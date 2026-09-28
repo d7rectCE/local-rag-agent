@@ -42,8 +42,9 @@ GENERAL_STYLE = {
                  "подзаголовками; сравнение вариантов и ряды чисел — markdown-таблицей; код — блоками markdown. "
                  + "__MATH__"),
 }
-# the UI renders markdown without a math engine: LaTeX would show as raw $...$
-MATH = "Формулы пиши обычным текстом с символами Unicode (например, softmax(QKᵀ/√dₖ)·V), без LaTeX и знаков $."
+# formulas: the UI renders LaTeX with KaTeX; a dollar sign before a price would read as math
+MATH = ("Формулы и символы (стрелки, греческие буквы, индексы) записывай в LaTeX: внутри строки — $...$, отдельной "
+        "строкой — $$...$$; интерфейс их отрисовывает. Денежные суммы пиши без знака $: 4 280 USD.")
 STYLE["detailed"] = STYLE["detailed"].replace("__MATH__", MATH)
 GENERAL_STYLE["detailed"] = GENERAL_STYLE["detailed"].replace("__MATH__", MATH)
 TRUNCATED_NOTICE = "Ответ упёрся в лимит длины и обрезан. Попросите продолжить или сузьте вопрос."

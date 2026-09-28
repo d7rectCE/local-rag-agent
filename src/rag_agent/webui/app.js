@@ -461,11 +461,60 @@ function renderAttachments() {
 
 const CITE_RE = /\[(\d{1,3})\]/g;
 
+// LaTeX: $$\u2026$$ and \[\u2026\] as blocks, \(\u2026\) and $\u2026$ inline. An inline $\u2026$ must look like math (a command,
+// a sub- or superscript, an operator) and have no Cyrillic outside \text{}: prices like "$4,280 \u2026 $137"
+// stay text. Math is cut out before markdown (marked would eat "_" and "\"), rendered by KaTeX after
+// sanitizing; KaTeX runs without "trust", so \href, \url and \includegraphics cannot load anything.
+const MATH_RE = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|(^|[^\\$\w])\$(?!\s)([^$\n]{1,400}?)(?<!\s)\$(?![\w$])/g;
+function looksLikeMath(tex) {
+  if (/[\u0410-\u042f\u0430-\u044f\u0401\u0451]/.test(tex.replace(/\\(?:text|mathrm|operatorname)\{[^}]*\}/g, ''))) return false;
+  if (/^\d[\d\s.,]*$/.test(tex)) return false;
+  return /[\\^_{}=<>+*/|]/.test(tex) || /^[A-Za-z]$/.test(tex);
+}
+function protectMath(text, store) {
+  return text.replace(MATH_RE, (m, block, bracket, paren, pre, inline) => {
+    if (inline !== undefined) {
+      if (!looksLikeMath(inline)) return m;
+      store.push({ tex: inline, display: false });
+      return `${pre}\u2064${store.length - 1}\u2064`;
+    }
+    store.push({ tex: block ?? bracket ?? paren, display: paren === undefined });
+    return `\u2064${store.length - 1}\u2064`;
+  });
+}
+function renderMath(div, store) {
+  if (!store.length) return;
+  const walker = document.createTreeWalker(div, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) if (walker.currentNode.nodeValue.includes('\u2064')) nodes.push(walker.currentNode);
+  for (const n of nodes) {
+    const frag = document.createDocumentFragment();
+    n.nodeValue.split(/\u2064(\d+)\u2064/g).forEach((piece, i) => {
+      if (i % 2 === 0) { if (piece) frag.append(piece); return; }
+      const m = store[+piece];
+      const el = h('span', { class: m.display ? 'math-block' : 'math' });
+      try {
+        window.katex.render(m.tex.trim(), el, { displayMode: m.display, throwOnError: false, trust: false, strict: 'ignore', output: 'htmlAndMathml' });
+      } catch {
+        el.textContent = m.display ? `$$${m.tex}$$` : `$${m.tex}$`;
+      }
+      frag.append(el);
+    });
+    n.replaceWith(frag);
+  }
+}
+
 function renderMarkdown(text, sources) {
   const byN = new Map((sources || []).map((s) => [s.n, s]));
-  // citations become placeholders outside code, then chips after sanitizing
+  // citations and formulas become placeholders outside code, then chips and KaTeX after sanitizing
+  const math = [];
+  const withKatex = !!window.katex;
   const parts = String(text || '').split(/(```[\s\S]*?```|`[^`\n]*`)/g);
-  const prepared = parts.map((p, i) => (i % 2 ? p : p.replace(CITE_RE, (m, n) => (byN.has(+n) ? `\u2063${n}\u2063` : m)))).join('');
+  const prepared = parts.map((p, i) => {
+    if (i % 2) return p;
+    const q = p.replace(CITE_RE, (m, n) => (byN.has(+n) ? `\u2063${n}\u2063` : m));
+    return withKatex ? protectMath(q, math) : q;
+  }).join('');
   let html;
   if (window.marked && window.DOMPurify) {
     html = window.DOMPurify.sanitize(window.marked.parse(prepared, { gfm: true, breaks: false }), {
@@ -474,8 +523,9 @@ function renderMarkdown(text, sources) {
     });
   }
   const div = h('div', { class: 'md' });
-  if (html === undefined) div.textContent = prepared.replace(/\u2063/g, '');
+  if (html === undefined) div.textContent = String(text || '');
   else div.innerHTML = html;
+  renderMath(div, math);
   for (const a of div.querySelectorAll('a[href]')) {
     a.target = '_blank';
     a.rel = 'noopener noreferrer nofollow';

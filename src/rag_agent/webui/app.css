@@ -399,6 +399,9 @@ button.model-name:hover { background: var(--tag); }
 .md th { background: var(--surface); font-weight: 600; }
 .md blockquote { margin: 0 0 10px; padding: 2px 14px; border-left: 3px solid var(--border); color: var(--muted); }
 .md em { color: inherit; }
+.md .katex { font-size: 1.06em; }
+.md .math-block { display: block; overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
+.md .math-block .katex-display { margin: 8px 0; }
 .cite {
   display: inline-block; min-width: 20px; padding: 0 5px; margin: 0 1px; border-radius: 999px;
   background: var(--soft); color: var(--accent); font-size: 11px; font-weight: 700; line-height: 20px;

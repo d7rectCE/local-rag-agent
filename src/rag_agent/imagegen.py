@@ -10,8 +10,8 @@ Modes (the model is one for generation and editing):
 
 The user's request is rewritten by the chat LLM into a prompt for the generator (English is what the
 model follows best; text to be drawn stays as written) and checked: sexual content involving minors is
-refused before anything runs. The engine is a subprocess of ``sd-cli`` per image: the ~22 GB of weights
-live in RAM only while an image is made, and the chat LLM is unloaded from the GPU first (they do not
+refused before anything runs. The engine is a subprocess of ``sd-cli`` per image: the text encoder runs
+on the CPU, the DiT and the VAE on the GPU, and the chat LLM is unloaded from the GPU first (they do not
 fit together in 24 GB). Results are stored per dialog under ``data_dir/generated/<dialog>/``.
 
 The feature is off by default (``imagegen.enabled``): the weights are the user's local choice and are not
@@ -23,8 +23,11 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
 import re
+import shutil
 import subprocess
+import tempfile
 import time
 import uuid
 from datetime import datetime, timezone
@@ -53,7 +56,7 @@ IMAGE_HINT = re.compile(
 
 PLAN_PROMPT = """Ты готовишь запрос к генератору изображений Qwen-Image-2.1 (он рисует по тексту и редактирует картинки).
 По просьбе пользователя (и истории диалога) реши:
-- action: "none" — картинку рисовать не нужно (вопрос, объяснение, просьба о коде); "generate" — нарисовать новую; "edit" — изменить имеющуюся картинку по инструкции (заменить фон, стиль, добавить или убрать объект, перерисовать в другом стиле); "redraw" — перерисовать картинку целиком, сохранив композицию; "outpaint" — дорисовать картинку за её краями (расширить);
+- action: "none" — картинку рисовать не нужно (вопрос, объяснение, просьба о коде); "generate" — нарисовать новую; "edit" — изменить имеющуюся картинку по инструкции (заменить фон, добавить или убрать объект, сменить стиль: «в стиле акварели», «как аниме», «маслом» — это edit); "redraw" — перерисовать ту же картинку свободнее, сохранив композицию и цвета («перерисуй получше», «сделай детальнее», «вариация»); "outpaint" — дорисовать картинку за её краями (расширить);
 - prompt: подробный промпт на английском — объект, окружение, стиль, свет, ракурс, композиция; для edit — чёткая инструкция, что изменить и что сохранить. Текст, который должен быть написан на картинке, оставь как есть в кавычках;
 - aspect: "square", "portrait", "landscape", "wide" или "tall";
 - sides: для outpaint — какие стороны расширить (left, right, top, bottom), иначе пустой список;
@@ -110,8 +113,20 @@ class ImageGenError(RuntimeError):
     pass
 
 
+# a change to a picture already in the dialog ("сделай её в стиле акварели", "убери фон"): these words are about a
+# picture only when there is one, so they count only then, and the plan of the chat LLM still may say "none"
+EDIT_HINT = re.compile(
+    r"в\s+стил|стилиз|\bфон(а|у|ом|е|ы|ов)?\b|измени|поменя|замени|убери|добавь|перекрас|раскрас|акварел|аниме|"
+    r"маслом|карандаш|ярче|темнее|светлее|ч[её]рно-бел|\b(make it|in the style|background|recolou?r)\b",
+    re.IGNORECASE)
+
+
 def wants_image(question: str) -> bool:
     return bool(IMAGE_HINT.search(question or ""))
+
+
+def wants_edit(question: str) -> bool:
+    return bool(EDIT_HINT.search(question or ""))
 
 
 def plan_image(question: str, history: list[dict], llm: BaseLLM, has_source: bool) -> ImagePlan:
@@ -145,8 +160,13 @@ def unload_ollama(base_url: str) -> None:
         pass
 
 
-def outpaint_canvas(image: bytes, sides: list[str], share: float = 0.25) -> tuple[bytes, bytes, int, int]:
-    """The image on a larger canvas and the mask of the new margin (white = draw). Sizes are multiples of 32."""
+def outpaint_canvas(image: bytes, sides: list[str], share: float = 0.25) -> tuple[bytes, bytes, bytes, int, int]:
+    """The image on a larger canvas, the mask of what the model draws (white) and the alpha of what stays from
+    the old image when the result is assembled. Sizes are multiples of 32.
+
+    The mask reaches a band into the old image: the model redraws that band in the light of both sides, and
+    the old image fades into the new one across it, so there is no hard seam where the canvas was cut."""
+    import numpy as np
     from PIL import Image, ImageFilter
 
     with Image.open(io.BytesIO(image)) as im:
@@ -158,17 +178,40 @@ def outpaint_canvas(image: bytes, sides: list[str], share: float = 0.25) -> tupl
         top, bottom = (dy if "top" in sides else 0), (dy if "bottom" in sides else 0)
         W, H = w + left + right, h + top + bottom
         W32, H32 = max(32, W // 32 * 32), max(32, H // 32 * 32)
+        band = max(32, min(w, h) // 12)
+        xs, ys = np.arange(W, dtype=np.float32), np.arange(H, dtype=np.float32)
+        keep = np.ones((H, W), dtype=np.float32)
+        if left:
+            keep *= np.clip((xs - left) / band, 0, 1)[None, :]
+        if right:
+            keep *= np.clip((left + w - 1 - xs) / band, 0, 1)[None, :]
+        if top:
+            keep *= np.clip((ys - top) / band, 0, 1)[:, None]
+        if bottom:
+            keep *= np.clip((top + h - 1 - ys) / band, 0, 1)[:, None]
+        keep = Image.fromarray((keep * 255).round().astype(np.uint8), mode="L")
+        mask = keep.point(lambda v: 0 if v == 255 else 255).filter(ImageFilter.MaxFilter(9))
         canvas = Image.new("RGB", (W, H), (127, 127, 127))
         canvas.paste(im, (left, top))
         # the margin starts from stretched edge colours, which helps the model continue the scene
         edge = im.resize((W, H), Image.BILINEAR).filter(ImageFilter.GaussianBlur(24))
-        mask = Image.new("L", (W, H), 255)
-        mask.paste(0, (left, top, left + w, top + h))
-        canvas = Image.composite(edge, canvas, mask)
-        canvas, mask = canvas.resize((W32, H32), Image.LANCZOS), mask.resize((W32, H32), Image.NEAREST)
-        # a soft seam: the mask reaches a few pixels into the old image
-        mask = mask.filter(ImageFilter.MaxFilter(9))
-    return _png(canvas), _png(mask), W32, H32
+        outside = Image.new("L", (W, H), 255)
+        outside.paste(0, (left, top, left + w, top + h))
+        canvas = Image.composite(edge, canvas, outside)
+        size = (W32, H32)
+        canvas, mask, keep = canvas.resize(size, Image.LANCZOS), mask.resize(size, Image.NEAREST), keep.resize(size, Image.BILINEAR)
+    return _png(canvas), _png(mask), _png(keep), W32, H32
+
+
+def blend_back(result: Path, canvas: Path, keep: Path) -> None:
+    """The old image over the model's picture: pixel-exact inside, fading out across the band."""
+    from PIL import Image
+
+    with Image.open(result) as out, Image.open(canvas) as old, Image.open(keep) as alpha:
+        out = out.convert("RGB")
+        if out.size != old.size:
+            return
+        Image.composite(old.convert("RGB"), out, alpha.convert("L")).save(result, format="PNG")
 
 
 def _png(im) -> bytes:
@@ -177,12 +220,39 @@ def _png(im) -> bytes:
     return buf.getvalue()
 
 
-def fit32(size: tuple[int, int], limit: int = 1344) -> tuple[int, int]:
-    """A generation size near the source's, within the model's range and divisible by 32."""
+def short_path(path: Path) -> str:
+    """An ASCII form of a path for sd-cli, which opens files through the ANSI API of Windows: a path with
+    Cyrillic (a user folder like C:\\Users\\Имя) fails, so the DOS 8.3 name is used when there is one."""
+    s = str(path)
+    if s.isascii() or os.name != "nt":
+        return s
+    import ctypes
+
+    buf = ctypes.create_unicode_buffer(1024)
+    n = ctypes.windll.kernel32.GetShortPathNameW(s, buf, 1024)
+    return buf.value if n and buf.value.isascii() else s
+
+
+def ascii_workdir(base: str = "") -> Path:
+    """Where sd-cli reads its inputs and writes the picture: a folder with an ASCII path."""
+    for candidate in (base, tempfile.gettempdir()):
+        if candidate:
+            d = Path(candidate) / "rag-imagegen"
+            d.mkdir(parents=True, exist_ok=True)
+            if short_path(d).isascii():
+                return d
+    d = Path(os.environ.get("SystemDrive", "C:") + "\\") / "rag-imagegen"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def fit32(size: tuple[int, int], limit: int = 1344, least: int = 1024) -> tuple[int, int]:
+    """A generation size with the source's proportions, within the model's range and divisible by 32: a small
+    photo is drawn larger (the model gives little detail far below a megapixel), a large one smaller."""
     w, h = size
     scale = min(1.0, limit / max(w, h))
-    if max(w, h) * scale < 512:
-        scale = 512 / max(w, h)
+    if max(w, h) * scale < least:
+        scale = least / max(w, h)
     return max(256, int(w * scale) // 32 * 32), max(256, int(h * scale) // 32 * 32)
 
 
@@ -238,15 +308,20 @@ class ImageGenerator:
         out_dir = self._dir(dialog)
         out_dir.mkdir(parents=True, exist_ok=True)
         image_id = uuid.uuid4().hex[:12]
-        work = out_dir / f".{image_id}"
+        work = ascii_workdir(c.work_dir) / image_id  # sd-cli cannot open non-ASCII paths (the user folder)
         work.mkdir()
+        w = short_path(work)
         seed = int(seed if seed is not None else uuid.uuid4().int % 2**31)
         steps = int(steps or c.steps)
         args = [c.sd_cli, "--diffusion-model", c.diffusion_model, "--vae", c.vae, "--llm", c.llm,
                 "--cfg-scale", str(c.cfg_scale), "--sampling-method", c.sampler, "--steps", str(steps),
-                "-s", str(seed), "-p", prompt, "-o", str(out_dir / f"{image_id}.png")]
+                "-s", str(seed), "-p", prompt, "-o", os.path.join(w, "out.png")]
         if c.negative_prompt:
             args += ["-n", c.negative_prompt]
+        if c.text_encoder_on_cpu:
+            # an edit feeds the picture itself to the vision-language encoder: hundreds of image tokens, which
+            # the CPU encodes for minutes; then the weights stay in RAM and the GPU computes (181 s vs 312 s)
+            args += ["--params-backend", "te=cpu"] if mode == "edit" else ["--backend", "te=cpu"]
         if c.offload_to_cpu:
             args.append("--offload-to-cpu")
         if c.flash_attention:
@@ -261,10 +336,11 @@ class ImageGenerator:
                     src_size = im.size
                     (work / "source.png").write_bytes(_png(im.convert("RGB")))
             if mode == "outpaint":
-                canvas, mask_png, width, height = outpaint_canvas(source, sides or [])
+                canvas, mask_png, keep, width, height = outpaint_canvas(source, sides or [])
                 (work / "init.png").write_bytes(canvas)
                 (work / "mask.png").write_bytes(mask_png)
-                args += ["-i", str(work / "init.png"), "--mask", str(work / "mask.png"), "--strength", "1.0"]
+                (work / "keep.png").write_bytes(keep)
+                args += ["-i", os.path.join(w, "init.png"), "--mask", os.path.join(w, "mask.png"), "--strength", "1.0"]
             elif mode == "inpaint":
                 if mask is None:
                     raise ImageGenError("для дорисовки области нужна маска")
@@ -272,15 +348,15 @@ class ImageGenerator:
                 self._resized(work / "source.png", work / "init.png", (width, height))
                 (work / "mask_in.png").write_bytes(mask)
                 self._resized(work / "mask_in.png", work / "mask.png", (width, height), mask=True)
-                args += ["-i", str(work / "init.png"), "--mask", str(work / "mask.png"),
+                args += ["-i", os.path.join(w, "init.png"), "--mask", os.path.join(w, "mask.png"),
                          "--strength", str(strength if strength is not None else 1.0)]
             elif mode == "redraw":
                 width, height = fit32(src_size)
                 self._resized(work / "source.png", work / "init.png", (width, height))
-                args += ["-i", str(work / "init.png"), "--strength", str(strength if strength is not None else c.strength)]
+                args += ["-i", os.path.join(w, "init.png"), "--strength", str(strength if strength is not None else c.strength)]
             elif mode == "edit":
                 width, height = width or fit32(src_size)[0], height or fit32(src_size)[1]
-                args += ["-r", str(work / "source.png")]
+                args += ["-r", os.path.join(w, "source.png")]
             width, height = int(width or c.width), int(height or c.height)
             args += ["-W", str(width), "-H", str(height)]
             if c.unload_llm:
@@ -292,14 +368,17 @@ class ImageGenerator:
             except subprocess.TimeoutExpired as exc:
                 raise ImageGenError(f"генерация не уложилась в {c.timeout_s:.0f} с") from exc
             elapsed = round(time.perf_counter() - t0, 1)
-            out = out_dir / f"{image_id}.png"
-            if proc.returncode != 0 or not out.exists():
-                tail = (proc.stderr or proc.stdout or "")[-600:]
+            produced = work / "out.png"
+            if proc.returncode != 0 or not produced.exists():
+                errors = [ln for ln in (proc.stderr or proc.stdout or "").splitlines() if "[ERROR" in ln]
+                tail = "\n".join(errors[-3:]) or (proc.stderr or proc.stdout or "")[-400:]
                 raise ImageGenError(f"движок завершился с ошибкой ({proc.returncode}): {tail}")
+            if mode == "outpaint":
+                blend_back(produced, work / "init.png", work / "keep.png")
+            out = out_dir / f"{image_id}.png"
+            shutil.move(str(produced), out)
         finally:
-            for f in work.glob("*"):
-                f.unlink(missing_ok=True)
-            work.rmdir()
+            shutil.rmtree(work, ignore_errors=True)
         info = GeneratedImage(id=image_id, dialog=dialog, mode=mode, prompt=prompt, request=request, width=width,
                               height=height, seed=seed, steps=steps, source=source_ref, elapsed_s=elapsed,
                               created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))

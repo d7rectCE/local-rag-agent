@@ -12,8 +12,9 @@ from PIL import Image
 
 from rag_agent import imagegen
 from rag_agent.api import create_app
+from rag_agent.dialogs import DialogStore
 from rag_agent.engine import Engine
-from rag_agent.imagegen import outpaint_canvas, wants_image
+from rag_agent.imagegen import outpaint_canvas, wants_edit, wants_image
 from tests.conftest import FakeLLM
 
 
@@ -68,6 +69,32 @@ def test_request_words():
     assert wants_image("Нарисуй лису в снегу") and wants_image("перерисуй это в стиле акварели")
     assert wants_image("Сгенерируй картинку с котом") and wants_image("draw a cat")
     assert not wants_image("Какой learning rate в эксперименте?") and not wants_image("Напиши функцию сортировки")
+    # words of a change: they count only when the dialog has a picture (see below)
+    assert wants_edit("Сделай её в стиле акварели") and wants_edit("убери фон") and wants_edit("make it brighter")
+    assert not wants_edit("Какой фонд выбрать?") and not wants_edit("Напиши функцию сортировки")
+
+
+def test_a_change_counts_only_with_a_picture_in_the_dialog(gen_engine):
+    gen_engine.llm.image_plan = {**gen_engine.llm.image_plan, "action": "edit", "prompt": "watercolor painting"}
+    ans = gen_engine.ask("Сделай её в стиле акварели", session="d5")
+    assert ans.route != "image" and "image_plan" not in gen_engine.llm.kinds
+    gen_engine.llm.image_plan = {**gen_engine.llm.image_plan, "action": "generate"}
+    first = gen_engine.ask("Нарисуй лису", session="d5").image
+    gen_engine.llm.image_plan = {**gen_engine.llm.image_plan, "action": "edit"}
+    ans = gen_engine.ask("Сделай её в стиле акварели", session="d5")
+    assert ans.route == "image" and ans.image["mode"] == "edit" and ans.image["source"] == f"generated:{first['id']}"
+
+
+def test_a_picture_in_the_history_is_a_note(tmp_path):
+    """The chat model sees what the generator did, not a reply to copy without drawing anything."""
+    store = DialogStore(tmp_path / "d.sqlite")
+    d = store.create()
+    store.add_turn(d["id"], "assistant", "answer", "Перерисовал картинку: 512×320, 27 с.", payload={
+        "answer": "Перерисовал картинку: 512×320, 27 с.",
+        "image": {"mode": "redraw", "width": 512, "height": 320, "prompt": "a cat, watercolor"}})
+    note = store.history(d["id"])[-1]["content"]
+    assert note.startswith("[Генератор картинок перерисовал картинку 512×320") and "a cat, watercolor" in note
+    assert "Перерисовал картинку:" not in note
 
 
 def test_generate_from_the_chat(gen_engine, settings):
@@ -86,7 +113,7 @@ def test_edit_uses_the_last_picture_or_an_attached_one(gen_engine):
     gen_engine.llm.image_plan = {**gen_engine.llm.image_plan, "action": "edit", "prompt": "make the background a night sky"}
     ans = gen_engine.ask("Перерисуй фон ночным", session="d1")
     assert ans.image["mode"] == "edit" and ans.image["source"] == f"generated:{first['id']}"
-    assert "-r" in gen_engine.fake_sd.calls[-1]
+    assert "-r" in gen_engine.fake_sd.calls[-1] and "--params-backend" in gen_engine.fake_sd.calls[-1]
     # an attached photo wins over the last generated picture
     info = gen_engine.upload("d1", "photo.png", png(color=(1, 2, 3)))
     assert info.file_type == ".png" and info.n_fragments == 1
@@ -115,10 +142,15 @@ def test_inpaint_with_a_mask_and_outpaint(gen_engine):
 
 
 def test_outpaint_canvas_and_mask():
-    canvas, mask, w, h = outpaint_canvas(png((400, 300)), ["top"])
+    canvas, mask, keep, w, h = outpaint_canvas(png((400, 300)), ["top"])
     assert (w, h) == (384, 352)  # 400 x 375 -> multiples of 32
-    with Image.open(io.BytesIO(mask)) as m:
-        assert m.size == (w, h) and m.getpixel((w // 2, 2)) == 255 and m.getpixel((w // 2, h - 3)) == 0
+    with Image.open(io.BytesIO(mask)) as m, Image.open(io.BytesIO(keep)) as k:
+        assert m.size == k.size == (w, h)
+        assert m.getpixel((w // 2, 2)) == 255 and m.getpixel((w // 2, h - 3)) == 0
+        # the old image: gone in the new margin, kept at the far edge, fading in across the band at the seam
+        assert k.getpixel((w // 2, 2)) == 0 and k.getpixel((w // 2, h - 3)) == 255
+        seam = 75 * h // 375
+        assert m.getpixel((w // 2, seam + 10)) == 255 and 0 < k.getpixel((w // 2, seam + 10)) < 255
 
 
 def test_refusal_and_not_a_picture(gen_engine):

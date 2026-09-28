@@ -741,17 +741,25 @@ function openMaskEditor(source, url) {
   const img = new Image();
   let drawing = false;
   let painted = false;
+  let last = null;
+  // a stroke is a thick line from the previous point: fast mouse moves leave no gaps
+  const stroke = (ctx, style, a, b, width) => {
+    ctx.strokeStyle = style;
+    ctx.fillStyle = style;
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    ctx.beginPath(); ctx.arc(b.x, b.y, width / 2, 0, Math.PI * 2); ctx.fill();
+  };
   const paint = (e) => {
     const r = view.getBoundingClientRect();
-    const x = ((e.clientX - r.left) / r.width) * view.width;
-    const y = ((e.clientY - r.top) / r.height) * view.height;
-    const rad = (+size.value / 2) * (view.width / r.width);
-    const v = view.getContext('2d');
-    v.fillStyle = 'rgba(255, 64, 64, 0.45)';
-    v.beginPath(); v.arc(x, y, rad, 0, Math.PI * 2); v.fill();
-    const m = mask.getContext('2d');
-    m.fillStyle = '#fff';
-    m.beginPath(); m.arc(x, y, rad, 0, Math.PI * 2); m.fill();
+    const p = { x: ((e.clientX - r.left) / r.width) * view.width, y: ((e.clientY - r.top) / r.height) * view.height };
+    const width = +size.value * (view.width / r.width);
+    const from = last || p;
+    // the preview is drawn on a copy of the picture; the overlay is kept opaque on the mask only
+    stroke(view.getContext('2d'), 'rgba(255, 64, 64, 0.45)', from, p, width);
+    stroke(mask.getContext('2d'), '#fff', from, p, width);
+    last = p;
     painted = true;
   };
   const reset = () => {
@@ -767,9 +775,9 @@ function openMaskEditor(source, url) {
     reset();
   };
   img.src = url;
-  view.addEventListener('pointerdown', (e) => { drawing = true; view.setPointerCapture(e.pointerId); paint(e); });
+  view.addEventListener('pointerdown', (e) => { drawing = true; last = null; view.setPointerCapture(e.pointerId); paint(e); });
   view.addEventListener('pointermove', (e) => { if (drawing) paint(e); });
-  view.addEventListener('pointerup', () => { drawing = false; });
+  view.addEventListener('pointerup', () => { drawing = false; last = null; });
   openModal('Дорисовать область', [
     h('p', { class: 'hint', style: 'margin:0', text: 'Закрасьте кистью то, что нужно перерисовать, и опишите, что там должно быть. Остальная картинка не изменится.' }),
     view,

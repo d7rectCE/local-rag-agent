@@ -269,12 +269,16 @@ class ImageGenConfig(BaseModel):
     steps: int = 20
     cfg_scale: float = 6.0
     sampler: str = "euler"
-    strength: float = 0.6  # redraw: how far the result may move from the source
+    strength: float = 0.75  # redraw: how far the result may move from the source
     negative_prompt: str = ""
-    offload_to_cpu: bool = True  # weights in RAM, moved to the GPU while they compute
+    # the text encoder (8B) runs on the CPU (~9 s per prompt) and the DiT + VAE stay on the GPU: offloading all
+    # weights to RAM made the Vulkan build stage the quantized DiT for ~230 s per picture
+    text_encoder_on_cpu: bool = True
+    offload_to_cpu: bool = False
     flash_attention: bool = True
     vae_tiling: bool = True  # the Vulkan build cannot allocate the whole 1024x1024 decode and falls back to the CPU
     unload_llm: bool = True  # the chat model leaves the GPU before an image is made
+    work_dir: str = ""  # sd-cli's inputs and output; must have an ASCII path (default: the system temp folder)
     timeout_s: float = 900.0
 
 

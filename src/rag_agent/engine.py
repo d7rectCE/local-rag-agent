@@ -16,7 +16,7 @@ from rag_agent.agent import Agent, RelevanceEvaluator, rewrite_query
 from rag_agent.code.agent import CodeAgent, CodeResult, catalog_metric_rows, new_task_id
 from rag_agent.code.sandbox import DockerSandbox
 from rag_agent.code.workspace import Workspace, WorkspaceError
-from rag_agent.imagegen import ASPECTS, ImageGenerator, ImageGenError, plan_image, wants_image
+from rag_agent.imagegen import ASPECTS, ImageGenerator, ImageGenError, plan_image, wants_edit, wants_image
 from rag_agent.config import REPO_ROOT, Settings, load_settings
 from rag_agent.policy import Policy, Provenance, defang_markdown
 from rag_agent import generation
@@ -32,7 +32,7 @@ from rag_agent.structured.analytics import ANALYTICS_FILE, build_analytics
 from rag_agent.structured.extract import update_catalog
 from rag_agent.structured.sql import SQLResult, SQLTool
 from rag_agent.tracing import NULL_TRACER, Tracer
-from rag_agent.uploads import UploadError, UploadInfo, UploadStore, answer_from_uploads
+from rag_agent.uploads import IMAGE_EXTS, UploadError, UploadInfo, UploadStore, answer_from_uploads
 from rag_agent.web_qa import answer_from_web
 
 log = logging.getLogger(__name__)
@@ -437,12 +437,17 @@ class Engine:
             raise ValueError(f"неизвестный источник картинки {explicit}")
         for upload_id in reversed(uploads or []):
             info = self.uploads.get(session, upload_id)
-            if info.file_type in (".png", ".jpg", ".webp"):
+            if info.file_type in IMAGE_EXTS:
                 return self.uploads.file_path(info).read_bytes(), f"upload:{upload_id}"
         last = self.imagegen.last(session)
         if last is not None:
             return self.imagegen.path(session, last.id).read_bytes(), f"generated:{last.id}"
         return None, None
+
+    def _has_picture(self, session: str, uploads: list[str] | None) -> bool:
+        """Whether the dialog has a picture to change: an attached image or one drawn earlier."""
+        return any(self.uploads.get(session, u).file_type in IMAGE_EXTS for u in uploads or []) or (
+            self.imagegen.last(session) is not None)
 
     def _answer_image(self, question: str, turns: list[dict], session: str, uploads: list[str] | None,
                       request: dict | None, steps: list[TraceStep]) -> Answer | None:
@@ -509,7 +514,9 @@ class Engine:
         lines.append("- к вопросу можно прикрепить файл скрепкой: по нему отвечаешь в этом диалоге.")
         if self.imagegen.available:
             lines.append("- картинки: рисуешь по описанию и редактируешь прикреплённые или нарисованные ранее (генератор "
-                         "Qwen-Image-2.1 на этом компьютере); просьба «нарисуй…» запускает его сама;")
+                         "Qwen-Image-2.1 на этом компьютере); просьба «нарисуй…» запускает его сама; если ты "
+                         "отвечаешь текстом, генератор в этом ответе не запускался — не пиши, что нарисовал или "
+                         "изменил картинку, а подскажи, как попросить («нарисуй…», «перерисуй в стиле…»);")
         return "\n".join(lines)
 
     @staticmethod
@@ -840,8 +847,10 @@ class Engine:
         budget = rcfg.budget(level) if level != "none" else None
         answer = None
         upload_trace: list[TraceStep] = []
-        # pictures: an explicit request from the UI (mask, sides) or words like "нарисуй" / "перерисуй"
-        if session and self.imagegen.available and (image or wants_image(question)):
+        # pictures: an explicit request from the UI (mask, sides), words like "нарисуй" / "перерисуй", or words of
+        # a change ("в стиле акварели", "убери фон") when the dialog has a picture to change
+        if session and self.imagegen.available and (
+                image or wants_image(question) or (wants_edit(question) and self._has_picture(session, uploads))):
             answer = self._answer_image(question, turns, session, uploads, image, steps)
         # a question for the internet does not go to the files that merely stay attached to the dialog
         if answer is None and uploads and not (upload_fallback and wants_web and web_mode != "off"):

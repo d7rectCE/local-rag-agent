@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -133,6 +133,8 @@ def create_app(engine: Engine | None = None) -> FastAPI:
     async def csp(request: Request, call_next):
         response = await call_next(request)
         if request.url.path == "/" or request.url.path.startswith("/ui/"):
+            # revalidate every time (ETag): after an update the browser must not keep an old app.js
+            response.headers["Cache-Control"] = "no-cache"
             response.headers["Content-Security-Policy"] = CSP
             response.headers["X-Content-Type-Options"] = "nosniff"
             response.headers["Referrer-Policy"] = "no-referrer"
@@ -142,8 +144,14 @@ def create_app(engine: Engine | None = None) -> FastAPI:
         app.mount("/ui", StaticFiles(directory=WEBUI), name="ui")
 
     @app.get("/", include_in_schema=False)
-    def index() -> FileResponse:
-        return FileResponse(WEBUI / "index.html", media_type="text/html")
+    def index() -> HTMLResponse:
+        # the page's own script and styles carry their modification time: an update is a new URL, so no
+        # browser keeps an old app.js (vendored libraries change only with their version)
+        html = (WEBUI / "index.html").read_text(encoding="utf-8")
+        for name in ("app.js", "app.css", "theme.js"):
+            stamp = int((WEBUI / name).stat().st_mtime)
+            html = html.replace(f'"/ui/{name}"', f'"/ui/{name}?v={stamp}"')
+        return HTMLResponse(html)
 
     @app.get("/favicon.ico", include_in_schema=False)
     def favicon() -> Response:

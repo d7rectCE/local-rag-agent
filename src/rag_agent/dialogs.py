@@ -168,8 +168,22 @@ class DialogStore:
         for r in reversed(rows):
             payload = json.loads(r["payload"]) if r["payload"] else {}
             code = payload if r["kind"] == "code" else (payload or {}).get("code") if r["kind"] == "answer" else None
-            out.append({"role": r["role"], "content": code_summary(code) if code else r["content"]})
+            image = (payload or {}).get("image") if r["kind"] == "answer" else None
+            content = code_summary(code) if code else image_summary(image) if image else r["content"]
+            out.append({"role": r["role"], "content": content})
         return out
+
+
+IMAGE_DONE = {"generate": "нарисовал новую картинку", "edit": "изменил картинку по инструкции",
+              "redraw": "перерисовал картинку", "inpaint": "дорисовал выделенную область",
+              "outpaint": "расширил картинку за края"}
+
+
+def image_summary(img: dict) -> str:
+    """A picture as one assistant turn: a note of what the generator did rather than the chat's reply, which a model
+    would copy ("Перерисовал картинку: …") when asked for another change without drawing anything."""
+    return (f"[Генератор картинок {IMAGE_DONE.get(img.get('mode'), 'сделал картинку')} "
+            f"{img.get('width')}×{img.get('height')}, она показана пользователю. Промпт: {img.get('prompt') or ''}]")
 
 
 CODE_STATUS = {"done": "готово", "failed": "не удалось", "limit": "лимит шагов", "error": "ошибка", "running": "идёт"}

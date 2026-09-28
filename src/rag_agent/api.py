@@ -90,6 +90,9 @@ class AskRequest(BaseModel):
     sandbox_net: bool = False  # the UI toggle: code tasks may run with network, each after a confirmation
     model: str | None = None  # another installed chat model for this request
     upload_fallback: bool = False  # files stay attached in the chat: when they do not answer, route as usual
+    # a picture action from the UI: {mode: generate|edit|redraw|inpaint|outpaint, source: "generated:<id>" |
+    # "upload:<id>", mask: PNG as base64 (white = redraw), sides: [left, right, top, bottom], strength, seed}
+    image: dict | None = None
 
 
 WEBUI = Path(__file__).with_name("webui")
@@ -164,6 +167,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             "writes": "confirm",  # apply_changes only after the user's approval
             "sandbox": "no_network" if e.sandbox_available() else "unavailable",
             "sandbox_network": e.settings.code.network,  # never | confirm (the toggle may be offered)
+            "imagegen": e.imagegen.available,  # pictures can be drawn and edited
             "code": e.settings.code.chat,
             "web": e.settings.web.mode,
             "policies": e.settings.security.policies,
@@ -222,7 +226,31 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             raise HTTPException(404, "диалог не найден") from exc
         for info in eng().uploads.list(dialog_id):  # the dialog is the upload session
             eng().uploads.delete(dialog_id, info.id)
+        eng().imagegen.delete_dialog(dialog_id)
         return {"deleted": dialog_id}
+
+    @app.get("/images/{dialog_id}/{name}")
+    def generated_image(dialog_id: str, name: str) -> FileResponse:
+        """A generated picture of a dialog (``<id>.png``)."""
+        from rag_agent.imagegen import ImageGenError
+
+        try:
+            path = eng().imagegen.path(dialog_id, name.removesuffix(".png"))
+        except ImageGenError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        if not path.exists():
+            raise HTTPException(404, "картинка не найдена")
+        return FileResponse(path, media_type="image/png")
+
+    @app.get("/uploads/{upload_id}/file")
+    def upload_file(upload_id: str, session: str) -> FileResponse:
+        """The uploaded file itself (the UI shows uploaded pictures)."""
+        try:
+            info = eng().uploads.get(session, upload_id)
+        except UploadError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        types = {".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp"}
+        return FileResponse(eng().uploads.file_path(info), media_type=types.get(info.file_type, "application/octet-stream"))
 
     @app.get("/corpora")
     def corpora() -> list[dict]:
@@ -427,13 +455,16 @@ def create_app(engine: Engine | None = None) -> FastAPI:
                 sandbox_net=req.sandbox_net,
                 model=req.model,
                 upload_fallback=req.upload_fallback,
+                image=req.image,
             )
             if req.dialog_id:
                 if not req.replace_last:
                     dialogs().add_turn(req.dialog_id, "user", "question", req.question,
                                        payload={"uploads": req.uploads, "route": req.route, "web": req.web,
                                                 "reasoning": req.reasoning, "code": req.code,
-                                                "sandbox_net": req.sandbox_net, "model": req.model})
+                                                "sandbox_net": req.sandbox_net, "model": req.model,
+                                                "image": {k: v for k, v in (req.image or {}).items() if k != "mask"}
+                                                or None})
                 dialogs().add_turn(req.dialog_id, "assistant", "answer", answer.answer, payload=answer.model_dump(),
                                    ref=answer.code["task_id"] if answer.code else None)
             return answer

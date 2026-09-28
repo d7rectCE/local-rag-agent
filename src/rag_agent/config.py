@@ -254,6 +254,30 @@ class ImagesConfig(BaseModel):
     channel: Literal["text", "visual", "fusion"] = "text"
 
 
+class ImageGenConfig(BaseModel):
+    """Image generation and editing in the chat (Qwen-Image-2.1 through stable-diffusion.cpp's sd-cli).
+    Off by default: the engine and the weights are the user's local choice; the paths belong in
+    configs/local.yaml."""
+
+    enabled: bool = False
+    sd_cli: str = ""  # stable-diffusion.cpp's sd-cli executable
+    diffusion_model: str = ""  # the DiT (GGUF or safetensors)
+    vae: str = ""
+    llm: str = ""  # the text encoder (Qwen3-VL-8B for Qwen-Image-2.1)
+    width: int = 1024
+    height: int = 1024
+    steps: int = 20
+    cfg_scale: float = 6.0
+    sampler: str = "euler"
+    strength: float = 0.6  # redraw: how far the result may move from the source
+    negative_prompt: str = ""
+    offload_to_cpu: bool = True  # weights in RAM, moved to the GPU while they compute
+    flash_attention: bool = True
+    vae_tiling: bool = True  # the Vulkan build cannot allocate the whole 1024x1024 decode and falls back to the CPU
+    unload_llm: bool = True  # the chat model leaves the GPU before an image is made
+    timeout_s: float = 900.0
+
+
 class SecurityConfig(BaseModel):
     """Policy layer switch (ТЗ ч.2 S20). Turning it off is only for the H16 comparison in red-team runs."""
 
@@ -276,6 +300,7 @@ class Settings(BaseModel):
     code: CodeConfig = CodeConfig()
     web: WebConfig = WebConfig()
     images: ImagesConfig = ImagesConfig()
+    imagegen: ImageGenConfig = ImageGenConfig()
     security: SecurityConfig = SecurityConfig()
     tracing: TracingConfig = TracingConfig()
     evaluation: EvaluationConfig = EvaluationConfig()

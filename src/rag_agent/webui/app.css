@@ -479,6 +479,17 @@ button.model-name:hover { background: var(--tag); }
 .btn-pill { height: 38px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--border); background: transparent; font-size: 13px; font-weight: 600; }
 .btn-pill:hover:not(:disabled) { border-color: var(--accent); }
 .btn-pill.accent { border: 0; background: var(--accent); color: var(--on-accent); font-weight: 700; }
+.gen-image { margin: 4px 0 12px; display: flex; flex-direction: column; gap: 8px; }
+.gen-image img { max-width: 100%; max-height: 560px; width: auto; align-self: flex-start; border-radius: 12px; border: 1px solid var(--border); cursor: zoom-in; background: var(--surface); }
+.gen-image figcaption { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.gen-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.gen-actions .btn-pill { height: 32px; padding: 0 12px; font-size: 12.5px; display: inline-flex; align-items: center; text-decoration: none; color: inherit; }
+.gen-full { max-width: 100%; max-height: calc(100vh - 220px); align-self: center; border-radius: 10px; }
+.gen-preview { max-width: 100%; max-height: 240px; align-self: flex-start; border-radius: 10px; border: 1px solid var(--border); }
+.mask-canvas { max-width: 100%; max-height: calc(100vh - 340px); align-self: center; border-radius: 10px; cursor: crosshair; touch-action: none; }
+.att-thumb { width: 28px; height: 28px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
+.att.image-target { border-color: var(--accent); }
+.bubble-image { max-width: 240px; max-height: 180px; border-radius: 12px; border: 1px solid var(--border); align-self: flex-end; }
 .artifacts { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px 4px; }
 .artifacts a { font-family: var(--mono); font-size: 12px; }
 .artifacts img { max-width: 100%; max-height: 260px; border-radius: 10px; border: 1px solid var(--border); display: block; background: #fff; }

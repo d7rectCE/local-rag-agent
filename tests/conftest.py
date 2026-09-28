@@ -129,7 +129,7 @@ class FakeLLM(BaseLLM):
     def __init__(self, settings: Settings, reply: dict | str | None = None, route: dict | str | None = None,
                  general: str = "Общий ответ.", extraction: dict | None = None, sql: list[dict] | None = None,
                  agent: list[dict] | None = None, pipeline: dict | None = None, web_query: str = "scikit-learn latest version",
-                 conflicts: list[dict] | None = None, code: bool = False):
+                 conflicts: list[dict] | None = None, code: bool = False, image_plan: dict | None = None):
         super().__init__(settings.llm)
         self.reply = reply if reply is not None else {"answerable": True, "answer": "Learning rate был 0.05 [1].", "general": ""}
         self.route = route  # None -> corpus with the question unchanged
@@ -141,6 +141,8 @@ class FakeLLM(BaseLLM):
         self.web_query = web_query
         self.conflicts = conflicts or []
         self.code = code  # the chat's check "does the request need running code"
+        self.image_plan = image_plan or {"action": "none", "prompt": "", "aspect": "square", "sides": [],
+                                         "minor_sexual": False}
         self.calls: list[list[dict]] = []
         self.kinds: list[str] = []
         self.budgets: list[int] = []  # reasoning budgets of chat_reasoning calls
@@ -177,6 +179,9 @@ class FakeLLM(BaseLLM):
         elif "pipeline" in props:
             self.kinds.append("code_pipeline")
             reply = self.pipeline
+        elif "minor_sexual" in props:
+            self.kinds.append("image_plan")
+            reply = self.image_plan
         elif "action" in props:
             self.kinds.append("agent")
             reply = self.agent.pop(0) if self.agent else {"thought": "достаточно", "action": "answer", "args": {}}

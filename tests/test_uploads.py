@@ -31,7 +31,11 @@ def test_type_is_detected_by_content():
     assert detect_type(json.dumps({"cells": [], "nbformat": 4}).encode(), "nb.json") == ".ipynb"
     assert detect_type("Заметки: дедлайн 15 апреля".encode("cp1251"), "notes") == ".txt"
     assert detect_type(b"def f():\n    return 1\n", "a.py") == ".py"
-    for data, name in [(zip_bytes(["a.txt"]), "a.zip"), (b"\x89PNG\r\n\x1a\n....", "a.png"),
+    # pictures are accepted since Э5 (described by the VLM, the source of image edits); GIF is not
+    assert detect_type(b"\x89PNG\r\n\x1a\n....", "a.png") == ".png"
+    assert detect_type(b"\xff\xd8\xff\xe0....", "photo") == ".jpg"
+    assert detect_type(b"RIFF\x00\x00\x00\x00WEBPVP8 ", "a.webp") == ".webp"
+    for data, name in [(zip_bytes(["a.txt"]), "a.zip"), (b"GIF89a....", "a.gif"),
                        (b"MZ\x90\x00" + b"\x00" * 100, "setup.exe"), (b"\x00\x01\x02\x03" * 100, "blob.txt")]:
         with pytest.raises(UploadError):
             detect_type(data, name)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import re
@@ -15,6 +16,7 @@ from rag_agent.agent import Agent, RelevanceEvaluator, rewrite_query
 from rag_agent.code.agent import CodeAgent, CodeResult, catalog_metric_rows, new_task_id
 from rag_agent.code.sandbox import DockerSandbox
 from rag_agent.code.workspace import Workspace, WorkspaceError
+from rag_agent.imagegen import ASPECTS, ImageGenerator, ImageGenError, plan_image, wants_image
 from rag_agent.config import REPO_ROOT, Settings, load_settings
 from rag_agent.policy import Policy, Provenance, defang_markdown
 from rag_agent import generation
@@ -289,11 +291,25 @@ class Engine:
         known = {}
         if self._index is not None:
             known = {r["content_hash"]: r["path"] for r in self._index.catalog.query("SELECT path, content_hash FROM files")}
-        info = self.uploads.add(session, name, data, known)
+        info = self.uploads.add(session, name, data, known, describe=self._describe_upload)
         self.tracer.log("upload", session=session, name=name if self.tracer.log_prompts else None,
                         file_type=info.file_type, size=info.size, fragments=info.n_fragments,
                         fits_context=info.fits_context, duplicate=bool(info.duplicate_of), parse_s=info.parse_s)
         return info
+
+    def _describe_upload(self, data: bytes) -> str:
+        """An uploaded picture gets the description of the image pipeline (Э5), so it can be asked about."""
+        from rag_agent.images.classifier import ImageClassifier
+        from rag_agent.images.describe import describe, node_text, ocr_text
+
+        cfg = self.settings.images
+        clf = ImageClassifier(self.settings.data_dir / "models" / "image_classifier")
+        pred = clf.predict(data) if cfg.classify else None
+        kind, prob = pred if pred else (None, None)
+        ocr = ocr_text(data, self.settings.documents.ocr_langs, self.settings.documents.models_dir) \
+            if cfg.ocr and kind in ("screenshot", "scan") else ""
+        vlm = self.llm.get(cfg.vlm_model) if cfg.vlm_model else self.llm.current
+        return node_text(kind, prob, describe(data, kind, vlm, where="загружено в диалог", ocr=ocr), ocr, "")
 
     def add_upload_to_corpus(self, session: str, upload_id: str, subdir: str = "uploads") -> dict:
         """The explicit "add to corpus" action: the file is copied into the corpus folder (never
@@ -404,6 +420,65 @@ class Engine:
             return "", False
         return resp.content.strip(), resp.truncated
 
+    @property
+    def imagegen(self) -> ImageGenerator:
+        if getattr(self, "_imagegen", None) is None:
+            self._imagegen = ImageGenerator(self.settings)
+        return self._imagegen
+
+    def _image_source(self, session: str, uploads: list[str] | None, explicit: str | None) -> tuple[bytes | None, str | None]:
+        """The picture to edit: named by the UI, else the last attached image, else the dialog's last generated one."""
+        if explicit:
+            kind, _, ref = explicit.partition(":")
+            if kind == "generated":
+                return self.imagegen.path(session, ref).read_bytes(), explicit
+            if kind == "upload":
+                return self.uploads.file_path(self.uploads.get(session, ref)).read_bytes(), explicit
+            raise ValueError(f"неизвестный источник картинки {explicit}")
+        for upload_id in reversed(uploads or []):
+            info = self.uploads.get(session, upload_id)
+            if info.file_type in (".png", ".jpg", ".webp"):
+                return self.uploads.file_path(info).read_bytes(), f"upload:{upload_id}"
+        last = self.imagegen.last(session)
+        if last is not None:
+            return self.imagegen.path(session, last.id).read_bytes(), f"generated:{last.id}"
+        return None, None
+
+    def _answer_image(self, question: str, turns: list[dict], session: str, uploads: list[str] | None,
+                      request: dict | None, steps: list[TraceStep]) -> Answer | None:
+        """Draw or edit a picture; None when the request turns out not to be about a picture."""
+        request = request or {}
+        source, source_ref = self._image_source(session, uploads, request.get("source"))
+        t0 = time.perf_counter()
+        plan = plan_image(question, turns, self.llm, has_source=source is not None)
+        steps.append(TraceStep(name="image_plan", duration_s=round(time.perf_counter() - t0, 3), detail={
+            "action": plan.action, "prompt": plan.prompt, "aspect": plan.aspect, "sides": plan.sides,
+            "source": source_ref, "refused": bool(plan.refused)}))
+        if plan.refused:
+            return Answer(question=question, answer=plan.refused, answerable=False, grounded=True, route="image",
+                          model=self.llm.name)
+        mode = request.get("mode") or plan.action
+        if mode == "none":
+            return None
+        width, height = ASPECTS.get(plan.aspect, (None, None)) if mode == "generate" else (None, None)
+        mask = base64.b64decode(request["mask"].split(",")[-1]) if request.get("mask") else None
+        try:
+            info = self.imagegen.run(session, mode, plan.prompt or question, request=question, width=width,
+                                     height=height, source=source if mode != "generate" else None,
+                                     source_ref=source_ref if mode != "generate" else None, mask=mask,
+                                     sides=request.get("sides") or plan.sides, strength=request.get("strength"),
+                                     seed=request.get("seed"))
+        except (ImageGenError, OSError) as exc:
+            return Answer(question=question, answer=f"Не удалось нарисовать: {exc}", answerable=False, grounded=True,
+                          route="image", model=self.llm.name)
+        steps.append(TraceStep(name="image_gen", duration_s=info.elapsed_s, detail={
+            "mode": mode, "seed": info.seed, "size": [info.width, info.height], "steps": info.steps}))
+        done = {"generate": "Нарисовал", "edit": "Изменил картинку", "redraw": "Перерисовал картинку",
+                "inpaint": "Дорисовал выделенную область", "outpaint": "Расширил картинку"}[mode]
+        text = f"{done}: {info.width}×{info.height}, {info.elapsed_s:.0f} с.\n\n**Промпт для генератора:** {info.prompt}"
+        return Answer(question=question, answer=text, answerable=True, grounded=True, route="image",
+                      model=self.llm.name, image={**info.model_dump(), "url": info.url})
+
     def capabilities(self, web_mode: str, code_mode: str, sandbox_net: bool) -> str:
         """What the app can do right now, for the general answer: it must neither deny abilities the
         user has turned on (the internet, running code) nor claim ones that are off."""
@@ -432,6 +507,9 @@ class Engine:
                 lines.append("- код: песочница сейчас недоступна (не запущен Docker Desktop) — код пишешь, но не "
                              "запускаешь;")
         lines.append("- к вопросу можно прикрепить файл скрепкой: по нему отвечаешь в этом диалоге.")
+        if self.imagegen.available:
+            lines.append("- картинки: рисуешь по описанию и редактируешь прикреплённые или нарисованные ранее (генератор "
+                         "Qwen-Image-2.1 на этом компьютере); просьба «нарисуй…» запускает его сама;")
         return "\n".join(lines)
 
     @staticmethod
@@ -679,6 +757,7 @@ class Engine:
         sandbox_net: bool = False,
         model: str | None = None,
         upload_fallback: bool = False,
+        image: dict | None = None,
     ) -> Answer:
         """Route the question, then answer it from the user's files (with citations)
         or from general knowledge. ``history`` is the previous chat turns
@@ -690,10 +769,10 @@ class Engine:
         stay attached to the dialog): when the attached files do not answer, the question is routed as usual."""
         with self.llm.use(model):
             return self._ask(question, history, top_k, mode, route, rerank, symbols, reasoning, agent, uploads, session,
-                             confirmed, web, code, sandbox_net, upload_fallback)
+                             confirmed, web, code, sandbox_net, upload_fallback, image)
 
     def _ask(self, question, history, top_k, mode, route, rerank, symbols, reasoning, agent, uploads, session,
-             confirmed, web, code, sandbox_net, upload_fallback=False) -> Answer:
+             confirmed, web, code, sandbox_net, upload_fallback=False, image=None) -> Answer:
         question = question.strip()
         if not question:
             raise ValueError("empty question")
@@ -761,8 +840,11 @@ class Engine:
         budget = rcfg.budget(level) if level != "none" else None
         answer = None
         upload_trace: list[TraceStep] = []
+        # pictures: an explicit request from the UI (mask, sides) or words like "нарисуй" / "перерисуй"
+        if session and self.imagegen.available and (image or wants_image(question)):
+            answer = self._answer_image(question, turns, session, uploads, image, steps)
         # a question for the internet does not go to the files that merely stay attached to the dialog
-        if uploads and not (upload_fallback and wants_web and web_mode != "off"):
+        if answer is None and uploads and not (upload_fallback and wants_web and web_mode != "off"):
             # Э13: the question is about files uploaded into this conversation
             infos = [self.uploads.get(session or "", u) for u in uploads]
             use_rerank = self.settings.retrieval.rerank if rerank is None else rerank

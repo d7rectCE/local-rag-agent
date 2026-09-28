@@ -134,6 +134,7 @@ const S = {
   busy: null,         // {kind, text, uploads, started}
   error: null,        // {kind, text, message}
   selected: null,     // id of the answer turn shown in the right panel
+  imageTarget: null,  // {source, mode, url}: the next message edits this picture
   wasIndexing: false,
 };
 
@@ -438,15 +439,25 @@ function renderSend() {
   btn.disabled = !!S.busy || empty || S.uploading.some((u) => !u.error);
 }
 
+const isImage = (u) => ['.png', '.jpg', '.webp'].includes(u.file_type);
+const uploadUrl = (u) => `/uploads/${encodeURIComponent(u.id)}/file?session=${encodeURIComponent(u.session)}`;
+
 function renderAttachments() {
   const box = $('#attachments');
   box.replaceChildren();
+  if (S.imageTarget) {
+    const t = S.imageTarget;
+    box.append(h('span', { class: 'att image-target', title: 'Следующее сообщение изменит эту картинку' },
+      h('img', { class: 'att-thumb', src: t.url, alt: '' }), h('b', { text: 'Правка картинки' }),
+      h('button', { type: 'button', class: 'mini-btn', 'aria-label': 'Отменить правку', onclick: () => { S.imageTarget = null; renderControls(); }, icon: ['x', 12, 2.2] })));
+  }
   for (const id of S.attachments) {
     const u = S.uploads.find((x) => x.id === id);
     if (!u) continue;
     const meta = u.fits_context ? fmtSize(u.size) : `${fmtSize(u.size)} · ${u.n_fragments} фрагм.`;
     box.append(h('span', { class: 'att', title: u.warnings?.length ? u.warnings.join('\n') : u.name },
-      h('span', { class: 'ext', text: extBadge(u.name) }), h('b', { text: u.name }), h('span', { class: 'meta', text: meta }),
+      isImage(u) ? h('img', { class: 'att-thumb', src: uploadUrl(u), alt: '' }) : h('span', { class: 'ext', text: extBadge(u.name) }),
+      h('b', { text: u.name }), h('span', { class: 'meta', text: isImage(u) ? fmtSize(u.size) : meta }),
       h('button', { type: 'button', class: 'mini-btn', 'aria-label': 'Убрать файл из контекста', title: 'Файл в контексте диалога: агент учитывает его в следующих вопросах. Убрать (файл останется в сессии)', onclick: () => { S.attachments = S.attachments.filter((x) => x !== id); renderControls(); }, icon: ['x', 12, 2.2] })));
   }
   for (const u of S.uploading) {
@@ -577,6 +588,7 @@ function sourceLoc(s) {
 function routeLabel(a) {
   const web = (a.sources || []).some((s) => s.file_type === 'web');
   if (a.route === 'code') return 'код-агент';
+  if (a.route === 'image') return 'картинка';
   if (a.route === 'general') return 'общие знания';
   if (a.route === 'web') return (a.sources || []).some((s) => s.file_type !== 'web') ? 'веб + мои файлы' : 'веб';
   if (a.route === 'upload') return 'загруженный файл';
@@ -647,7 +659,11 @@ function renderAnswer(turn, turns, idx) {
           h('button', { type: 'button', class: 'btn-pill', onclick: (e) => { e.currentTarget.closest('.notice').remove(); } }, 'Не надо')))));
   }
 
-  if (a.code) {  // the chat handed the task to the code agent: its result in words, then the card
+  if (a.image) {  // a generated or edited picture
+    art.append(imageCard(a.image));
+    if (a.answer) art.append(renderMarkdown(a.answer, []));
+  }
+  else if (a.code) {  // the chat handed the task to the code agent: its result in words, then the card
     if (a.answer && a.answer !== a.code.summary) art.append(renderMarkdown(a.answer, []));
     art.append(codeCard(a.code));
   }
@@ -686,6 +702,111 @@ function renderAnswer(turn, turns, idx) {
       cited.length ? `Все найденные фрагменты (${sources.length}) →` : `Найденные фрагменты (${sources.length}) →`));
   }
   return art;
+}
+
+// --------------------------------------------------------------------------- pictures (imagegen)
+
+const IMAGE_MODES = { generate: 'нарисовано', edit: 'изменено', redraw: 'перерисовано', inpaint: 'область дорисована', outpaint: 'расширено' };
+const IMAGE_RE = /нарису|перерису|дорису|изобрази|сгенерир\S*\s+(картин|изображ|фото|рисун|логотип|иконк)|\b(draw|paint|generate an image)\b/i;
+
+function imageCard(img) {
+  const pic = h('img', { src: img.url, alt: img.prompt || 'картинка', loading: 'lazy', title: 'Открыть крупно' });
+  pic.addEventListener('click', () => openModal('Картинка', h('img', { class: 'gen-full', src: img.url, alt: img.prompt || '' }), [
+    h('a', { class: 'btn ghost', href: img.url, download: `image-${img.id}.png` }, 'Скачать'),
+    h('button', { type: 'button', class: 'btn accent', onclick: closeModal }, 'Закрыть')], { wide: true }));
+  const source = `generated:${img.id}`;
+  return h('figure', { class: 'gen-image' }, pic,
+    h('figcaption', {}, h('span', { class: 'muted small', text: `${IMAGE_MODES[img.mode] || img.mode} · ${img.width}×${img.height} · seed ${img.seed} · ${fmtSec(img.elapsed_s)}` }),
+      h('span', { class: 'gen-actions' },
+        h('a', { class: 'btn-pill', href: img.url, download: `image-${img.id}.png` }, 'Скачать'),
+        h('button', { type: 'button', class: 'btn-pill', disabled: !!S.busy, onclick: () => setImageTarget({ source, mode: 'edit', url: img.url }) }, 'Изменить'),
+        h('button', { type: 'button', class: 'btn-pill', disabled: !!S.busy, onclick: () => openMaskEditor(source, img.url) }, 'Дорисовать область'),
+        h('button', { type: 'button', class: 'btn-pill', disabled: !!S.busy, onclick: () => openOutpaint(source, img.url) }, 'Расширить'))));
+}
+
+// the next message edits this picture: a chip above the input, cleared after sending
+function setImageTarget(target) {
+  S.imageTarget = target;
+  renderControls();
+  const msg = $('#msg');
+  msg.placeholder = 'Что изменить на картинке? Например: сделай фон ночным, добавь снег, перерисуй акварелью';
+  msg.focus();
+}
+
+function openMaskEditor(source, url) {
+  const view = h('canvas', { class: 'mask-canvas', 'aria-label': 'Картинка: закрасьте область, которую нужно перерисовать' });
+  const mask = document.createElement('canvas');
+  const size = h('input', { type: 'range', min: 8, max: 160, value: 48, 'aria-label': 'Размер кисти' });
+  const prompt = h('input', { class: 'input', placeholder: 'Что нарисовать в выделенной области (например: красный зонт)' });
+  const img = new Image();
+  let drawing = false;
+  let painted = false;
+  const paint = (e) => {
+    const r = view.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width) * view.width;
+    const y = ((e.clientY - r.top) / r.height) * view.height;
+    const rad = (+size.value / 2) * (view.width / r.width);
+    const v = view.getContext('2d');
+    v.fillStyle = 'rgba(255, 64, 64, 0.45)';
+    v.beginPath(); v.arc(x, y, rad, 0, Math.PI * 2); v.fill();
+    const m = mask.getContext('2d');
+    m.fillStyle = '#fff';
+    m.beginPath(); m.arc(x, y, rad, 0, Math.PI * 2); m.fill();
+    painted = true;
+  };
+  const reset = () => {
+    view.getContext('2d').drawImage(img, 0, 0);
+    const m = mask.getContext('2d');
+    m.fillStyle = '#000';
+    m.fillRect(0, 0, mask.width, mask.height);
+    painted = false;
+  };
+  img.onload = () => {
+    view.width = mask.width = img.naturalWidth;
+    view.height = mask.height = img.naturalHeight;
+    reset();
+  };
+  img.src = url;
+  view.addEventListener('pointerdown', (e) => { drawing = true; view.setPointerCapture(e.pointerId); paint(e); });
+  view.addEventListener('pointermove', (e) => { if (drawing) paint(e); });
+  view.addEventListener('pointerup', () => { drawing = false; });
+  openModal('Дорисовать область', [
+    h('p', { class: 'hint', style: 'margin:0', text: 'Закрасьте кистью то, что нужно перерисовать, и опишите, что там должно быть. Остальная картинка не изменится.' }),
+    view,
+    h('div', { class: 'range-row' }, h('span', { class: 'small', text: 'Кисть' }), size,
+      h('button', { type: 'button', class: 'btn inline', onclick: reset }, 'Очистить')),
+    prompt,
+  ], [
+    h('button', { type: 'button', class: 'btn ghost', onclick: closeModal }, 'Отмена'),
+    h('button', { type: 'button', class: 'btn accent', onclick: () => {
+      if (!painted) { toast('Закрасьте область кистью', 'error'); return; }
+      const text = prompt.value.trim() || 'Дорисуй выделенную область так, чтобы она естественно продолжала картинку';
+      const maskPng = mask.toDataURL('image/png');
+      closeModal();
+      send(text, 'ask', { image: { mode: 'inpaint', source, mask: maskPng } });
+    } }, 'Дорисовать'),
+  ], { wide: true });
+}
+
+function openOutpaint(source, url) {
+  const sides = { left: 'слева', right: 'справа', top: 'сверху', bottom: 'снизу' };
+  const boxes = Object.entries(sides).map(([k, label]) => h('label', { class: 'check' }, h('input', { type: 'checkbox', value: k, checked: k === 'left' || k === 'right' }), label));
+  const prompt = h('input', { class: 'input', placeholder: 'Что должно появиться по краям (необязательно)' });
+  openModal('Расширить картинку', [
+    h('img', { class: 'gen-preview', src: url, alt: '' }),
+    h('div', { class: 'field' }, h('span', { class: 'label', text: 'Дорисовать' }), h('div', { class: 'checks' }, boxes)),
+    h('span', { class: 'hint', text: 'Каждая выбранная сторона станет шире на четверть; модель продолжит сцену.' }),
+    prompt,
+  ], [
+    h('button', { type: 'button', class: 'btn ghost', onclick: closeModal }, 'Отмена'),
+    h('button', { type: 'button', class: 'btn accent', onclick: () => {
+      const picked = boxes.map((b) => b.querySelector('input')).filter((i) => i.checked).map((i) => i.value);
+      if (!picked.length) { toast('Выберите хотя бы одну сторону', 'error'); return; }
+      closeModal();
+      const text = prompt.value.trim() || `Расширь картинку: ${picked.map((s) => sides[s]).join(', ')}`;
+      send(text, 'ask', { image: { mode: 'outpaint', source, sides: picked } });
+    } }, 'Расширить'),
+  ]);
 }
 
 function testsPassed(res) {
@@ -803,8 +924,10 @@ function renderQuestion(turn) {
   const ids = turn.payload?.uploads || [];
   const files = ids.map((id) => S.uploads.find((u) => u.id === id)).filter(Boolean);
   return h('div', { class: 'bubble-wrap' },
-    files.map((u) => h('span', { class: 'file-chip' }, h('span', { class: 'ext', text: extBadge(u.name) }),
-      h('span', { class: 'name' }, h('b', { text: u.name }), fmtSize(u.size)))),
+    files.map((u) => (isImage(u)
+      ? h('img', { class: 'bubble-image', src: uploadUrl(u), alt: u.name, title: u.name })
+      : h('span', { class: 'file-chip' }, h('span', { class: 'ext', text: extBadge(u.name) }),
+        h('span', { class: 'name' }, h('b', { text: u.name }), fmtSize(u.size))))),
     h('div', { class: 'bubble' }, turn.kind === 'code_task' ? h('span', { class: 'tag-in', text: 'код' }) : null, turn.content));
 }
 
@@ -850,7 +973,7 @@ function renderThread() {
     const label = h('span', { class: 'busy-label' });
     const update = () => {
       const s = (Date.now() - S.busy.started) / 1000;
-      label.textContent = `${S.busy.kind === 'code' ? 'Код-агент работает в песочнице' : s > 20 ? 'Работаю: поиск, рассуждение или запуск кода' : 'Ищу и думаю'} · ${Math.floor(s)} с`;
+      label.textContent = `${S.busy.drawing ? 'Рисую картинку: обычно 2–5 минут' : S.busy.kind === 'code' ? 'Код-агент работает в песочнице' : s > 20 ? 'Работаю: поиск, рассуждение или запуск кода' : 'Ищу и думаю'} · ${Math.floor(s)} с`;
     };
     update();
     clearInterval(tickTimer);
@@ -888,6 +1011,8 @@ function traceGroups(a) {
     switch (st.name) {
       case 'route': add('route', 'Маршрутизатор', 'c-router', st.duration_s, a.route === 'upload' ? 'загруженный файл' : a.route === 'code' ? 'запуск кода' : (d.route === 'general' ? 'общие знания' : 'мои файлы') + (d.web ? ' + веб' : '')); break;
       case 'route_code': add('route', 'Маршрутизатор', 'c-router', st.duration_s); break;
+      case 'image_plan': add('route', 'Маршрутизатор', 'c-router', st.duration_s, 'картинка'); break;
+      case 'image_gen': add('image', 'Генерация картинки', 'c-agent', st.duration_s, `${d.size ? d.size.join('×') : ''} · ${d.steps} шагов`); break;
       case 'code_agent': add('code', 'Код-агент', 'c-agent', st.duration_s, `${d.runs || 0} ${plural(d.runs || 0, 'запуск', 'запуска', 'запусков')}${d.network ? ' · с сетью' : ''}`); break;
       case 'retrieve': add('search', 'Поиск', 'c-search', st.duration_s, `${(d.hits || []).length} фрагм.`); break;
       case 'sql': add('sql', 'SQL к каталогу', 'c-search', st.duration_s, d.error ? 'ошибка' : `${d.rows} ${plural(d.rows || 0, 'строка', 'строки', 'строк')}`); break;
@@ -910,7 +1035,7 @@ function traceGroups(a) {
       default: break;
     }
   }
-  if (a.route !== 'general' && a.route !== 'code' && a.answerable) {
+  if (!['general', 'code', 'image'].includes(a.route) && a.answerable) {
     const markers = new Set([...(a.answer || '').matchAll(CITE_RE)].map((m) => m[1])).size;
     add('cite', 'Проверка ссылок', 'c-ok', 0, markers ? `${(a.citations || []).length} из ${markers}` : 'без ссылок');
   }
@@ -962,8 +1087,10 @@ function renderFilesCard() {
   for (const u of S.uploads) {
     const status = u.duplicate_of ? `уже в корпусе: ${basename(u.duplicate_of)}` : u.fits_context ? 'целиком в контексте' : `сессионный индекс · ${u.n_fragments} фрагм.`;
     rows.push(h('div', { class: 'file-row' }, h('span', { class: 'ext', text: extBadge(u.name) }),
-      h('div', { class: 'txt' }, h('b', { text: u.name, title: u.name }), h('span', { text: status })),
+      h('div', { class: 'txt' }, h('b', { text: u.name, title: u.name }), h('span', { text: isImage(u) ? 'картинка: можно спросить о ней или изменить' : status })),
       h('span', { class: 'row-actions' },
+        isImage(u) && S.policy?.imagegen ? h('button', { type: 'button', class: 'mini-btn', 'aria-label': 'Дорисовать область', title: 'Перерисовать часть картинки', onclick: () => openMaskEditor(`upload:${u.id}`, uploadUrl(u)), icon: ['pencil', 14] }) : null,
+        isImage(u) && S.policy?.imagegen ? h('button', { type: 'button', class: 'mini-btn', 'aria-label': 'Изменить картинку', title: 'Изменить картинку по описанию', onclick: () => setImageTarget({ source: `upload:${u.id}`, mode: 'edit', url: uploadUrl(u) }), icon: ['sliders', 14] }) : null,
         S.attachments.includes(u.id) ? null : h('button', { type: 'button', class: 'mini-btn', 'aria-label': 'Прикрепить к вопросу', title: 'Прикрепить к следующему вопросу', onclick: () => { S.attachments.push(u.id); renderControls(); }, icon: ['paperclip', 14] }),
         corpusInfo() && !u.duplicate_of ? h('button', { type: 'button', class: 'mini-btn', 'aria-label': 'Добавить в корпус', title: 'Добавить в рабочую папку и проиндексировать', onclick: () => addToCorpus(u), icon: ['folder', 14] }) : null,
         h('button', { type: 'button', class: 'mini-btn', 'aria-label': 'Удалить файл', title: 'Удалить из сессии', onclick: () => deleteUpload(u), icon: ['trash', 14] }))));
@@ -1035,6 +1162,7 @@ function askBody(text, opts = {}) {
     confirmed: opts.confirmed || [],
     replace_last: !!opts.replaceLast,
     upload_fallback: true,  // files stay attached: a question they do not answer is routed as usual
+    image: opts.replaceLast ? (from.image || null) : (opts.image || null),
   };
 }
 
@@ -1047,7 +1175,10 @@ async function send(text, kind = 'ask', opts = {}) {
   if (!text || S.busy) return;
   // busy at once: a second Enter while the dialog is being created must not send the question twice
   S.error = null;
-  S.busy = { kind, text, uploads: opts.replaceLast ? [] : [...S.attachments], started: Date.now(), replace: !!opts.replaceLast };
+  if (!opts.image && S.imageTarget && !opts.replaceLast) opts = { ...opts, image: { mode: S.imageTarget.mode, source: S.imageTarget.source } };
+  const drawing = !!opts.image || (!!S.policy?.imagegen && IMAGE_RE.test(text));
+  S.imageTarget = null;
+  S.busy = { kind, text, uploads: opts.replaceLast ? [] : [...S.attachments], started: Date.now(), replace: !!opts.replaceLast, drawing };
   if (!opts.keepInput) {
     $('#msg').value = '';
     autoGrow();

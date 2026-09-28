@@ -127,6 +127,8 @@ class Answer(BaseModel):
     # the chat handed the task to the code agent (Э15): its result (CodeResult) with diff and artifacts
     code: dict | None = None
     truncated: bool = False  # the answer hit the generation limit (llm.max_tokens)
+    # a generated or edited image (imagegen): id, dialog, mode, prompt, size, seed, url
+    image: dict | None = None
 
 
 def _call(llm: BaseLLM, messages: list[dict], json_schema: dict | None, purpose: str, reasoning_budget: int | None):

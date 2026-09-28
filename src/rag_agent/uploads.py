@@ -38,6 +38,7 @@ from rag_agent.schema import Node
 
 UPLOAD_PREFIX = "upload:"
 TEXT_EXTS = {".txt", ".md", ".log", ".py"}
+IMAGE_EXTS = {".png", ".jpg", ".webp"}  # described by the VLM; the source of image edits
 _SESSION = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
@@ -78,8 +79,14 @@ def detect_type(data: bytes, name: str) -> str:
         if "word/document.xml" in names:
             return ".docx"
         raise UploadError("архивы не поддерживаются (из ZIP-файлов принимается только DOCX)")
-    if data.startswith((b"\x89PNG", b"\xff\xd8\xff", b"GIF8")):
-        raise UploadError("изображения пока не поддерживаются (появятся на этапе 5)")
+    if data.startswith(b"\x89PNG"):
+        return ".png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return ".webp"
+    if data.startswith(b"GIF8"):
+        raise UploadError("GIF не поддерживается: сохраните кадр как PNG или JPEG")
     if data.startswith((b"MZ", b"\x7fELF", b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe")):
         raise UploadError("исполняемые файлы не принимаются")
     head = data[:8192]
@@ -138,7 +145,9 @@ class UploadStore:
         return int(self.settings.llm.num_ctx * self.cfg.context_share * self.cfg.chars_per_token)
 
     # --- lifecycle -----------------------------------------------------------------
-    def add(self, session: str, name: str, data: bytes, known_hashes: dict[str, str] | None = None) -> UploadInfo:
+    def add(self, session: str, name: str, data: bytes, known_hashes: dict[str, str] | None = None,
+            describe=None) -> UploadInfo:
+        """``describe(data) -> str`` makes the text of an uploaded image (the VLM of the image pipeline)."""
         if len(data) > self.cfg.max_mb * 2**20:
             raise UploadError(f"файл больше {self.cfg.max_mb:g} МБ")
         if not data:
@@ -158,7 +167,10 @@ class UploadStore:
         info.duplicate_of = (known_hashes or {}).get(info.sha256)
         t0 = time.perf_counter()
         try:
-            nodes, info.warnings = self._parse_isolated(d / name, f"{UPLOAD_PREFIX}{name}", ext)
+            if ext in IMAGE_EXTS:
+                nodes, info.warnings = self._image_nodes(data, name, describe), []
+            else:
+                nodes, info.warnings = self._parse_isolated(d / name, f"{UPLOAD_PREFIX}{name}", ext)
         except Exception:
             shutil.rmtree(d, ignore_errors=True)
             raise
@@ -175,6 +187,26 @@ class UploadStore:
         (d / "info.json").write_text(info.model_dump_json(indent=2), encoding="utf-8")
         self._cache[upload_id] = (node_objs, vectors)
         return info
+
+    @staticmethod
+    def _image_nodes(data: bytes, name: str, describe) -> list[dict]:
+        from PIL import Image, UnidentifiedImageError
+
+        try:
+            with Image.open(io.BytesIO(data)) as im:
+                im.verify()
+        except (UnidentifiedImageError, OSError) as exc:
+            raise UploadError(f"повреждённое изображение: {exc}") from exc
+        text = ""
+        if describe is not None:
+            try:
+                text = describe(data) or ""
+            except Exception:  # the upload is still usable as the source of an edit
+                text = ""
+        node = Node(id=f"{UPLOAD_PREFIX}{name}#image", file_path=f"{UPLOAD_PREFIX}{name}", file_type="png",
+                    node_type="image", title=name, text=text or f"[Изображение {name}]",
+                    metadata={"image_source": "upload"})
+        return [node.model_dump(mode="json")]
 
     def _parse_isolated(self, path: Path, rel: str, ext: str) -> tuple[list[dict], list[str]]:
         args = (str(path), rel, ext, self.settings.chunking.model_dump(), self.settings.documents.model_dump())

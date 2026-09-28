@@ -95,10 +95,10 @@ class LLMConfig(BaseModel):
     api_key_env: str | None = None
     temperature: float = 0.0
     think: bool = False
-    num_ctx: int = 16384
+    num_ctx: int = 65536  # prompt + answer (Ollama's window); qwen35 models keep a small KV cache
     # generated tokens per call when the caller sets no limit: answers (1024 cut long answers mid-sentence)
-    max_tokens: int = 4096
-    timeout_s: float = 600.0
+    max_tokens: int = 16384
+    timeout_s: float = 1500.0
 
 
 class GenerationConfig(BaseModel):

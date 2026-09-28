@@ -81,6 +81,7 @@ def test_small_upload_goes_whole_without_a_corpus(settings, fake_embedder):
 def test_large_upload_uses_the_index_then_self_route(settings, fake_embedder):
     big = "\n\n".join(f"## Запись {i}\n\nЭксперимент {i}: accuracy 0.{900 + i}, датасет digits." for i in range(60))
     eng = upload_engine(settings, fake_embedder)
+    settings.llm.num_ctx = 16384
     settings.uploads.context_share = 0.02  # a budget of ~1000 chars: the file does not fit
     info = eng.upload("s1", "journal.md", big.encode("utf-8"))
     assert not info.fits_context

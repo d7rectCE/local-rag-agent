@@ -69,9 +69,9 @@ llm:
   api_key_env: null                   # env var with the API key for provider=openai
   temperature: 0.0
   think: false
-  num_ctx: 16384
-  max_tokens: 4096
-  timeout_s: 600
+  num_ctx: 65536                      # prompt + answer; the 27B takes 16.3 GB of VRAM with it (hybrid attention, small KV)
+  max_tokens: 16384                   # longest answer
+  timeout_s: 1500                     # 16k tokens of a 27B take ~10 min
 
 generation:
   max_source_chars: 2500              # per retrieved fragment in the prompt

@@ -379,7 +379,7 @@ class CodeAgent:
             messages = [{"role": "system", "content": system}, {"role": "user", "content": first}, *history[-14:]]
             t1 = time.perf_counter()
             try:
-                call = self.llm.chat(messages, json_schema=schema, max_tokens=2048, purpose="code_agent").json()
+                call = self.llm.chat(messages, json_schema=schema, max_tokens=8192, purpose="code_agent").json()
             except LLMError as exc:
                 res.status, res.summary = "error", f"LLM: {exc}"
                 return

@@ -267,7 +267,9 @@ class ImageGenConfig(BaseModel):
     width: int = 1024
     height: int = 1024
     steps: int = 20
-    cfg_scale: float = 6.0
+    # sd.cpp's docs give 6.0; with this model it burns the picture (dark, crushed shadows) and draws vertical 8 px
+    # stripes: their strength (FFT at 8 px) fell 117 -> 44 -> 23 at CFG 6 -> 4 -> 3, the same on Vulkan and ROCm
+    cfg_scale: float = 3.0
     sampler: str = "euler"
     strength: float = 0.75  # redraw: how far the result may move from the source
     negative_prompt: str = ""

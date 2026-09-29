@@ -21,7 +21,7 @@ from rag_agent.imagegen import (ASPECTS, ImageGenerator, ImageGenError, parse_si
 from rag_agent import modelfiles
 from rag_agent.model_settings import ModelSettings
 from rag_agent.videogen import VideoGenError, VideoGenerator, plan_video, wants_video
-from rag_agent.chains import ChainStep, parse_chain
+from rag_agent.chains import ChainStep, GraphError, graph_steps, parse_chain
 from rag_agent.config import REPO_ROOT, Settings, load_settings
 from rag_agent.policy import Policy, Provenance, defang_markdown
 from rag_agent import generation
@@ -476,7 +476,8 @@ class Engine:
         try:
             info = self.videogen.run(session, plan.prompt or question, request=question,
                                      source=source if use_source else None, source_ref=source_ref if use_source else None,
-                                     seconds=plan.seconds, aspect=plan.aspect, seed=request.get("seed"),
+                                     seconds=float(request.get("seconds") or plan.seconds), aspect=plan.aspect,
+                                     seed=request.get("seed"),
                                      model=request.get("model"))
         except (VideoGenError, ImageGenError, OSError) as exc:
             return Answer(question=question, answer=f"Не удалось снять видео: {exc}", answerable=False, grounded=True,
@@ -857,6 +858,7 @@ class Engine:
         upload_fallback: bool = False,
         image: dict | None = None,
         video: dict | None = None,
+        graph: list[dict] | None = None,
     ) -> Answer:
         """Route the question, then answer it from the user's files (with citations)
         or from general knowledge. ``history`` is the previous chat turns
@@ -870,7 +872,13 @@ class Engine:
                     agent=agent, uploads=uploads, session=session, confirmed=confirmed, web=web, code=code,
                     sandbox_net=sandbox_net, upload_fallback=upload_fallback, image=image, video=video)
         with self.llm.use(model, self.model_settings.get("text", model or self.settings.llm.model)):
-            chain = parse_chain(question) if session else None
+            if graph and session:  # the canvas: nodes and their links
+                try:
+                    chain = graph_steps(graph)
+                except GraphError as exc:
+                    raise ValueError(str(exc)) from exc
+            else:
+                chain = parse_chain(question) if session else None
             if chain:
                 return self._ask_chain(question, chain, history, args)
             return self._ask(question, history, **args)
@@ -884,8 +892,26 @@ class Engine:
         turns = list(trim_history(history))
         parts: list[dict] = []
         trace: list[TraceStep] = []
-        picture, pending = None, []
+        pending = []
+        pictures: dict[str, str] = {}  # step id -> "generated:<id>" of the picture it made
+        by_id = {s.id: s for s in chain}
+
+        def picture_of(step: ChainStep) -> str | None:
+            """The picture that flows into a step: the nearest one up its links."""
+            queue, seen = list(step.inputs), set()
+            while queue:
+                sid = queue.pop(0)
+                if sid in seen:
+                    continue
+                seen.add(sid)
+                if sid in pictures:
+                    return pictures[sid]
+                queue += by_id[sid].inputs if sid in by_id else []
+            return None
+
         for n, step in enumerate(chain, start=1):
+            picture = picture_of(step)
+            opts = step.options
             t1 = time.perf_counter()
             steps: list[TraceStep] = []
             first_uploads = uploads if n == 1 else None
@@ -893,7 +919,8 @@ class Engine:
                 if not self.imagegen.available:
                     ans = Answer(question=step.text, answer="Генератор картинок не настроен.", answerable=False)
                 else:
-                    req = {**(args["image"] or {}), **({"source": picture} if picture else {})}
+                    req = {**(args["image"] or {}), **({"source": picture} if picture else {}),
+                           **{k: opts[k] for k in ("model", "size") if k in opts}}
                     req.pop("mode", None)
                     ans = self._answer_image(step.text, turns, session, first_uploads, req, steps, force=True)
             elif step.kind == "vid":
@@ -901,20 +928,23 @@ class Engine:
                     ans = Answer(question=step.text, answer="Генератор видео не настроен: положите модель в "
                                  "models/video.", answerable=False)
                 else:
-                    req = {**(args["video"] or {}), **({"source": picture, "mode": "animate"} if picture else {})}
+                    req = {**(args["video"] or {}), **({"source": picture, "mode": "animate"} if picture else {}),
+                           **{k: opts[k] for k in ("model", "seconds") if k in opts}}
                     ans = self._answer_video(step.text, turns, session, first_uploads, req, steps, force=True)
             elif step.kind == "code":
                 if not self.sandbox_available():
                     ans = Answer(question=step.text, answer="Песочница недоступна: запустите Docker Desktop.",
                                  answerable=False)
                 else:
-                    ans = self._answer_code(step.text, step.text, turns, confirmed=args["confirmed"],
-                                            network=args["sandbox_net"] and self.settings.code.network != "never")
+                    with self.llm.use(opts.get("model"), self.model_settings.get("text", opts.get("model"))):
+                        ans = self._answer_code(step.text, step.text, turns, confirmed=args["confirmed"],
+                                                network=args["sandbox_net"] and self.settings.code.network != "never")
             else:
-                ans = self._ask(step.text, turns, **{**args, "uploads": first_uploads, "image": None, "video": None})
+                with self.llm.use(opts.get("model"), self.model_settings.get("text", opts.get("model"))):
+                    ans = self._ask(step.text, turns, **{**args, "uploads": first_uploads, "image": None, "video": None})
             if ans.image:
-                picture = f"generated:{ans.image['id']}"
-            part = {"n": n, "kind": step.kind, "instruction": step.text, "route": ans.route, "answer": ans.answer,
+                pictures[step.id] = f"generated:{ans.image['id']}"
+            part = {"n": n, "id": step.id, "kind": step.kind, "instruction": step.text, "route": ans.route, "answer": ans.answer,
                     "answerable": ans.answerable, "image": ans.image, "video": ans.video, "code": ans.code,
                     "sources": [s.model_dump() for s in ans.sources], "latency_s": round(time.perf_counter() - t1, 2)}
             parts.append(part)

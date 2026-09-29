@@ -99,6 +99,8 @@ class AskRequest(BaseModel):
     # "upload:<id>", mask: PNG as base64 (white = redraw), sides: [left, right, top, bottom], strength, seed}
     image: dict | None = None
     video: dict | None = None  # {"mode": "animate", "source": ..., "model": ...}
+    # the canvas: nodes {id, kind: text|code|img|vid, text, inputs: [ids], options: {model, size, seconds}}
+    graph: list[dict] | None = None
 
 
 WEBUI = Path(__file__).with_name("webui")
@@ -572,6 +574,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
                 upload_fallback=req.upload_fallback,
                 image=req.image,
                 video=req.video,
+                graph=req.graph,
             )
             if req.dialog_id:
                 if not req.replace_last:
@@ -580,7 +583,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
                                                 "reasoning": req.reasoning, "code": req.code,
                                                 "sandbox_net": req.sandbox_net, "model": req.model,
                                                 "image": {k: v for k, v in (req.image or {}).items() if k != "mask"}
-                                                or None, "video": req.video})
+                                                or None, "video": req.video, "graph": req.graph})
                 dialogs().add_turn(req.dialog_id, "assistant", "answer", answer.answer, payload=answer.model_dump(),
                                    ref=answer.code["task_id"] if answer.code else None)
             return answer

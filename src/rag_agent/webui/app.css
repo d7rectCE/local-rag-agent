@@ -309,6 +309,39 @@ button.model-name:hover { background: var(--tag); }
 .model-name span { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dot { width: 8px; height: 8px; border-radius: 4px; background: var(--ok); flex-shrink: 0; }
 .sidebar .model + .model { margin-top: -4px; }
+/* --------------------------------------------------------------------------- canvas */
+.new-row { display: flex; gap: 8px; }
+.new-row .btn-primary { flex: 1; }
+.btn-canvas { width: 44px; flex-shrink: 0; border-radius: 999px; border: 1px solid var(--round-border); background: var(--card); color: var(--text); display: flex; align-items: center; justify-content: center; }
+.btn-canvas:hover, .btn-canvas[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.main.canvas-mode .messages, .main.canvas-mode .composer-wrap { display: none; }
+.canvas-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.canvas-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 20px; border-bottom: 1px solid var(--line); }
+.canvas-toolbar .hint { margin-left: auto; font-size: 12px; color: var(--muted); }
+.canvas-area { flex: 1; min-height: 0; overflow: auto; position: relative; background-image: radial-gradient(var(--line) 1px, transparent 1px); background-size: 22px 22px; }
+.canvas-inner { position: relative; width: 2600px; height: 1600px; }
+.canvas-edges { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.canvas-edges path { fill: none; stroke: var(--accent); stroke-width: 2.5; opacity: 0.8; }
+.canvas-edges path.hit { stroke: transparent; stroke-width: 14; cursor: pointer; pointer-events: stroke; opacity: 1; }
+.canvas-edges path.hit:hover + path, .canvas-edges path.temp { stroke-dasharray: 6 5; }
+.cnode { position: absolute; width: 270px; background: var(--card); border: var(--card-border); box-shadow: var(--card-shadow); border-radius: 14px; display: flex; flex-direction: column; }
+.cnode.running { outline: 2px solid var(--accent); }
+.cnode.failed { outline: 2px solid var(--danger); }
+.cnode-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: grab; font-size: 12.5px; font-weight: 700; user-select: none; }
+.cnode-head .mini-btn { margin-left: auto; }
+.cnode-body { display: flex; flex-direction: column; gap: 6px; padding: 10px; }
+.cnode-body textarea.input { min-height: 54px; resize: vertical; font: inherit; font-size: 12.5px; }
+.cnode-body .input { width: 100%; box-sizing: border-box; font-size: 12px; }
+.cnode-row { display: flex; gap: 6px; }
+.cnode-row > * { flex: 1; min-width: 0; }
+.cnode-result { padding: 0 10px 10px; font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 6px; }
+.cnode-result img, .cnode-result video { width: 100%; border-radius: 10px; display: block; }
+.cnode-result .txt { max-height: 120px; overflow: auto; white-space: pre-wrap; color: var(--text); }
+.port { position: absolute; top: 12px; width: 14px; height: 14px; border-radius: 50%; background: var(--card); border: 2px solid var(--accent); cursor: crosshair; }
+.port.in { left: -8px; }
+.port.out { right: -8px; }
+.port.in.target { background: var(--accent); }
+.k-img .cnode-head { color: #d97706; } .k-vid .cnode-head { color: #db2777; } .k-code .cnode-head { color: #059669; } .k-text .cnode-head { color: var(--accent); }
 .chain-step { display: flex; align-items: baseline; gap: 8px; margin: 14px 0 6px; font-size: 12.5px; color: var(--muted); }
 .chain-step:first-child { margin-top: 0; }
 .chain-step b { color: var(--text); font-weight: 700; white-space: nowrap; }

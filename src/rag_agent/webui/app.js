@@ -34,6 +34,8 @@ const ICONS = {
   image: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-9 8"/>',
   frame: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   film: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>',
+  nodes: '<circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="12" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M8.4 7.2l7.2 3.6M8.4 16.8l7.2-3.6"/>',
+  play: '<path d="M7 5l12 7-12 7z"/>',
 };
 
 function icon(name, size = 16, width = 1.8) {
@@ -1335,6 +1337,241 @@ function renderAccessCard() {
   el.append(row('Интернет', ...web, 'Наружу уходят только поисковые запросы из вопроса и загрузки страниц; запрос с именами из ваших файлов требует подтверждения'));
 }
 
+// --------------------------------------------------------------------------- canvas: a graph of steps
+
+// Nodes are the steps of a chain (text, code, picture, video) with their own instruction, model and options;
+// a link carries a node's result into another (a picture becomes the source of a picture or the first frame
+// of a video, every result is history for the text and code steps). "Выполнить" sends the graph to /ask:
+// the server runs the nodes after their inputs, and the answer lands in the dialog and in the nodes.
+const CANVAS_KEY = 'rag.canvas';
+const NODE_KINDS = {
+  text: { label: 'Текст', icon: 'bulb', hint: 'Что написать: например, «расскажи, что сделано»' },
+  code: { label: 'Код', icon: 'terminal', hint: 'Задача для код-агента: посчитать, построить график, написать программу' },
+  img: { label: 'Картинка', icon: 'image', hint: 'Что нарисовать или как изменить картинку со входа' },
+  vid: { label: 'Видео', icon: 'film', hint: 'Что происходит в ролике; картинка со входа станет первым кадром' },
+};
+const CANVAS_EXAMPLE = {
+  nodes: [
+    { id: 'n1', kind: 'img', text: 'Машина мерседес в горах на закате', x: 60, y: 80, options: {} },
+    { id: 'n2', kind: 'vid', text: 'Анимируй, как она едет и входит в поворот, со звуком мотора', x: 400, y: 80, options: { seconds: 3 } },
+    { id: 'n3', kind: 'text', text: 'Расскажи, что сделано', x: 740, y: 80, options: {} },
+  ],
+  edges: [{ from: 'n1', to: 'n2' }, { from: 'n2', to: 'n3' }],
+};
+function loadCanvas() {
+  try {
+    const c = JSON.parse(localStorage.getItem(CANVAS_KEY) || 'null');
+    if (c && Array.isArray(c.nodes) && Array.isArray(c.edges)) return { ...c, results: {} };
+  } catch { /* ignore */ }
+  return { ...structuredClone(CANVAS_EXAMPLE), results: {} };
+}
+const CV = loadCanvas();
+function saveCanvas() {
+  try { localStorage.setItem(CANVAS_KEY, JSON.stringify({ nodes: CV.nodes, edges: CV.edges })); } catch { /* private mode */ }
+}
+
+function openCanvas() {
+  S.canvasOpen = true;
+  $('#main').classList.add('canvas-mode');
+  $('#canvas-view').hidden = false;
+  $('#open-canvas').setAttribute('aria-pressed', 'true');
+  renderCanvas();
+}
+function closeCanvas() {
+  S.canvasOpen = false;
+  $('#main').classList.remove('canvas-mode');
+  $('#canvas-view').hidden = true;
+  $('#open-canvas').setAttribute('aria-pressed', 'false');
+}
+
+function addNode(kind) {
+  const n = CV.nodes.length;
+  const area = $('#canvas-area');
+  CV.nodes.push({ id: `n${Date.now().toString(36)}`, kind, text: '', options: {},
+    x: area.scrollLeft + 60 + (n % 4) * 340, y: area.scrollTop + 60 + Math.floor(n / 4) * 300 });
+  saveCanvas();
+  renderCanvas();
+}
+
+// would a link from -> to close a circle? (to already reaches from)
+function reaches(start, goal) {
+  const stack = [start];
+  const seen = new Set();
+  while (stack.length) {
+    const id = stack.pop();
+    if (id === goal) return true;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    for (const e of CV.edges) if (e.from === id) stack.push(e.to);
+  }
+  return false;
+}
+
+function modelSelect(kind, node) {
+  const list = kind === 'img' ? (S.imagegen?.models || []).map((m) => [m.name, m.label || m.name])
+    : kind === 'vid' ? (S.videogen?.models || []).map((m) => [m.name, m.label || m.name])
+      : (S.models?.models || []).map((m) => [m.name, m.name]);
+  const sel = h('select', { class: 'input', 'aria-label': 'Модель узла', title: 'Модель узла; пусто — выбранная слева' },
+    h('option', { value: '', text: 'модель: как слева' }), list.map(([v, t]) => h('option', { value: v, text: t })));
+  sel.value = node.options.model || '';
+  sel.addEventListener('change', () => { node.options.model = sel.value || undefined; saveCanvas(); });
+  return sel;
+}
+
+function nodeResult(node) {
+  const r = CV.results[node.id];
+  if (!r) return null;
+  const box = h('div', { class: 'cnode-result' });
+  if (r.video) box.append(h('video', { src: r.video.url, controls: true, preload: 'metadata' }));
+  else if (r.image) box.append(h('img', { src: r.image.url, alt: r.image.prompt || '' }));
+  if (r.answer && !r.image && !r.video) box.append(h('div', { class: 'txt', text: r.answer.slice(0, 1200) }));
+  if (!r.answerable) box.append(h('span', { text: r.answer || 'шаг не удался' }));
+  return box;
+}
+
+function nodeEl(node) {
+  const kind = NODE_KINDS[node.kind];
+  const el = h('div', { class: `cnode k-${node.kind}${CV.running ? ' running' : ''}${CV.results[node.id] && !CV.results[node.id].answerable ? ' failed' : ''}`, dataset: { id: node.id } });
+  el.style.left = `${node.x}px`;
+  el.style.top = `${node.y}px`;
+  const del = h('button', { type: 'button', class: 'mini-btn', title: 'Удалить узел', 'aria-label': 'Удалить узел', icon: ['x', 12, 2.2], onclick: () => {
+    CV.nodes = CV.nodes.filter((n) => n.id !== node.id);
+    CV.edges = CV.edges.filter((e) => e.from !== node.id && e.to !== node.id);
+    saveCanvas();
+    renderCanvas();
+  } });
+  const head = h('div', { class: 'cnode-head' }, h('span', { icon: [kind.icon, 14] }), h('span', { text: kind.label }), del);
+  head.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button')) return;
+    const sx = e.clientX, sy = e.clientY, ox = node.x, oy = node.y;
+    head.setPointerCapture(e.pointerId);
+    const move = (ev) => {
+      node.x = Math.max(0, ox + ev.clientX - sx);
+      node.y = Math.max(0, oy + ev.clientY - sy);
+      el.style.left = `${node.x}px`;
+      el.style.top = `${node.y}px`;
+      drawEdges();
+    };
+    const up = () => { head.removeEventListener('pointermove', move); head.removeEventListener('pointerup', up); saveCanvas(); };
+    head.addEventListener('pointermove', move);
+    head.addEventListener('pointerup', up);
+  });
+  const text = h('textarea', { class: 'input', rows: 3, placeholder: kind.hint, 'aria-label': `${kind.label}: инструкция` });
+  text.value = node.text || '';
+  text.addEventListener('input', () => { node.text = text.value; saveCanvas(); });
+  const body = h('div', { class: 'cnode-body' }, text);
+  if (node.kind === 'img') {
+    const size = h('select', { class: 'input', 'aria-label': 'Размер', title: 'Размер картинки' },
+      h('option', { value: '', text: 'размер: авто' }), (S.imagegen?.sizes || []).map((s) => h('option', { value: s.id, text: `${s.id} · ${s.width}×${s.height}` })));
+    size.value = node.options.size || '';
+    size.addEventListener('change', () => { node.options.size = size.value || undefined; saveCanvas(); });
+    body.append(h('div', { class: 'cnode-row' }, modelSelect('img', node), size));
+  } else if (node.kind === 'vid') {
+    const sec = h('input', { class: 'input', type: 'number', min: 1, max: 10, step: 1, placeholder: 'секунд', 'aria-label': 'Длительность, секунд', title: 'Длительность; пусто — по просьбе или настройкам' });
+    sec.value = node.options.seconds || '';
+    sec.addEventListener('change', () => { node.options.seconds = sec.value ? Number(sec.value) : undefined; saveCanvas(); });
+    body.append(h('div', { class: 'cnode-row' }, modelSelect('vid', node), sec));
+  } else {
+    body.append(modelSelect(node.kind, node));
+  }
+  const pin = h('span', { class: 'port in', title: 'Вход: сюда приходит результат другого узла' });
+  const pout = h('span', { class: 'port out', title: 'Выход: перетащите на вход другого узла' });
+  pout.addEventListener('pointerdown', (e) => startLink(e, node));
+  el.append(pin, pout, head, body, nodeResult(node) || '');
+  return el;
+}
+
+function portCenter(id, side) {
+  const inner = $('#canvas-inner').getBoundingClientRect();
+  const port = document.querySelector(`.cnode[data-id="${CSS.escape(id)}"] .port.${side}`);
+  if (!port) return null;
+  const r = port.getBoundingClientRect();
+  return { x: r.left + r.width / 2 - inner.left, y: r.top + r.height / 2 - inner.top };
+}
+
+const curve = (a, b) => {
+  const dx = Math.max(40, Math.abs(b.x - a.x) / 2);
+  return `M${a.x},${a.y} C${a.x + dx},${a.y} ${b.x - dx},${b.y} ${b.x},${b.y}`;
+};
+const svgEl = (tag, attrs) => {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+};
+
+function drawEdges(temp) {
+  const svg = $('#canvas-edges');
+  svg.replaceChildren();
+  for (const e of CV.edges) {
+    const a = portCenter(e.from, 'out'), b = portCenter(e.to, 'in');
+    if (!a || !b) continue;
+    const hit = svgEl('path', { d: curve(a, b), class: 'hit' });
+    hit.append(svgEl('title', {}));
+    hit.firstChild.textContent = 'Удалить связь';
+    hit.addEventListener('click', () => { CV.edges = CV.edges.filter((x) => x !== e); saveCanvas(); drawEdges(); });
+    svg.append(hit, svgEl('path', { d: curve(a, b) }));
+  }
+  if (temp) svg.append(svgEl('path', { d: curve(temp.a, temp.b), class: 'temp' }));
+}
+
+function startLink(e, node) {
+  e.preventDefault();
+  const a = portCenter(node.id, 'out');
+  const inner = $('#canvas-inner');
+  const move = (ev) => {
+    const r = inner.getBoundingClientRect();
+    for (const p of document.querySelectorAll('.port.in.target')) p.classList.remove('target');
+    const over = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.port.in');
+    if (over) over.classList.add('target');
+    drawEdges({ a, b: { x: ev.clientX - r.left, y: ev.clientY - r.top } });
+  };
+  const up = (ev) => {
+    document.removeEventListener('pointermove', move);
+    document.removeEventListener('pointerup', up);
+    for (const p of document.querySelectorAll('.port.in.target')) p.classList.remove('target');
+    const to = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.cnode')?.dataset.id;
+    if (to && to !== node.id && !CV.edges.some((x) => x.from === node.id && x.to === to)) {
+      if (reaches(to, node.id)) toast('Такая связь замкнёт круг', 'error');
+      else { CV.edges.push({ from: node.id, to }); saveCanvas(); }
+    }
+    drawEdges();
+  };
+  document.addEventListener('pointermove', move);
+  document.addEventListener('pointerup', up);
+}
+
+function renderCanvas() {
+  const bar = $('#canvas-toolbar');
+  bar.replaceChildren(
+    ...Object.entries(NODE_KINDS).map(([k, v]) => h('button', { type: 'button', class: 'btn-pill', disabled: !!CV.running, onclick: () => addNode(k) }, h('span', { icon: [v.icon, 13] }), `+ ${v.label}`)),
+    h('button', { type: 'button', class: 'btn-pill accent', disabled: !!S.busy || !CV.nodes.length, onclick: runCanvas }, h('span', { icon: ['play', 13] }), CV.running ? 'Выполняется…' : 'Выполнить'),
+    h('button', { type: 'button', class: 'btn-pill', disabled: !!CV.running, onclick: () => {
+      CV.nodes = []; CV.edges = []; CV.results = {}; saveCanvas(); renderCanvas();
+    } }, 'Очистить'),
+    h('button', { type: 'button', class: 'btn-pill', onclick: closeCanvas }, 'К чату'),
+    h('span', { class: 'hint', text: 'Тяните от выхода узла (справа) ко входу другого (слева); щелчок по связи удаляет её. Результат — в этом диалоге.' }));
+  const nodes = $('#canvas-nodes');
+  nodes.replaceChildren(...CV.nodes.map(nodeEl));
+  setTimeout(() => drawEdges(), 0);  // after layout; a hidden tab runs no animation frames
+}
+
+async function runCanvas() {
+  if (S.busy || !CV.nodes.length) return;
+  const graph = CV.nodes.map((n) => ({ id: n.id, kind: n.kind, text: n.text, options: n.options,
+    inputs: CV.edges.filter((e) => e.to === n.id).map((e) => e.from) }));
+  const label = CV.nodes.map((n) => NODE_KINDS[n.kind].label.toLowerCase()).join(', ');
+  CV.running = true;
+  CV.results = {};
+  renderCanvas();
+  await send(`Холст: ${label}`, 'ask', { graph, keepInput: true, chainLabel: `холст из ${CV.nodes.length} узлов` });
+  CV.running = false;
+  const last = [...(S.dialog?.turns || [])].reverse().find((t) => t.kind === 'answer');
+  for (const p of last?.payload?.chain || []) if (p.id) CV.results[p.id] = p;
+  if (S.error) toast(S.error.message, 'error');
+  else toast('Холст выполнен: результат — в узлах и в диалоге');
+  if (S.canvasOpen) renderCanvas();
+}
+
 // --------------------------------------------------------------------------- model settings (right panel)
 
 const SETTINGS_KINDS = { text: 'Текст', image: 'Картинки', video: 'Видео' };
@@ -1555,6 +1792,7 @@ function askBody(text, opts = {}) {
     upload_fallback: true,  // files stay attached: a question they do not answer is routed as usual
     image: opts.replaceLast ? (from.image || null) : imageRequest(opts.image),
     video: opts.replaceLast ? (from.video || null) : videoRequest(opts.video),
+    graph: opts.replaceLast ? (from.graph || null) : (opts.graph || null),
   };
 }
 
@@ -1585,7 +1823,7 @@ async function send(text, kind = 'ask', opts = {}) {
     const t = S.imageTarget;
     opts = t.video ? { ...opts, video: { mode: 'animate', source: t.source } } : { ...opts, image: { mode: t.mode, source: t.source } };
   }
-  const chain = chainOf(text);
+  const chain = opts.chainLabel || chainOf(text);
   const filming = !chain && (!!opts.video || (!!S.videogen?.available && VIDEO_RE.test(text)));
   const drawing = !chain && !filming && (!!opts.image || (!!S.policy?.imagegen && IMAGE_RE.test(text)));
   S.imageTarget = null;
@@ -1978,6 +2216,7 @@ function bindEvents() {
   $('#file-input').addEventListener('change', (e) => { uploadFiles([...e.target.files]); e.target.value = ''; });
   $('#folder-btn').addEventListener('click', openFolderModal);
   $('#size-btn').addEventListener('click', openSizeModal);
+  $('#open-canvas').addEventListener('click', () => (S.canvasOpen ? closeCanvas() : openCanvas()));
   $('#web-toggle').addEventListener('click', () => { S.web = !S.web; savePrefs(); renderControls(); renderAccessCard(); });
   $('#net-toggle').addEventListener('click', () => {
     S.sandboxNet = !S.sandboxNet;

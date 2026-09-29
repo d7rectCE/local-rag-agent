@@ -24,7 +24,10 @@
     <div class="brand-text"><span class="brand-name">Local RAG</span><span class="muted small">агент на вашем компьютере</span></div>
     <button type="button" class="icon-btn only-narrow" id="close-sidebar" aria-label="Скрыть панель" data-icon="x"></button>
   </div>
-  <button type="button" class="btn-primary" id="new-dialog"><span data-icon="plus"></span>Новый диалог</button>
+  <div class="new-row">
+    <button type="button" class="btn-primary" id="new-dialog"><span data-icon="plus"></span>Новый диалог</button>
+    <button type="button" class="btn-canvas" id="open-canvas" title="Холст: цепочка моделей графом" aria-label="Режим холста" data-icon="nodes"></button>
+  </div>
   <section class="card folder" id="folder" aria-label="Рабочая папка"></section>
   <nav class="dialogs" id="dialogs" aria-label="Диалоги"></nav>
   <div class="card model" id="video-model" hidden></div>
@@ -46,6 +49,15 @@
   <div class="messages" id="messages" tabindex="-1">
     <div class="thread" id="thread"></div>
   </div>
+  <section class="canvas-view" id="canvas-view" hidden aria-label="Холст">
+    <div class="canvas-toolbar" id="canvas-toolbar"></div>
+    <div class="canvas-area" id="canvas-area">
+      <div class="canvas-inner" id="canvas-inner">
+        <svg class="canvas-edges" id="canvas-edges" aria-hidden="true"></svg>
+        <div id="canvas-nodes"></div>
+      </div>
+    </div>
+  </section>
   <div class="composer-wrap">
     <form class="composer" id="composer">
       <div class="attachments" id="attachments"></div>

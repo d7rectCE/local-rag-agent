@@ -58,3 +58,36 @@ def test_a_chain_is_one_turn_of_the_history(vid_engine, tmp_path):  # noqa: F811
     store.add_turn(d["id"], "assistant", "answer", ans.answer, payload=ans.model_dump())
     note = store.history(d["id"])[-1]["content"]
     assert note.startswith("Шаг 1 [img] «кот»: [Генератор картинок нарисовал") and "Шаг 2 [text]" in note
+
+
+def test_the_canvas_graph_runs_every_node_after_its_inputs():
+    import pytest
+
+    from rag_agent.chains import GraphError, graph_steps
+
+    nodes = [{"id": "t", "kind": "text", "text": "расскажи", "inputs": ["v", "i2"]},
+             {"id": "v", "kind": "vid", "text": "оживи", "inputs": ["i1"], "options": {"seconds": 3, "junk": 1}},
+             {"id": "i1", "kind": "img", "text": "кот", "options": {"size": "16:9"}},
+             {"id": "i2", "kind": "img", "text": "пёс"}]
+    order = graph_steps(nodes)
+    ids = [s.id for s in order]
+    assert ids.index("i1") < ids.index("v") < ids.index("t") and ids.index("i2") < ids.index("t")
+    assert next(s for s in order if s.id == "v").options == {"seconds": 3}  # only the known options
+    for bad, msg in (([], "пуст"), ([{"id": "a", "kind": "img", "inputs": ["b"]}], "несуществующим"),
+                     ([{"id": "a", "kind": "img", "inputs": ["b"]}, {"id": "b", "kind": "vid", "inputs": ["a"]}], "цикл"),
+                     ([{"id": "a", "kind": "audio"}], "неизвестный вид")):
+        with pytest.raises(GraphError, match=msg):
+            graph_steps(bad)
+
+
+def test_a_canvas_run_takes_the_picture_along_its_links(vid_engine):  # noqa: F811
+    vid_engine.llm.video_plan = {"action": "text", "prompt": "cat jumps", "seconds": 1, "aspect": "landscape",
+                                 "minor_sexual": False}
+    graph = [{"id": "a", "kind": "img", "text": "кот", "options": {"size": "1:1"}},
+             {"id": "b", "kind": "img", "text": "пёс"},
+             {"id": "c", "kind": "vid", "text": "оживи кота", "inputs": ["a"], "options": {"seconds": 2}}]
+    ans = vid_engine.ask("Холст: картинка, картинка → видео", session="g1", graph=graph)
+    parts = {p["id"]: p for p in ans.chain}
+    assert (parts["a"]["image"]["width"], parts["a"]["image"]["height"]) == (2048, 2048)  # the node's size
+    assert parts["c"]["video"]["source"] == f"generated:{parts['a']['image']['id']}"  # its link, not the last picture
+    assert parts["c"]["video"]["frames"] == 49  # 2 s at 24 fps from the node, not the plan's 1 s

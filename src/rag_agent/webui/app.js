@@ -760,6 +760,7 @@ function routeLabel(a) {
   if (a.route === 'code') return 'код-агент';
   if (a.route === 'image') return 'картинка';
   if (a.route === 'video') return 'видео';
+  if (a.route === 'chain') return 'цепочка';
   if (a.route === 'general') return 'общие знания';
   if (a.route === 'web') return (a.sources || []).some((s) => s.file_type !== 'web') ? 'веб + мои файлы' : 'веб';
   if (a.route === 'upload') return 'загруженный файл';
@@ -830,7 +831,17 @@ function renderAnswer(turn, turns, idx) {
           h('button', { type: 'button', class: 'btn-pill', onclick: (e) => { e.currentTarget.closest('.notice').remove(); } }, 'Не надо')))));
   }
 
-  if (a.video) {  // a generated video
+  if (a.chain) {  // a chain of steps: each with its card or its text
+    for (const p of a.chain) {
+      if (p.kind === 'stop') { art.append(h('div', { class: 'notice' }, h('span', { class: 'ic', icon: ['alert', 16, 2] }), h('div', { class: 'body', text: p.answer }))); continue; }
+      art.append(h('div', { class: 'chain-step' }, h('b', { text: `Шаг ${p.n} · ${CHAIN_LABELS[p.kind] || p.kind}` }), h('span', { text: p.instruction, title: p.instruction })));
+      if (p.video) art.append(videoCard(p.video));
+      else if (p.image) art.append(imageCard(p.image));
+      else if (p.code) art.append(codeCard(p.code));
+      if (p.answer && !(p.code && p.answer === p.code.summary)) art.append(renderMarkdown(p.answer, p.sources || []));
+    }
+  }
+  else if (a.video) {  // a generated video
     art.append(videoCard(a.video));
     if (a.answer) art.append(renderMarkdown(a.answer, []));
   }
@@ -884,6 +895,15 @@ function renderAnswer(turn, turns, idx) {
 const IMAGE_MODES = { generate: 'нарисовано', edit: 'изменено', redraw: 'перерисовано', inpaint: 'область дорисована', outpaint: 'расширено' };
 const VIDEO_RE = /видео|ролик|клип\b|анимир|анимаци|оживи|\b(video|animate|clip)\b/i;
 const IMAGE_RE = /нарису|перерису|дорису|изобрази|сгенерир\S*\s+(картин|изображ|фото|рисун|логотип|иконк)|\b(draw|paint|generate an image)\b/i;
+
+const CHAIN_LABELS = { text: 'текст', code: 'код', img: 'картинка', vid: 'видео' };
+const CHAIN_TAG_RE = /\[\s*(text|текст|code|код|img|image|картинка|изображение|фото|vid|video|видео)\s*\]/gi;
+const CHAIN_KINDS = { text: 'текст', 'текст': 'текст', code: 'код', 'код': 'код', img: 'картинка', image: 'картинка', 'картинка': 'картинка', 'изображение': 'картинка', 'фото': 'картинка', vid: 'видео', video: 'видео', 'видео': 'видео' };
+// "картинка → видео → текст" for the busy label of a message with tags
+function chainOf(text) {
+  const tags = [...(text || '').matchAll(CHAIN_TAG_RE)].map((m) => CHAIN_KINDS[m[1].toLowerCase()]);
+  return tags.length ? tags.join(' → ') : null;
+}
 
 const VIDEO_MODES = { text: 'снято по описанию', image: 'картинка оживлена' };
 
@@ -1170,7 +1190,7 @@ function renderThread() {
     const update = () => {
       const s = (Date.now() - S.busy.started) / 1000;
       const spent = s < 90 ? `${Math.floor(s)} с` : `${Math.floor(s / 60)} мин ${Math.floor(s % 60)} с`;
-      label.textContent = `${S.busy.filming ? 'Снимаю видео' : S.busy.drawing ? 'Рисую картинку' : S.busy.kind === 'code' ? 'Код-агент работает в песочнице' : s > 20 ? 'Работаю: поиск, рассуждение или запуск кода' : 'Ищу и думаю'} · ${spent}`;
+      label.textContent = `${S.busy.chain ? `Цепочка: ${S.busy.chain}` : S.busy.filming ? 'Снимаю видео' : S.busy.drawing ? 'Рисую картинку' : S.busy.kind === 'code' ? 'Код-агент работает в песочнице' : s > 20 ? 'Работаю: поиск, рассуждение или запуск кода' : 'Ищу и думаю'} · ${spent}`;
     };
     update();
     clearInterval(tickTimer);
@@ -1565,10 +1585,11 @@ async function send(text, kind = 'ask', opts = {}) {
     const t = S.imageTarget;
     opts = t.video ? { ...opts, video: { mode: 'animate', source: t.source } } : { ...opts, image: { mode: t.mode, source: t.source } };
   }
-  const filming = !!opts.video || (!!S.videogen?.available && VIDEO_RE.test(text));
-  const drawing = !filming && (!!opts.image || (!!S.policy?.imagegen && IMAGE_RE.test(text)));
+  const chain = chainOf(text);
+  const filming = !chain && (!!opts.video || (!!S.videogen?.available && VIDEO_RE.test(text)));
+  const drawing = !chain && !filming && (!!opts.image || (!!S.policy?.imagegen && IMAGE_RE.test(text)));
   S.imageTarget = null;
-  S.busy = { kind, text, uploads: opts.replaceLast ? [] : [...S.attachments], started: Date.now(), replace: !!opts.replaceLast, drawing, filming };
+  S.busy = { kind, text, uploads: opts.replaceLast ? [] : [...S.attachments], started: Date.now(), replace: !!opts.replaceLast, drawing, filming, chain };
   if (!opts.keepInput) {
     $('#msg').value = '';
     autoGrow();

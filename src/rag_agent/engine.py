@@ -21,6 +21,7 @@ from rag_agent.imagegen import (ASPECTS, ImageGenerator, ImageGenError, parse_si
 from rag_agent import modelfiles
 from rag_agent.model_settings import ModelSettings
 from rag_agent.videogen import VideoGenError, VideoGenerator, plan_video, wants_video
+from rag_agent.chains import ChainStep, parse_chain
 from rag_agent.config import REPO_ROOT, Settings, load_settings
 from rag_agent.policy import Policy, Provenance, defang_markdown
 from rag_agent import generation
@@ -449,7 +450,7 @@ class Engine:
         return self._videogen
 
     def _answer_video(self, question: str, turns: list[dict], session: str, uploads: list[str] | None,
-                      request: dict | None, steps: list[TraceStep]) -> Answer | None:
+                      request: dict | None, steps: list[TraceStep], force: bool = False) -> Answer | None:
         """Make a video from the words or from a picture; None when the request is not about a video."""
         request = request or {}
         source, source_ref = self._image_source(session, uploads, request.get("source"))
@@ -468,14 +469,16 @@ class Engine:
                           model=self.llm.name)
         action = "image" if request.get("mode") == "animate" and source is not None else plan.action
         if action == "none":
-            return None
+            if not force:
+                return None
+            action = "image" if source is not None else "text"
         use_source = action == "image"
         try:
             info = self.videogen.run(session, plan.prompt or question, request=question,
                                      source=source if use_source else None, source_ref=source_ref if use_source else None,
                                      seconds=plan.seconds, aspect=plan.aspect, seed=request.get("seed"),
                                      model=request.get("model"))
-        except (VideoGenError, OSError) as exc:
+        except (VideoGenError, ImageGenError, OSError) as exc:
             return Answer(question=question, answer=f"Не удалось снять видео: {exc}", answerable=False, grounded=True,
                           route="video", model=self.llm.name)
         steps.append(TraceStep(name="video_gen", duration_s=info.elapsed_s, detail={
@@ -517,7 +520,7 @@ class Engine:
             self.imagegen.last(session) is not None)
 
     def _answer_image(self, question: str, turns: list[dict], session: str, uploads: list[str] | None,
-                      request: dict | None, steps: list[TraceStep]) -> Answer | None:
+                      request: dict | None, steps: list[TraceStep], force: bool = False) -> Answer | None:
         """Draw or edit a picture; None when the request turns out not to be about a picture."""
         request = request or {}
         source, source_ref = self._image_source(session, uploads, request.get("source"))
@@ -531,7 +534,9 @@ class Engine:
                           model=self.llm.name)
         mode = request.get("mode") or plan.action
         if mode == "none":
-            return None
+            if not force:
+                return None
+            mode = "edit" if source is not None else "generate"  # an [IMG] step draws whatever the plan says
         width, height = ASPECTS.get(plan.aspect, (None, None)) if mode == "generate" else (None, None)
         mask = base64.b64decode(request["mask"].split(",")[-1]) if request.get("mask") else None
         try:
@@ -861,9 +866,77 @@ class Engine:
         agent gets run_code (off for the eval sets); ``sandbox_net``: the user's network toggle;
         ``model``: another installed chat model for this request. ``upload_fallback`` (the chat, where files
         stay attached to the dialog): when the attached files do not answer, the question is routed as usual."""
+        args = dict(top_k=top_k, mode=mode, route=route, rerank=rerank, symbols=symbols, reasoning=reasoning,
+                    agent=agent, uploads=uploads, session=session, confirmed=confirmed, web=web, code=code,
+                    sandbox_net=sandbox_net, upload_fallback=upload_fallback, image=image, video=video)
         with self.llm.use(model, self.model_settings.get("text", model or self.settings.llm.model)):
-            return self._ask(question, history, top_k, mode, route, rerank, symbols, reasoning, agent, uploads, session,
-                             confirmed, web, code, sandbox_net, upload_fallback, image, video)
+            chain = parse_chain(question) if session else None
+            if chain:
+                return self._ask_chain(question, chain, history, args)
+            return self._ask(question, history, **args)
+
+    def _ask_chain(self, question: str, chain: list[ChainStep], history: list[dict] | None, args: dict) -> Answer:
+        """Run the steps of a chain in order: each sees what the ones before made (a picture of the chain is
+        the source of the next picture step and the first frame of the next video step; every result is a
+        turn of the history). A step that fails stops the chain; its message says which one."""
+        t0 = time.perf_counter()
+        session, uploads = args["session"], args["uploads"]
+        turns = list(trim_history(history))
+        parts: list[dict] = []
+        trace: list[TraceStep] = []
+        picture, pending = None, []
+        for n, step in enumerate(chain, start=1):
+            t1 = time.perf_counter()
+            steps: list[TraceStep] = []
+            first_uploads = uploads if n == 1 else None
+            if step.kind == "img":
+                if not self.imagegen.available:
+                    ans = Answer(question=step.text, answer="Генератор картинок не настроен.", answerable=False)
+                else:
+                    req = {**(args["image"] or {}), **({"source": picture} if picture else {})}
+                    req.pop("mode", None)
+                    ans = self._answer_image(step.text, turns, session, first_uploads, req, steps, force=True)
+            elif step.kind == "vid":
+                if not self.videogen.available:
+                    ans = Answer(question=step.text, answer="Генератор видео не настроен: положите модель в "
+                                 "models/video.", answerable=False)
+                else:
+                    req = {**(args["video"] or {}), **({"source": picture, "mode": "animate"} if picture else {})}
+                    ans = self._answer_video(step.text, turns, session, first_uploads, req, steps, force=True)
+            elif step.kind == "code":
+                if not self.sandbox_available():
+                    ans = Answer(question=step.text, answer="Песочница недоступна: запустите Docker Desktop.",
+                                 answerable=False)
+                else:
+                    ans = self._answer_code(step.text, step.text, turns, confirmed=args["confirmed"],
+                                            network=args["sandbox_net"] and self.settings.code.network != "never")
+            else:
+                ans = self._ask(step.text, turns, **{**args, "uploads": first_uploads, "image": None, "video": None})
+            if ans.image:
+                picture = f"generated:{ans.image['id']}"
+            part = {"n": n, "kind": step.kind, "instruction": step.text, "route": ans.route, "answer": ans.answer,
+                    "answerable": ans.answerable, "image": ans.image, "video": ans.video, "code": ans.code,
+                    "sources": [s.model_dump() for s in ans.sources], "latency_s": round(time.perf_counter() - t1, 2)}
+            parts.append(part)
+            trace.append(TraceStep(name="chain_step", duration_s=part["latency_s"], detail={
+                "n": n, "kind": step.kind, "instruction": step.text, "route": ans.route, "ok": ans.answerable}))
+            trace += steps or ans.trace
+            pending += ans.pending or []
+            from rag_agent.dialogs import chain_summary
+
+            turns += [{"role": "user", "content": step.text}, {"role": "assistant", "content": chain_summary([part])}]
+            failed = not ans.answerable and (step.kind in ("img", "vid", "code") or ans.pending)
+            if failed and n < len(chain):
+                parts.append({"n": n + 1, "kind": "stop", "instruction": "", "route": "", "answerable": False,
+                              "answer": f"Цепочка остановлена на шаге {n}: следующие шаги не выполнялись."})
+                break
+        def last(key: str):
+            return next((p[key] for p in reversed(parts) if p.get(key)), None)
+
+        text = "\n\n".join(f"**Шаг {p['n']}.** {p['answer']}" for p in parts if p.get("answer"))
+        return Answer(question=question, answer=text, answerable=all(p["answerable"] for p in parts), grounded=True,
+                      route="chain", model=self.llm.name, chain=parts, image=last("image"), video=last("video"),
+                      pending=pending, trace=trace, latency_s=round(time.perf_counter() - t0, 2))
 
     def _ask(self, question, history, top_k, mode, route, rerank, symbols, reasoning, agent, uploads, session,
              confirmed, web, code, sandbox_net, upload_fallback=False, image=None, video=None) -> Answer:

@@ -24,8 +24,8 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from rag_agent import modelfiles
-from rag_agent.imagegen import (MINOR_TERMS, SEXUAL_TERMS, _ID, _SESSION, ascii_workdir, sd_error, short_path, snap32,
-                                unload_ollama)
+from rag_agent.imagegen import (MINOR_TERMS, SEXUAL_TERMS, _ID, _SESSION, ascii_workdir, cli_path, sd_error, short_path,
+                                snap32, unload_ollama)
 from rag_agent.llm import BaseLLM, LLMError
 from rag_agent.model_settings import ModelSettings
 
@@ -268,15 +268,16 @@ class VideoGenerator:
                 with Image.open(io.BytesIO(source)) as im:
                     src_size = im.size
             width, height = self.size(prof, aspect, src_size)
-            args = [self.sd_cli, "-M", "vid_gen", "--diffusion-model", dit, "--vae", prof["vae"], "--llm", prof["llm"],
+            args = [self.sd_cli, "-M", "vid_gen", "--diffusion-model", cli_path(dit), "--vae", cli_path(prof["vae"]),
+                    "--llm", cli_path(prof["llm"]),
                     "--cfg-scale", str(prof["cfg_scale"]), "--sampling-method", prof["sampler"],
                     "--steps", str(int(prof["steps"])), "-W", str(width), "-H", str(height),
                     "--video-frames", str(frames), "--fps", str(fps), "-s", str(seed), "-p", prompt,
                     "-o", os.path.join(w, "out.webm")]
             if prof.get("audio_vae"):
-                args += ["--audio-vae", prof["audio_vae"]]
+                args += ["--audio-vae", cli_path(prof["audio_vae"])]
             if prof.get("connectors"):
-                args += ["--embeddings-connectors", prof["connectors"]]
+                args += ["--embeddings-connectors", cli_path(prof["connectors"])]
             if prof["scheduler"]:
                 args += ["--scheduler", prof["scheduler"]]
             if prof["negative_prompt"]:

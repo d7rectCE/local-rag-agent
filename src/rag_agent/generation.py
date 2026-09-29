@@ -131,6 +131,8 @@ class Answer(BaseModel):
     image: dict | None = None
     # a generated video (videogen): id, dialog, mode, prompt, size, frames, fps, url
     video: dict | None = None
+    # a chain of steps ("[IMG] ... -> [VID] ... -> [TEXT] ..."): every step's kind, instruction and result
+    chain: list[dict] | None = None
 
 
 def _call(llm: BaseLLM, messages: list[dict], json_schema: dict | None, purpose: str, reasoning_budget: int | None):

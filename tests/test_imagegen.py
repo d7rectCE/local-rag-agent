@@ -3,6 +3,7 @@ edit (an attached image or the last generated one), outpaint canvases, the refus
 
 import base64
 import io
+import os
 import subprocess
 from pathlib import Path
 
@@ -217,7 +218,7 @@ def test_the_chosen_model_and_size_reach_sd_cli(gen_engine):
     assert models[other.name]["quant"] == "Q4_K_M" and not models[other.name]["default"]
     ans = gen_engine.ask("Нарисуй лису", session="d6", image={"model": other.name, "size": "16:9"})
     args = gen_engine.fake_sd.calls[-1]
-    assert args[args.index("--diffusion-model") + 1] == str(other) and ans.image["model"] == other.name
+    assert os.path.samefile(args[args.index("--diffusion-model") + 1], other) and ans.image["model"] == other.name
     assert (ans.image["width"], ans.image["height"]) == (2752, 1536)
     # an edit takes a custom size as it is (the model recomposes the picture)
     gen_engine.llm.image_plan = {**gen_engine.llm.image_plan, "action": "edit"}
@@ -260,12 +261,14 @@ def test_a_model_of_another_family_brings_its_own_files_and_sampling(gen_engine,
 
     gen_engine.ask("Нарисуй лису", session="d8", image={"model": "krea-turbo-Q4_K_M.gguf"})
     args = gen_engine.fake_sd.calls[-1]
-    assert opt(args, "--vae") == str(d / "wan_vae.safetensors") and opt(args, "--llm") == str(d / "te4b.safetensors")
+    assert os.path.samefile(opt(args, "--vae"), d / "wan_vae.safetensors")
+    assert os.path.samefile(opt(args, "--llm"), d / "te4b.safetensors")
     assert (opt(args, "--steps"), opt(args, "--cfg-scale"), opt(args, "--scheduler")) == ("8", "1.0", "simple")
     assert "te=cpu" not in args  # the whole model on the GPU
     gen_engine.ask("Нарисуй лису", session="d8")  # the default model keeps its own files and sampling
     args = gen_engine.fake_sd.calls[-1]
-    assert opt(args, "--vae") == g.vae and opt(args, "--steps") == str(g.steps) and "--scheduler" not in args
+    assert os.path.samefile(opt(args, "--vae"), g.vae) and opt(args, "--steps") == str(g.steps)
+    assert "--scheduler" not in args
     assert "te=cpu" in args
 
 
@@ -318,9 +321,20 @@ def test_a_model_dropped_into_models_image_runs_with_its_files_and_the_ui_settin
 
     gen_engine.ask("Нарисуй лису", session="d10", image={"model": "Krea2_turbo-Q4_K_M.gguf"})
     args = gen_engine.fake_sd.calls[-1]
-    assert opt(args, "--vae") == str(folder / "qwen_image_vae.safetensors") and "te=cpu" not in args
+    assert os.path.samefile(opt(args, "--vae"), folder / "qwen_image_vae.safetensors") and "te=cpu" not in args
     assert (opt(args, "--steps"), opt(args, "--scheduler")) == ("8", "simple")
     gen_engine.imagegen.store.set("image", "Krea2_turbo-Q4_K_M.gguf", {"steps": 12, "cfg_scale": 1.5})
     gen_engine.ask("Нарисуй лису", session="d10", image={"model": "Krea2_turbo-Q4_K_M.gguf"})
     args = gen_engine.fake_sd.calls[-1]
     assert (opt(args, "--steps"), opt(args, "--cfg-scale")) == ("12", "1.5")  # the UI's settings win
+
+
+@pytest.mark.skipif(os.name != "nt", reason="8.3 short names are a Windows thing")
+def test_sd_cli_gets_ascii_paths_with_the_full_file_name(tmp_path):
+    folder = tmp_path / "Моя папка" / "модели"
+    folder.mkdir(parents=True)
+    (folder / "ltx-2.3_Q6_K.gguf").write_bytes(b"x")
+    s = imagegen.cli_path(str(folder / "ltx-2.3_Q6_K.gguf"))
+    assert s.isascii() and s.endswith("ltx-2.3_Q6_K.gguf")  # sd.cpp reads the format from the extension
+    assert os.path.samefile(s, folder / "ltx-2.3_Q6_K.gguf")
+    assert imagegen.cli_path("C:/ml-models/x.gguf") == str(Path("C:/ml-models/x.gguf"))  # ASCII: as it is

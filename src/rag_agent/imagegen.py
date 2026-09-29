@@ -260,6 +260,20 @@ def short_path(path: Path) -> str:
     return buf.value if n and buf.value.isascii() else s
 
 
+def cli_path(path: str) -> str:
+    """A model file as sd-cli can open it: the folders by their short 8.3 names when the path has non-ASCII
+    characters (the project folder under a Cyrillic user name, models/ inside it), the file by its own name —
+    sd.cpp tells GGUF from safetensors by the extension, which an 8.3 name cuts to ".GGU" / ".SAF"."""
+    p = Path(path)
+    if str(p).isascii():
+        return str(p)
+    s = os.path.join(short_path(p.parent), p.name) if p.name.isascii() else short_path(p)
+    if not s.isascii():
+        raise ImageGenError(f"sd-cli не открывает пути с не-латинскими буквами, а короткие имена 8.3 на этом диске "
+                            f"выключены: {path}. Перенесите модели в папку с латинским путём (storage.models_dir)")
+    return s
+
+
 def ascii_workdir(base: str = "") -> Path:
     """Where sd-cli reads its inputs and writes the picture: a folder with an ASCII path."""
     for candidate in (base, tempfile.gettempdir()):
@@ -537,7 +551,8 @@ class ImageGenerator:
         w = short_path(work)
         seed = int(seed if seed is not None else uuid.uuid4().int % 2**31)
         steps = int(steps or prof["steps"])
-        args = [c.sd_cli, "--diffusion-model", dit, "--vae", prof["vae"], "--llm", prof["llm"],
+        args = [c.sd_cli, "--diffusion-model", cli_path(dit), "--vae", cli_path(prof["vae"]),
+                "--llm", cli_path(prof["llm"]),
                 "--cfg-scale", str(prof["cfg_scale"]), "--sampling-method", prof["sampler"], "--steps", str(steps),
                 "-s", str(seed), "-p", prompt, "-o", os.path.join(w, "out.png")]
         if prof["scheduler"]:

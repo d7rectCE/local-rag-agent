@@ -170,8 +170,9 @@ class DialogStore:
             code = payload if r["kind"] == "code" else (payload or {}).get("code") if r["kind"] == "answer" else None
             image = (payload or {}).get("image") if r["kind"] == "answer" else None
             video = (payload or {}).get("video") if r["kind"] == "answer" else None
-            content = (code_summary(code) if code else image_summary(image) if image else
-                       video_summary(video) if video else r["content"])
+            chain = (payload or {}).get("chain") if r["kind"] == "answer" else None
+            content = (chain_summary(chain) if chain else code_summary(code) if code else
+                       image_summary(image) if image else video_summary(video) if video else r["content"])
             out.append({"role": r["role"], "content": content})
         return out
 
@@ -186,6 +187,22 @@ def image_summary(img: dict) -> str:
     would copy ("Перерисовал картинку: …") when asked for another change without drawing anything."""
     return (f"[Генератор картинок {IMAGE_DONE.get(img.get('mode'), 'сделал картинку')} "
             f"{img.get('width')}×{img.get('height')}, она показана пользователю. Промпт: {img.get('prompt') or ''}]")
+
+
+def chain_summary(parts: list[dict]) -> str:
+    """A chain as one assistant turn: every step by what it made."""
+    lines = []
+    for p in parts:
+        if p.get("image"):
+            what = image_summary(p["image"])
+        elif p.get("video"):
+            what = video_summary(p["video"])
+        elif p.get("code"):
+            what = code_summary(p["code"])
+        else:
+            what = (p.get("answer") or "")[:1500]
+        lines.append(f"Шаг {p.get('n')} [{p.get('kind')}] «{p.get('instruction')}»: {what}")
+    return "\n".join(lines)
 
 
 def video_summary(v: dict) -> str:

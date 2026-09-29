@@ -122,6 +122,8 @@ class OllamaLLM(BaseLLM):
                 "num_predict": max_tokens or self.cfg.max_tokens,
             },
         }
+        if json_schema is None and temperature is None:
+            body["options"].update(self.cfg.options)  # the UI's sampling: free text only
         if json_schema is not None:
             body["format"] = json_schema
         if tools:
@@ -165,7 +167,8 @@ class OllamaLLM(BaseLLM):
             "stream": True,
             "think": True,
             "options": {"temperature": self.cfg.temperature, "num_ctx": self.cfg.num_ctx,
-                        "num_predict": budget_tokens + self.cfg.max_tokens},
+                        "num_predict": budget_tokens + self.cfg.max_tokens,
+                        **({} if json_schema is not None else self.cfg.options)},
         }
         if json_schema is not None:
             body["format"] = json_schema
@@ -247,6 +250,8 @@ class OpenAICompatLLM(BaseLLM):
             "temperature": self.cfg.temperature if temperature is None else temperature,
             "max_tokens": max_tokens or self.cfg.max_tokens,
         }
+        if json_schema is None and temperature is None:
+            body.update({k: v for k, v in self.cfg.options.items() if k in ("temperature", "top_p")})
         if json_schema is not None:
             body["response_format"] = {
                 "type": "json_schema",
@@ -308,14 +313,29 @@ class ModelSwitch:
                 self._models[model] = make_llm(self.base.cfg.model_copy(update={"model": model}), self.tracer)
             return self._models[model]
 
+    def tuned(self, model: str | None, options: dict) -> BaseLLM:
+        """The model with the UI's settings: the context and the answer length for every call, the sampling
+        (LLMConfig.options) for the free text; one client per distinct setting."""
+        base = self.get(model) if model else self.base
+        cfg = base.cfg
+        sampling = {k: v for k, v in options.items() if k in ("temperature", "top_p", "top_k", "repeat_penalty")}
+        update = {"num_ctx": int(options.get("num_ctx") or cfg.num_ctx),
+                  "max_tokens": int(options.get("max_tokens") or cfg.max_tokens), "options": sampling}
+        key = f"{cfg.model}|{sorted(update['options'].items())}|{update['num_ctx']}|{update['max_tokens']}"
+        with self._lock:
+            if key not in self._models:
+                self._models[key] = make_llm(cfg.model_copy(update=update), self.tracer)
+            return self._models[key]
+
     @contextmanager
-    def use(self, model: str | None):
-        """``with engine.llm.use("qwen3.6:27b"):`` — calls in this thread go to that model."""
-        if not model:
+    def use(self, model: str | None, options: dict | None = None):
+        """``with engine.llm.use("qwen3.6:27b"):`` — calls in this thread go to that model (with the settings
+        made for it in the UI, when given)."""
+        if not model and not options:
             yield self.current
             return
         prev = getattr(self._local, "llm", None)
-        self._local.llm = self.get(model)
+        self._local.llm = self.tuned(model, options) if options else self.get(model)
         try:
             yield self._local.llm
         finally:

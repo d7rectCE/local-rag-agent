@@ -102,6 +102,9 @@ class LLMConfig(BaseModel):
     # generated tokens per call when the caller sets no limit: answers (1024 cut long answers mid-sentence)
     max_tokens: int = 16384
     timeout_s: float = 1500.0
+    # sampling of the free text of answers set in the UI (temperature, top_p, top_k, repeat_penalty): calls with
+    # a JSON schema (routing, plans, extraction) keep temperature and the defaults, so they stay reliable
+    options: dict[str, float] = {}
 
 
 class GenerationConfig(BaseModel):

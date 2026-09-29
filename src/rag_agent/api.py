@@ -57,6 +57,10 @@ class DialogRequest(BaseModel):
     title: str = ""
 
 
+class ModelSettingsRequest(BaseModel):
+    values: dict = {}
+
+
 class PickFolderRequest(BaseModel):
     initial: str = ""
 
@@ -199,6 +203,54 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             "max_side": MAX_SIDE,
             "max_area": MAX_AREA,
         }
+
+    def model_settings(kind: str, name: str) -> dict:
+        """What the settings panel shows for a model: the recommended values, the ones set in the UI, the
+        choices of the fields and what the model is."""
+        from rag_agent.imagegen import SAMPLERS, SCHEDULERS
+
+        e = eng()
+        if kind == "text":
+            name = name or e.settings.llm.model
+            c = e.settings.llm
+            return {"kind": kind, "name": name, "values": e.model_settings.get("text", name),
+                    "recommended": {"temperature": c.temperature, "top_p": None, "top_k": None, "repeat_penalty": None,
+                                    "num_ctx": c.num_ctx, "max_tokens": c.max_tokens},
+                    "choices": {"num_ctx": [8192, 16384, 32768, 65536, 131072]}, "info": {"label": name}}
+        if kind == "image":
+            g = e.imagegen
+            name = name or g.default_name()
+            entry = g.catalog().get(name)
+            if entry is None:
+                raise HTTPException(404, f"модель картинок «{name}» не найдена")
+            from rag_agent import modelfiles
+
+            return {"kind": kind, "name": name, "values": g.store.get("image", name),
+                    "recommended": g.recommended(name), "choices": {"sampler": SAMPLERS, "scheduler": SCHEDULERS},
+                    "info": {"label": modelfiles.label(entry["path"]), "vae": Path(entry["vae"]).name if entry["vae"] else "",
+                             "llm": Path(entry["llm"]).name if entry["llm"] else "", "source": entry["source"]}}
+        raise HTTPException(404, f"настройки для «{kind}» пока не поддерживаются")
+
+    @app.get("/settings/{kind}")
+    def get_model_settings(kind: str, name: str = "") -> dict:
+        return model_settings(kind, name)
+
+    @app.put("/settings/{kind}")
+    def put_model_settings(kind: str, req: ModelSettingsRequest, name: str = "") -> dict:
+        from rag_agent.model_settings import ModelSettingsError
+
+        info = model_settings(kind, name)
+        try:
+            eng().model_settings.set(kind, info["name"], req.values)
+        except ModelSettingsError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return model_settings(kind, info["name"])
+
+    @app.delete("/settings/{kind}")
+    def reset_model_settings(kind: str, name: str = "") -> dict:
+        info = model_settings(kind, name)
+        eng().model_settings.reset(kind, info["name"])
+        return model_settings(kind, info["name"])
 
     @app.get("/models")
     def models() -> dict:

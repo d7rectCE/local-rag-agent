@@ -19,6 +19,7 @@ from rag_agent.code.workspace import Workspace, WorkspaceError
 from rag_agent.imagegen import (ASPECTS, ImageGenerator, ImageGenError, parse_size, plan_image, wants_edit,
                                 wants_image)
 from rag_agent import modelfiles
+from rag_agent.model_settings import ModelSettings
 from rag_agent.config import REPO_ROOT, Settings, load_settings
 from rag_agent.policy import Policy, Provenance, defang_markdown
 from rag_agent import generation
@@ -121,6 +122,7 @@ class Engine:
         self.llm = ModelSwitch(llm or make_llm(self.settings.llm, self.tracer), self.tracer)
         self._sandbox: DockerSandbox | None = None
         self._sandbox_ok: tuple[bool, float] = (False, -1e9)
+        self.model_settings = ModelSettings(self.settings.data_dir / "model_settings.json")
         self._reranker = reranker
         self.registry = CorpusRegistry(data_dir / "corpora.json")
         self.progress = IndexProgress()
@@ -806,7 +808,7 @@ class Engine:
         agent gets run_code (off for the eval sets); ``sandbox_net``: the user's network toggle;
         ``model``: another installed chat model for this request. ``upload_fallback`` (the chat, where files
         stay attached to the dialog): when the attached files do not answer, the question is routed as usual."""
-        with self.llm.use(model):
+        with self.llm.use(model, self.model_settings.get("text", model or self.settings.llm.model)):
             return self._ask(question, history, top_k, mode, route, rerank, symbols, reasoning, agent, uploads, session,
                              confirmed, web, code, sandbox_net, upload_fallback, image)
 

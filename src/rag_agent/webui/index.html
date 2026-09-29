@@ -39,6 +39,7 @@
       <span class="muted small" id="dialog-meta"></span>
     </div>
     <div class="segmented" role="group" aria-label="Источник ответа" id="route"></div>
+    <button type="button" class="icon-btn" id="open-settings" aria-label="Настройки моделей" title="Настройки моделей" data-icon="sliders"></button>
     <button type="button" class="icon-btn only-mid" id="open-panel" aria-label="Ход ответа" data-icon="activity"></button>
   </header>
   <div class="messages" id="messages" tabindex="-1">
@@ -63,11 +64,17 @@
   </div>
 </main>
 
-<aside class="panel" id="panel" aria-label="Ход ответа">
-  <section class="card" id="trace-card"></section>
-  <section class="card" id="files-card"></section>
-  <section class="card" id="access-card"></section>
-  <button type="button" class="link-btn" id="open-trace">Открыть полную трассу →</button>
+<aside class="panel" id="panel" aria-label="Ход ответа и настройки">
+  <div class="segmented panel-tabs" role="group" aria-label="Панель" id="panel-tabs"></div>
+  <div class="panel-view" id="panel-trace">
+    <section class="card" id="trace-card"></section>
+    <section class="card" id="files-card"></section>
+    <section class="card" id="access-card"></section>
+    <button type="button" class="link-btn" id="open-trace">Открыть полную трассу →</button>
+  </div>
+  <div class="panel-view" id="panel-settings" hidden>
+    <section class="card" id="settings-card"></section>
+  </div>
 </aside>
 
 </div>

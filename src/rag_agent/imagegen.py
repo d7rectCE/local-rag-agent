@@ -314,6 +314,13 @@ def step_cost(width: int, height: int, mode: str = "generate") -> float:
     return mp * (1 + mp / 4.4)
 
 
+# what sd-cli accepts (sd-cli --help), for the settings panel of the UI
+SAMPLERS = ["euler", "euler_a", "heun", "dpm2", "dpm++2s_a", "dpm++2m", "dpm++2mv2", "ipndm", "ipndm_v", "lcm",
+            "ddim_trailing", "tcd", "res_multistep", "res_2s", "er_sde", "euler_cfg_pp", "euler_a_cfg_pp", "euler_ge",
+            "dpm++2m_sde", "dpm++2m_sde_bt", "lms"]
+SCHEDULERS = ["discrete", "karras", "exponential", "ays", "gits", "sgm_uniform", "simple", "smoothstep", "kl_optimal",
+              "lcm", "bong_tangent", "beta", "flux", "flux2", "ltx2", "logit_normal"]
+
 # a crash rather than an error: access violation on Windows, SIGSEGV / SIGABRT elsewhere
 _CRASH = {3221225477, -1073741819, 3221226505, -1073740791, 139, -11, 134, -6}
 

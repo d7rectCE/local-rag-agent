@@ -113,7 +113,7 @@ function loadPrefs() {
 }
 function savePrefs() {
   const p = { route: S.route, reasoning: S.reasoning, web: S.web, sandboxNet: S.sandboxNet, model: S.model, settings: S.settings,
-    imageModel: S.imageModel, imageSize: S.imageSize };
+    imageModel: S.imageModel, imageSize: S.imageSize, panelTab: S.panelTab, settingsKind: S.settingsKind };
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch { /* private mode */ }
 }
 
@@ -136,6 +136,9 @@ const S = {
   imagegen: null,                  // the picture generator: models, device, sizes, time model (/imagegen)
   imageModel: prefs.imageModel || null,  // null: the configured diffusion model
   imageSize: prefs.imageSize || 'auto',  // auto | source | an official ratio ("16:9") | "WxH"
+  panelTab: prefs.panelTab || 'trace',   // the right panel: the course of the answer or the model settings
+  settingsKind: prefs.settingsKind || 'text',
+  modelSettings: {},                     // kind -> /settings response of the selected model
   settings: { agent: 'auto', webMode: 'auto', code: 'auto', top_k: null, mode: null, rerank: null, symbols: null, ...(prefs.settings || {}) },
   busy: null,         // {kind, text, uploads, started}
   error: null,        // {kind, text, message}
@@ -1246,7 +1249,161 @@ function renderAccessCard() {
   el.append(row('Интернет', ...web, 'Наружу уходят только поисковые запросы из вопроса и загрузки страниц; запрос с именами из ваших файлов требует подтверждения'));
 }
 
+// --------------------------------------------------------------------------- model settings (right panel)
+
+const SETTINGS_KINDS = { text: 'Текст', image: 'Картинки', video: 'Видео' };
+// the fields of each kind; "rec" of the server is shown next to the label, a value set here wins over it
+const SETTING_FIELDS = {
+  text: [
+    { key: 'temperature', label: 'Температура', type: 'range', min: 0, max: 2, step: 0.05, hint: 'Случайность текста ответа; служебные вызовы (маршрут, планы, JSON) всегда идут с 0' },
+    { key: 'top_p', label: 'Top P', type: 'range', min: 0.05, max: 1, step: 0.01 },
+    { key: 'top_k', label: 'Top K', type: 'number', min: 1, max: 500, step: 1 },
+    { key: 'repeat_penalty', label: 'Штраф за повторы', type: 'range', min: 0.8, max: 2, step: 0.01 },
+    { key: 'num_ctx', label: 'Контекст, токенов', type: 'select', hint: 'Смена контекста перезагружает модель в Ollama: первый ответ после неё дольше' },
+    { key: 'max_tokens', label: 'Длина ответа, токенов', type: 'number', min: 256, max: 131072, step: 256 },
+  ],
+  image: [
+    { key: 'steps', label: 'Шаги', type: 'number', min: 1, max: 150, step: 1 },
+    { key: 'cfg_scale', label: 'CFG', type: 'range', min: 1, max: 12, step: 0.1, hint: 'Сила следования промпту; turbo-моделям нужен 1' },
+    { key: 'sampler', label: 'Сэмплер', type: 'select' },
+    { key: 'scheduler', label: 'Расписание шума', type: 'select', empty: 'по умолчанию модели' },
+    { key: 'strength', label: 'Сила перерисовки', type: 'range', min: 0.1, max: 1, step: 0.05, hint: 'Насколько «перерисуй детальнее» уходит от исходника' },
+    { key: 'negative_prompt', label: 'Негативный промпт', type: 'textarea' },
+    { key: 'text_encoder_on_cpu', label: 'Энкодер на процессоре', type: 'switch', hint: 'Экономит видеопамять; энкодер в fp8 — только на видеокарте' },
+    { key: 'flash_attention', label: 'Flash attention', type: 'switch' },
+    { key: 'vae_tiling', label: 'VAE тайлами', type: 'switch', hint: 'Без тайлов сборка Vulkan может не выделить память под декодер' },
+  ],
+};
+
+function settingsName(kind) {
+  if (kind === 'text') return S.model || S.models?.default || '';
+  if (kind === 'image') return S.imageModel || (S.imagegen?.models || []).find((m) => m.default)?.name || '';
+  return '';
+}
+
+async function loadModelSettings(kind) {
+  S.modelSettings[kind] = await api('GET', `/settings/${kind}?name=${encodeURIComponent(settingsName(kind))}`);
+}
+
+const saveTimers = {};
+function saveSetting(kind, key, value) {
+  clearTimeout(saveTimers[`${kind}.${key}`]);
+  saveTimers[`${kind}.${key}`] = setTimeout(async () => {
+    const data = S.modelSettings[kind];
+    const res = await guarded(() => api('PUT', `/settings/${kind}?name=${encodeURIComponent(data.name)}`, { values: { [key]: value } }));
+    if (!res) return;
+    S.modelSettings[kind] = res;
+    if (kind === 'image') loadImagegen().catch(() => {});
+    renderSettingsMarks(kind);
+  }, 350);
+}
+
+// the "set here" marks without a re-render (a slider being dragged keeps its focus)
+function renderSettingsMarks(kind) {
+  const data = S.modelSettings[kind];
+  for (const el of document.querySelectorAll('#settings-card .set-field[data-key]')) {
+    el.querySelector('.custom').hidden = !(el.dataset.key in (data?.values || {}));
+  }
+}
+
+const fmtSetting = (v) => (v === null || v === undefined || v === '' ? 'по умолч.' : typeof v === 'boolean' ? (v ? 'вкл' : 'выкл') : String(v));
+
+function settingField(kind, f, data) {
+  const rec = data.recommended[f.key];
+  const has = f.key in data.values;
+  const cur = has ? data.values[f.key] : rec;
+  let input;
+  if (f.type === 'range') {
+    const val = h('span', { class: 'val', text: cur ?? '—' });
+    const r = h('input', { type: 'range', min: f.min, max: f.max, step: f.step, value: cur ?? (f.min + f.max) / 2, 'aria-label': f.label });
+    r.addEventListener('input', () => { val.textContent = r.value; saveSetting(kind, f.key, Number(r.value)); });
+    input = h('div', { class: 'set-range' }, r, val);
+  } else if (f.type === 'number') {
+    input = h('input', { class: 'input', type: 'number', min: f.min, max: f.max, step: f.step, value: has ? cur : '', placeholder: rec ?? 'по умолчанию', 'aria-label': f.label });
+    input.addEventListener('change', () => saveSetting(kind, f.key, input.value === '' ? null : Number(input.value)));
+  } else if (f.type === 'select') {
+    const choices = data.choices?.[f.key] || [];
+    input = h('select', { class: 'input', 'aria-label': f.label },
+      f.empty ? h('option', { value: '', text: f.empty }) : null,
+      choices.map((c) => h('option', { value: c, text: String(c) })));
+    input.value = cur ?? '';
+    input.addEventListener('change', () => saveSetting(kind, f.key, input.value === '' ? null : (typeof choices[0] === 'number' ? Number(input.value) : input.value)));
+  } else if (f.type === 'textarea') {
+    input = h('textarea', { class: 'input', rows: 2, 'aria-label': f.label, placeholder: rec || 'пусто' });
+    input.value = has ? cur : '';
+    input.addEventListener('change', () => saveSetting(kind, f.key, input.value.trim() || null));
+  } else {
+    const box = h('input', { type: 'checkbox', 'aria-label': f.label });
+    box.checked = !!cur;
+    box.addEventListener('change', () => saveSetting(kind, f.key, box.checked));
+    input = h('span', { class: 'switch' }, box, h('span'));
+  }
+  const reset = h('button', { type: 'button', class: 'mini-btn', title: 'Вернуть рекомендованное', 'aria-label': `Вернуть рекомендованное: ${f.label}`, icon: ['refresh', 12], onclick: async () => {
+    const res = await guarded(() => api('PUT', `/settings/${kind}?name=${encodeURIComponent(data.name)}`, { values: { [f.key]: null } }));
+    if (res) { S.modelSettings[kind] = res; renderSettingsCard(); }
+  } });
+  const custom = h('span', { class: 'custom', title: 'Задано здесь' }, '●', reset);
+  custom.hidden = !has;
+  const head = h('div', { class: 'set-head' }, h('span', { text: f.label }), custom, h('span', { class: 'rec', title: 'Рекомендованное значение', text: `рек.: ${fmtSetting(rec)}` }));
+  if (f.type === 'switch') return h('div', { class: 'set-field', dataset: { key: f.key }, title: f.hint || '' }, h('div', { class: 'switch-row' }, head, input));
+  return h('div', { class: 'set-field', dataset: { key: f.key }, title: f.hint || '' }, head, input, f.hint ? h('span', { class: 'set-info', text: f.hint }) : null);
+}
+
+function renderSettingsCard() {
+  const el = $('#settings-card');
+  el.replaceChildren();
+  const tabs = h('div', { class: 'segmented small settings-kinds', role: 'group', 'aria-label': 'Вид модели' });
+  segmented(tabs, SETTINGS_KINDS, S.settingsKind, (k) => { S.settingsKind = k; savePrefs(); renderSettingsCard(); });
+  el.append(h('div', { class: 'card-head' }, h('h2', { text: 'Настройки моделей' })), tabs);
+  const kind = S.settingsKind;
+  if (kind === 'image' && !S.imagegen?.available) {
+    el.append(h('p', { class: 'panel-empty', style: 'margin:0', text: 'Генератор картинок не настроен: положите модель в папку models/image или укажите её в configs/local.yaml (см. models/README.md).' }));
+    return;
+  }
+  if (kind === 'video') {
+    el.append(h('p', { class: 'panel-empty', style: 'margin:0', text: 'Видеомодели пока нет: положите её папкой в models/video (для LTX-2 — модель, VAE видео и звука, энкодер Gemma и коннекторы).' }));
+    return;
+  }
+  const data = S.modelSettings[kind];
+  if (!data || (settingsName(kind) && data.name !== settingsName(kind))) {
+    el.append(h('p', { class: 'panel-empty', style: 'margin:0', text: 'Загружаю настройки…' }));
+    loadModelSettings(kind).then(renderSettingsCard).catch((e) => toast(e.message, 'error'));
+    return;
+  }
+  const models = kind === 'text' ? (S.models?.models || []).map((m) => [m.name, m.name]) : (S.imagegen?.models || []).map((m) => [m.name, m.label || m.name]);
+  const select = h('select', { class: 'input', 'aria-label': 'Модель' }, models.map(([v, t]) => h('option', { value: v, text: t })));
+  select.value = data.name;
+  select.addEventListener('change', () => {
+    const def = kind === 'text' ? S.models?.default : (S.imagegen?.models || []).find((m) => m.default)?.name;
+    if (kind === 'text') { S.model = select.value === def ? null : select.value; renderModel(); }
+    else { S.imageModel = select.value === def ? null : select.value; renderImageModel(); }
+    savePrefs();
+    renderSettingsCard();
+  });
+  const info = data.info || {};
+  const files = [info.vae && `VAE: ${info.vae}`, info.llm && `энкодер: ${info.llm}`].filter(Boolean).join(' · ');
+  el.append(h('div', { class: 'set-field' }, h('div', { class: 'set-head' }, h('span', { text: 'Модель' })), select,
+    files ? h('span', { class: 'set-info', text: files }) : null));
+  for (const f of SETTING_FIELDS[kind]) el.append(settingField(kind, f, data));
+  el.append(h('button', { type: 'button', class: 'btn ghost', onclick: async () => {
+    const res = await guarded(() => api('DELETE', `/settings/${kind}?name=${encodeURIComponent(data.name)}`), 'Настройки модели сброшены');
+    if (res) { S.modelSettings[kind] = res; if (kind === 'image') loadImagegen().catch(() => {}); renderSettingsCard(); }
+  } }, 'Сбросить к рекомендованным'),
+  h('p', { class: 'hint', style: 'margin:0' }, 'Настройки хранятся на этом компьютере отдельно для каждой модели и применяются к новым запросам. «рек.» — значение, рекомендованное для модели (по её семейству и конфигу).'));
+}
+
+function renderPanelTabs() {
+  segmented($('#panel-tabs'), { trace: 'Ход ответа', settings: 'Настройки' }, S.panelTab, (k) => { S.panelTab = k; savePrefs(); renderPanel(); });
+  $('#panel-trace').hidden = S.panelTab !== 'trace';
+  $('#panel-settings').hidden = S.panelTab !== 'settings';
+}
+
 function renderPanel() {
+  renderPanelTabs();
+  if (S.panelTab === 'settings') {
+    renderSettingsCard();
+    return;
+  }
   renderTraceCard();
   renderFilesCard();
   renderAccessCard();
@@ -1717,6 +1874,12 @@ function bindEvents() {
   $('#open-sidebar').addEventListener('click', () => { $('#sidebar').classList.add('open'); $('#scrim').hidden = false; });
   $('#close-sidebar').addEventListener('click', closeSidebar);
   $('#open-panel').addEventListener('click', () => { $('#panel').classList.add('open'); $('#scrim').hidden = false; });
+  $('#open-settings').addEventListener('click', () => {
+    S.panelTab = S.panelTab === 'settings' && !$('#panel').classList.contains('open') && window.innerWidth > 1240 ? 'trace' : 'settings';
+    savePrefs();
+    renderPanel();
+    if (window.innerWidth <= 1240) { $('#panel').classList.add('open'); $('#scrim').hidden = false; }
+  });
   $('#scrim').addEventListener('click', closeSidebar);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSidebar(); });
   const comp = $('#composer');

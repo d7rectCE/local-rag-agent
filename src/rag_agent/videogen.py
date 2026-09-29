@@ -80,6 +80,7 @@ class GeneratedVideo(BaseModel):
     steps: int
     model: str = ""
     source: str | None = None  # "upload:<id>" or "generated:<id>" for image-to-video
+    downscaled_from: list[int] | None = None  # the frame asked for, when VRAM made it smaller
     elapsed_s: float = 0.0
     created_at: str = ""
 
@@ -125,6 +126,13 @@ def plan_video(question: str, history: list[dict], llm: BaseLLM, has_source: boo
     return plan
 
 
+def vram_short(stdout: str, stderr: str) -> tuple[float, float] | None:
+    """(needed, free) MB when sd-cli failed for want of VRAM, else None."""
+    m = re.search(r"cannot make enough memory available on \S+: need ([\d.]+) MB device.*?available ([\d.]+) MB",
+                  stdout + stderr)
+    return (float(m.group(1)), float(m.group(2))) if m else None
+
+
 def frames_for(seconds: float, fps: int, default: int) -> int:
     """Frames of a clip: LTX takes 8k + 1 of them (33, 65, 97, 121...)."""
     if seconds <= 0:
@@ -158,7 +166,10 @@ class VideoGenerator:
         return out
 
     def default_name(self) -> str:
-        return Path(self.cfg.diffusion_model).name if self.cfg.diffusion_model else next(iter(self.catalog()), "")
+        if self.cfg.diffusion_model:
+            return Path(self.cfg.diffusion_model).name
+        cat = self.catalog()
+        return self.cfg.default if self.cfg.default in cat else next(iter(cat), "")
 
     @staticmethod
     def _complete(entry: dict) -> bool:
@@ -268,46 +279,36 @@ class VideoGenerator:
                 with Image.open(io.BytesIO(source)) as im:
                     src_size = im.size
             width, height = self.size(prof, aspect, src_size)
-            args = [self.sd_cli, "-M", "vid_gen", "--diffusion-model", cli_path(dit), "--vae", cli_path(prof["vae"]),
-                    "--llm", cli_path(prof["llm"]),
-                    "--cfg-scale", str(prof["cfg_scale"]), "--sampling-method", prof["sampler"],
-                    "--steps", str(int(prof["steps"])), "-W", str(width), "-H", str(height),
-                    "--video-frames", str(frames), "--fps", str(fps), "-s", str(seed), "-p", prompt,
-                    "-o", os.path.join(w, "out.webm")]
-            if prof.get("audio_vae"):
-                args += ["--audio-vae", cli_path(prof["audio_vae"])]
-            if prof.get("connectors"):
-                args += ["--embeddings-connectors", cli_path(prof["connectors"])]
-            if prof["scheduler"]:
-                args += ["--scheduler", prof["scheduler"]]
-            if prof["negative_prompt"]:
-                args += ["-n", prof["negative_prompt"]]
-            if prof["text_encoder_on_cpu"]:
-                args += ["--backend", "te=cpu"]
-            if prof["offload_to_cpu"]:
-                args.append("--offload-to-cpu")
-            if prof["flash_attention"]:
-                args.append("--fa")
-            if prof["vae_tiling"]:
-                args += ["--vae-tiling", "--temporal-tiling"]
-            if source is not None:
-                from PIL import Image
-
-                with Image.open(io.BytesIO(source)) as im:
-                    im.convert("RGB").resize((width, height), Image.LANCZOS).save(work / "first.png", format="PNG")
-                args += ["-i", os.path.join(w, "first.png")]
-            if self.settings.imagegen.unload_llm:
-                unload_ollama(self.settings.llm.base_url)
+            downscaled = None
             t0 = time.perf_counter()
-            try:
-                proc = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                                      timeout=self.cfg.timeout_s, cwd=str(Path(self.sd_cli).parent))
-            except subprocess.TimeoutExpired as exc:
-                raise VideoGenError(f"видео не уложилось в {self.cfg.timeout_s:.0f} с") from exc
+            for attempt in range(3):
+                args = self._args(dit, prof, prompt, width, height, frames, fps, seed, w, source is not None)
+                if source is not None:
+                    from PIL import Image
+
+                    with Image.open(io.BytesIO(source)) as im:
+                        im.convert("RGB").resize((width, height), Image.LANCZOS).save(work / "first.png", format="PNG")
+                if self.settings.imagegen.unload_llm:
+                    unload_ollama(self.settings.llm.base_url)
+                try:
+                    proc = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                          timeout=self.cfg.timeout_s, cwd=str(Path(self.sd_cli).parent))
+                except subprocess.TimeoutExpired as exc:
+                    raise VideoGenError(f"видео не уложилось в {self.cfg.timeout_s:.0f} с") from exc
+                produced = work / "out.webm"
+                if proc.returncode == 0 and produced.exists():
+                    break
+                short = vram_short(proc.stdout or "", proc.stderr or "")
+                if short is None or attempt == 2:
+                    raise VideoGenError(sd_error(proc.returncode, proc.stdout or "", proc.stderr or ""))
+                # not enough VRAM for the sampling's workspace (it grows with pixels x frames, and a 22B model
+                # leaves little of a 24 GB card): a smaller frame, the same proportions and length
+                need, free = short
+                k = max(0.25, 0.85 * free / need)
+                downscaled = downscaled or [width, height]
+                width, height = snap32(width * k ** 0.5, height * k ** 0.5)
+                log.warning("video: %d MB of VRAM short, retrying at %dx%d", need - free, width, height)
             elapsed = round(time.perf_counter() - t0, 1)
-            produced = work / "out.webm"
-            if proc.returncode != 0 or not produced.exists():
-                raise VideoGenError(sd_error(proc.returncode, proc.stdout or "", proc.stderr or ""))
             out = out_dir / f"{video_id}.webm"
             shutil.move(str(produced), out)
         finally:
@@ -315,10 +316,38 @@ class VideoGenerator:
         info = GeneratedVideo(id=video_id, dialog=dialog, mode="image" if source is not None else "text", prompt=prompt,
                               request=request, width=width, height=height, frames=frames, fps=fps, seed=seed,
                               steps=int(prof["steps"]), model=Path(dit).name, source=source_ref, elapsed_s=elapsed,
+                              downscaled_from=downscaled,
                               created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
         out.with_suffix(".json").write_text(info.model_dump_json(indent=1), encoding="utf-8")
         log.info("video %s (%s) in %.1f s", video_id, info.mode, elapsed)
         return info
+
+    def _args(self, dit: str, prof: dict, prompt: str, width: int, height: int, frames: int, fps: int, seed: int,
+              work: str, first_frame: bool) -> list[str]:
+        args = [self.sd_cli, "-M", "vid_gen", "--diffusion-model", cli_path(dit), "--vae", cli_path(prof["vae"]),
+                "--llm", cli_path(prof["llm"]), "--cfg-scale", str(prof["cfg_scale"]),
+                "--sampling-method", prof["sampler"], "--steps", str(int(prof["steps"])), "-W", str(width),
+                "-H", str(height), "--video-frames", str(frames), "--fps", str(fps), "-s", str(seed), "-p", prompt,
+                "-o", os.path.join(work, "out.webm")]
+        if prof.get("audio_vae"):
+            args += ["--audio-vae", cli_path(prof["audio_vae"])]
+        if prof.get("connectors"):
+            args += ["--embeddings-connectors", cli_path(prof["connectors"])]
+        if prof["scheduler"]:
+            args += ["--scheduler", prof["scheduler"]]
+        if prof["negative_prompt"]:
+            args += ["-n", prof["negative_prompt"]]
+        if prof["text_encoder_on_cpu"]:
+            args += ["--backend", "te=cpu"]
+        if prof["offload_to_cpu"]:
+            args.append("--offload-to-cpu")
+        if prof["flash_attention"]:
+            args.append("--fa")
+        if prof["vae_tiling"]:
+            args += ["--vae-tiling", "--temporal-tiling"]
+        if first_frame:
+            args += ["-i", os.path.join(work, "first.png")]
+        return args
 
 
 __all__ = ["GeneratedVideo", "VideoGenError", "VideoGenerator", "VideoPlan", "frames_for", "plan_video", "wants_video"]

@@ -106,6 +106,23 @@ class Embedder:
             linear.load_state_dict(torch.load(head, map_location="cpu", weights_only=True))
             self._sparse = linear.to(device=device, dtype=dtype).eval()
 
+    def unload(self) -> None:
+        """Free the GPU (a picture or video generator needs it); the next call loads the model again."""
+        if self._model is None:
+            return
+        self._model = None
+        self._sparse = None
+        import gc
+
+        gc.collect()
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except ImportError:
+            pass
+
     @property
     def dim(self) -> int:
         self.load()

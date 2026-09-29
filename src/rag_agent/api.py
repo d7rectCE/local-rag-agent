@@ -302,9 +302,16 @@ def create_app(engine: Engine | None = None) -> FastAPI:
         e = eng()
         installed = e.llm.installed()
         names = {m["name"] for m in installed} | {m["name"].removesuffix(":latest") for m in installed}
-        files = [{"name": f["name"], "size": f["size"], "ollama": modelfiles.ollama_name(f["name"]),
-                  "imported": modelfiles.ollama_name(f["name"]) in names}
-                 for f in modelfiles.scan(e.settings.models_dir, "text")]
+        sizes = {m["size"]: m["name"] for m in installed if m.get("size")}
+
+        def known(f: dict) -> str | None:
+            """The Ollama model made from this file: by its name, or by the size (an import under another name
+            keeps the GGUF as one blob of the same size)."""
+            name = modelfiles.ollama_name(f["name"])
+            return name if name in names else sizes.get(f["size"])
+
+        files = [{"name": f["name"], "size": f["size"], "ollama": known(f) or modelfiles.ollama_name(f["name"]),
+                  "imported": bool(known(f))} for f in modelfiles.scan(e.settings.models_dir, "text")]
         return {"default": e.settings.llm.model, "models": installed, "files": files}
 
     @app.post("/models/import")

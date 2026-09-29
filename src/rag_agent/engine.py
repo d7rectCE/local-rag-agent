@@ -443,6 +443,24 @@ class Engine:
         except (WorkspaceError, OSError):
             return ""
 
+    def release_gpu(self) -> None:
+        """Before a picture or a video: the embedder, the reranker and the visual index leave the GPU (1.6 GB
+        with bge-m3: a 121-frame video of a 22B model fell short of 2.3 GB). They load again on the next
+        search. Not while indexing runs: it is using the embedder."""
+        if self.indexing_alive:
+            return
+        unload = getattr(self.embedder, "unload", None)
+        if unload:
+            unload()
+        if self._reranker is not None and hasattr(self._reranker, "unload"):
+            self._reranker.unload()
+        try:
+            from rag_agent.images.visual import unload_visual
+
+            unload_visual()
+        except ImportError:
+            pass
+
     @property
     def videogen(self) -> VideoGenerator:
         if getattr(self, "_videogen", None) is None:
@@ -473,6 +491,7 @@ class Engine:
                 return None
             action = "image" if source is not None else "text"
         use_source = action == "image"
+        self.release_gpu()
         try:
             info = self.videogen.run(session, plan.prompt or question, request=question,
                                      source=source if use_source else None, source_ref=source_ref if use_source else None,
@@ -486,8 +505,10 @@ class Engine:
             "mode": info.mode, "seed": info.seed, "size": [info.width, info.height], "frames": info.frames,
             "fps": info.fps, "steps": info.steps}))
         done = "Оживил картинку" if info.mode == "image" else "Снял видео"
+        smaller = (f" Кадр уменьшен с {info.downscaled_from[0]}×{info.downscaled_from[1]}: не хватило видеопамяти "
+                   "(размер задаётся во вкладке «Видео» настроек)." if info.downscaled_from else "")
         text = (f"{done}: {info.width}×{info.height}, {info.seconds} с ({info.frames} кадров, {info.fps} к/с), "
-                f"{info.elapsed_s:.0f} с.\n\n**Промпт для генератора:** {info.prompt}")
+                f"{info.elapsed_s:.0f} с.{smaller}\n\n**Промпт для генератора:** {info.prompt}")
         return Answer(question=question, answer=text, answerable=True, grounded=True, route="video",
                       model=self.llm.name, video={**info.model_dump(), "url": info.url, "seconds": info.seconds})
 
@@ -540,6 +561,7 @@ class Engine:
             mode = "edit" if source is not None else "generate"  # an [IMG] step draws whatever the plan says
         width, height = ASPECTS.get(plan.aspect, (None, None)) if mode == "generate" else (None, None)
         mask = base64.b64decode(request["mask"].split(",")[-1]) if request.get("mask") else None
+        self.release_gpu()
         try:
             info = self.imagegen.run(session, mode, plan.prompt or question, request=question, width=width,
                                      height=height, source=source if mode != "generate" else None,

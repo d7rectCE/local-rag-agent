@@ -29,7 +29,8 @@ _NAME_FAMILY = [(re.compile(p, re.IGNORECASE), f) for p, f in (
     (r"flux", "flux"), (r"z[-_]?image", "z_image"), (r"ltxv?[-_]?2", "ltx2"), (r"ltx", "ltxv"), (r"\bwan", "wan"),
     (r"hunyuan[-_]?video", "hunyuan_video"))]
 # a distilled build: few steps, no classifier-free guidance
-TURBO = re.compile(r"turbo|lightning|distill|schnell|hyper|lcm|\bfast\b", re.IGNORECASE)
+# dmd: distribution matching distillation (the LTX-2.3 build "10Eros_v1.4_dmd-r256")
+TURBO = re.compile(r"turbo|lightning|distill|schnell|hyper|lcm|\bfast\b|dmd", re.IGNORECASE)
 
 _TYPES = {0: "<B", 1: "<b", 2: "<H", 3: "<h", 4: "<I", 5: "<i", 6: "<f", 7: "<?", 10: "<Q", 11: "<q", 12: "<d"}
 
@@ -186,7 +187,8 @@ def preset(path: str | Path, llm: str = "") -> dict:
     if family(path) == "ltx2" and re.search(r"2[._]5", name):
         out.update(cfg_scale=3.0, frames=121)  # LTX-2.5, as in sd.cpp's docs
     if is_turbo(path):
-        out.update(TURBO_PRESET)
+        # a video model keeps its own noise schedule; the guidance pass is what doubles every step
+        out.update({k: v for k, v in TURBO_PRESET.items() if not (family(path) == "ltx2" and k == "scheduler")})
     if "fp8" in Path(llm).name.lower():
         out["text_encoder_on_cpu"] = False
     return out

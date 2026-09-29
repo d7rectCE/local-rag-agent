@@ -344,6 +344,12 @@ def sd_error(code: int, stdout: str, stderr: str) -> str:
     stderr holds the device list of ggml — which is all the user saw before."""
     lines = (stdout + "\n" + stderr).splitlines()
     errors = [ln.strip() for ln in lines if "[ERROR" in ln]
+    oom = re.search(r"cannot make enough memory available on (\S+): need ([\d.]+) MB device.*?available ([\d.]+) MB",
+                    stdout + stderr)
+    if oom:
+        return (f"не хватило видеопамяти ({oom.group(1)}: нужно {float(oom.group(2)):.0f} МБ, свободно "
+                f"{float(oom.group(3)):.0f} МБ). Уменьшите размер кадра или число кадров (для видео) в панели "
+                "«Настройки», или включите «Веса в оперативной памяти» — медленнее, но помещается.")
     if errors:
         detail = "\n".join(errors[-3:])
     else:
@@ -403,7 +409,7 @@ class ImageGenerator:
         cat = self.catalog()
         if self.cfg.diffusion_model:
             return Path(self.cfg.diffusion_model).name
-        return next(iter(cat), "")
+        return self.cfg.default if self.cfg.default in cat else next(iter(cat), "")
 
     def _complete(self, entry: dict) -> bool:
         return all(entry.get(k) and Path(entry[k]).exists() for k in ("path", "vae", "llm"))

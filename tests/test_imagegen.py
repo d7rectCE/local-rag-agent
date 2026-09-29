@@ -277,6 +277,11 @@ def test_an_sd_cli_failure_names_its_cause():
     log = "[INFO   ] model_loader.cpp:1383 - loading tensors completed\n[INFO   ] image.cpp:529 - get_learned_condition\n"
     msg = imagegen.sd_error(3221225477, log, devices)  # a crash: the device list alone said nothing
     assert msg.startswith("движок аварийно завершился (код 3221225477)") and "get_learned_condition" in msg
+    oom = ("[WARN   ] model_manager.cpp:1919 - model manager cannot make enough memory available on Vulkan0: need "
+           "2333.17 MB device / 1821.17 MB budget, available 1771.00 MB device / 5480.20 MB budget\n"
+           "[ERROR  ] diffusion_engine.cpp:2733 - Diffusion model sampling failed\n")
+    msg = imagegen.sd_error(1, log + oom, devices)
+    assert msg.startswith("не хватило видеопамяти (Vulkan0: нужно 2333 МБ, свободно 1771 МБ)") and "кадров" in msg
     msg = imagegen.sd_error(1, log + "[ERROR  ] model.cpp:12 - unknown tensor type\n", devices)
     assert msg.startswith("движок завершился с ошибкой") and "unknown tensor type" in msg
 

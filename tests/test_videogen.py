@@ -29,6 +29,36 @@ def opt(args, flag):
     return args[args.index(flag) + 1]
 
 
+def test_short_of_vram_the_frame_gets_smaller_and_the_clip_is_made(vid_engine):
+    """A 22B model leaves little of a 24 GB card: sd-cli fails before sampling; the frame shrinks and it runs."""
+    real = vid_engine.fake_sd.__class__.__call__
+    tries = []
+
+    def short_once(self, args, **kwargs):
+        if "vid_gen" in args and not tries:
+            tries.append(args)
+
+            class Oom:
+                returncode, stderr = 1, ""
+                stdout = ("[WARN   ] model_manager.cpp:1919 - model manager cannot make enough memory available on "
+                          "Vulkan0: need 2333.17 MB device / 1821.17 MB budget, available 1787.25 MB device\n"
+                          "[ERROR  ] diffusion_engine.cpp:2733 - Diffusion model sampling failed\n")
+            return Oom()
+        return real(self, args, **kwargs)
+
+    vid_engine.fake_sd.__class__.__call__ = short_once
+    try:
+        vid_engine.llm.video_plan = {"action": "text", "prompt": "waves", "seconds": 5, "aspect": "landscape",
+                                     "minor_sexual": False}
+        ans = vid_engine.ask("Сними видео с волнами на 5 секунд", session="v9")
+    finally:
+        vid_engine.fake_sd.__class__.__call__ = real
+    v = ans.video
+    assert v["downscaled_from"] == [1024, 576] and v["width"] * v["height"] < 0.7 * 1024 * 576
+    assert v["frames"] == 121 and abs(v["width"] / v["height"] - 16 / 9) < 0.1  # the same length and proportions
+    assert "Кадр уменьшен с 1024×576" in ans.answer
+
+
 def test_words_and_frames():
     assert wants_video("Сними видео, как машина едет по горам") and wants_video("анимируй её")
     assert wants_video("Оживи картинку") and not wants_video("Нарисуй машину")
@@ -56,6 +86,7 @@ def test_text_to_video(vid_engine):
     assert Path(opt(args, "--audio-vae")).name == LTX[2] and Path(opt(args, "--embeddings-connectors")).name == LTX[3]
     assert (int(opt(args, "-W")), int(opt(args, "-H"))) == (1024, 576) and "-i" not in args
     assert "--temporal-tiling" in args and opt(args, "-p") == "a red car on a mountain road, engine roar"
+    assert "--params-backend" not in args  # an explicit one would turn sd-cli's auto-fit off
     assert vid_engine.videogen.path("v1", ans.video["id"]).read_bytes() == b"webm"
     assert [s.name for s in ans.trace][-2:] == ["video_plan", "video_gen"]
 

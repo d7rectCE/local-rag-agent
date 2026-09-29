@@ -79,6 +79,13 @@ def test_recommended_settings_by_family(tmp_path: Path):
     assert base["steps"] > 8 and base["cfg_scale"] > 1 and "text_encoder_on_cpu" not in base
     ltx = modelfiles.preset(tmp_path / "ltx-2.5-22b-Q8_0.gguf")
     assert (ltx["cfg_scale"], ltx["frames"], ltx["fps"]) == (3.0, 121, 24)
+    # a DMD-distilled build (its GGUF name says so): few steps, no guidance pass, LTX's own schedule
+    dmd = modelfiles.preset(gguf(tmp_path / "ltxv23_uncensored_v1.4_Q6_K.gguf", "ltxv"))
+    assert (dmd["steps"], dmd["cfg_scale"]) == (20, 6.0)  # nothing in the name or the architecture says distilled
+    name = tmp_path / "ltxv23-dmd-Q6_K.gguf"
+    name.write_bytes(b"x")
+    fast = modelfiles.preset(name)
+    assert (fast["steps"], fast["cfg_scale"]) == (8, 1.0) and "scheduler" not in fast
 
 
 def test_settings_made_in_the_ui(tmp_path: Path):

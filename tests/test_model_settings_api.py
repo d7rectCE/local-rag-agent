@@ -88,3 +88,15 @@ def test_chat_models_of_models_text_are_imported_into_ollama(settings, fake_embe
     [(args, modelfile)] = calls
     assert args[2] == "my-chat-8b.q4_k_m" and modelfile.startswith('FROM "') and "My-Chat 8B.Q4_K_M.gguf" in modelfile
     eng.close()
+
+
+def test_a_file_imported_under_another_name_is_known_by_its_size(settings, fake_embedder, monkeypatch):
+    folder = settings.models_dir / "text"
+    folder.mkdir(parents=True)
+    (folder / "Gemma4-26B-Q4_K_M.gguf").write_bytes(b"x" * 1234)
+    eng = Engine(settings, embedder=fake_embedder, llm=FakeLLM(settings))
+    monkeypatch.setattr(type(eng.llm), "installed", lambda self: [{"name": "gemma4-uncensored:latest", "size": 1234}])
+    with TestClient(create_app(eng)) as client:
+        [f] = client.get("/models").json()["files"]
+    assert f["imported"] and f["ollama"] == "gemma4-uncensored:latest"
+    eng.close()

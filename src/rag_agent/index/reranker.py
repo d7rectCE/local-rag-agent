@@ -47,6 +47,22 @@ class Reranker:
         self._model = model.to(device).eval()
         self.device = device
 
+    def unload(self) -> None:
+        """Free the GPU (a picture or video generator needs it); the next call loads the model again."""
+        if self._model is None:
+            return
+        self._model = None
+        import gc
+
+        gc.collect()
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except ImportError:
+            pass
+
     def score(self, query: str, passages: list[str]) -> np.ndarray:
         """Relevance scores in [0, 1] (sigmoid of the logit), one per passage."""
         import torch

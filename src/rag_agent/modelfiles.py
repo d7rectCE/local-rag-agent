@@ -95,3 +95,90 @@ def label(path: str | Path) -> str:
 def is_turbo(path: str | Path) -> bool:
     meta = gguf_meta(path)
     return bool(TURBO.search(Path(path).name) or TURBO.search(str(meta.get("general.name") or "")))
+
+
+# --- the models/ folder ----------------------------------------------------------------------------------------
+MODEL_EXTS = {".gguf", ".safetensors"}
+_AUDIO_VAE = re.compile(r"audio[-_ ]?vae|vocoder", re.IGNORECASE)
+_VAE = re.compile(r"vae|autoencoder", re.IGNORECASE)
+_CONNECTORS = re.compile(r"connector", re.IGNORECASE)
+_ENCODER = re.compile(r"text[-_]?enc|qwen[\d._-]*vl|gemma|umt5|t5xxl|clip[-_]?(l|g|vision)?\b|llava|mistral|llama|"
+                      r"qwen\d[\d._-]*[-_]\d+b", re.IGNORECASE)
+_TEXT_ARCH = re.compile(r"^(llama|qwen\d*\w*|gemma\d*|mistral\w*|phi\d*|t5\w*|clip\w*|bert|glm\w*|deepseek\w*)$")
+
+
+def role(path: Path) -> str:
+    """What a weights file is next to a diffusion model: dit, vae, audio_vae, llm (the text encoder),
+    connectors (LTX-2.3 embeddings connectors) or vision (a projector)."""
+    arch = str(gguf_meta(path).get("general.architecture") or "")
+    if arch in FAMILIES:
+        return "dit"
+    name = path.name
+    if _AUDIO_VAE.search(name):
+        return "audio_vae"
+    if _CONNECTORS.search(name):
+        return "connectors"
+    if _VAE.search(name):
+        return "vae"
+    if "mmproj" in name.lower():
+        return "vision"
+    if (arch and _TEXT_ARCH.match(arch)) or _ENCODER.search(name):
+        return "llm"
+    return "dit"
+
+
+def _tokens(name: str) -> set[str]:
+    return {t for t in re.split(r"[-_. ]+", Path(name).stem.lower()) if t}
+
+
+def _closest(candidates: list[Path], dit: Path) -> Path | None:
+    """The companion made for this model: the most name tokens shared ("qwen_image_2.1_vae" for 2.1)."""
+    return max(candidates, key=lambda c: len(_tokens(c.name) & _tokens(dit.name)), default=None)
+
+
+def scan(root: Path, kind: str) -> list[dict]:
+    """The models of models/<kind>: every diffusion model with the VAE, text encoder (and for video the audio
+    VAE and connectors) of its folder. For "text": the GGUF files (the chat models to import into Ollama)."""
+    base = root / kind
+    if not base.is_dir():
+        return []
+    if kind == "text":
+        return [{"name": f.name, "path": str(f), "size": f.stat().st_size, "kind": "text"}
+                for f in sorted(base.rglob("*.gguf")) if "mmproj" not in f.name.lower()]
+    out = []
+    for folder in [base, *sorted(d for d in base.iterdir() if d.is_dir())]:
+        found = folder.glob("*") if folder == base else folder.rglob("*")
+        files = sorted(f for f in found if f.is_file() and f.suffix.lower() in MODEL_EXTS)
+        roles = {f: role(f) for f in files}
+        for dit in (f for f, r in roles.items() if r == "dit"):
+            comp = {r: _closest([f for f, rr in roles.items() if rr == r], dit)
+                    for r in ("vae", "llm", "audio_vae", "connectors")}
+            out.append({"name": dit.name, "path": str(dit), "size": dit.stat().st_size, "kind": kind,
+                        "family": family(dit), "label": label(dit),
+                        **{k: str(v) if v else "" for k, v in comp.items()}})
+    return out
+
+
+# sampling each family is known to work with (the UI's settings go over it)
+PRESETS: dict[str, dict] = {
+    "qwen_image21": {"steps": 20, "cfg_scale": 3.0, "sampler": "euler"},
+    "qwen_image": {"steps": 20, "cfg_scale": 2.5, "sampler": "euler"},
+    "krea2": {"steps": 28, "cfg_scale": 3.5, "sampler": "euler"},
+    "ltx2": {"steps": 20, "cfg_scale": 6.0, "sampler": "euler", "frames": 33, "fps": 24,
+             "negative_prompt": "worst quality, low quality, blurry, distorted, artifacts"},
+}
+TURBO_PRESET = {"steps": 8, "cfg_scale": 1.0, "sampler": "euler", "scheduler": "simple"}
+
+
+def preset(path: str | Path, llm: str = "") -> dict:
+    """Recommended settings of a model: its family's, a distilled build's few steps without guidance, the
+    text encoder on the GPU when it is in fp8 (the CPU backend of sd.cpp crashes on fp8 weights)."""
+    out = dict(PRESETS.get(family(path), {}))
+    name = Path(path).name.lower()
+    if family(path) == "ltx2" and re.search(r"2[._]5", name):
+        out.update(cfg_scale=3.0, frames=121)  # LTX-2.5, as in sd.cpp's docs
+    if is_turbo(path):
+        out.update(TURBO_PRESET)
+    if "fp8" in Path(llm).name.lower():
+        out["text_encoder_on_cpu"] = False
+    return out

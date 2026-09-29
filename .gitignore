@@ -29,3 +29,7 @@ evalsets/private/
 traces/
 *.log
 !demo_corpus/logs/*.log
+
+# Model weights dropped into models/ (text, image, video): the user's local files, only the layout is kept
+/models/*/*
+!/models/*/.gitkeep

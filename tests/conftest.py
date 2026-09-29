@@ -67,6 +67,7 @@ def corpus(tmp_path: Path) -> Path:
 def settings(tmp_path: Path) -> Settings:
     s = Settings()
     s.storage.data_dir = str(tmp_path / "data")
+    s.storage.models_dir = str(tmp_path / "models")  # never the weights of this machine
     s.corpus.exclude = ["__pycache__", "Аккаунты"]
     s.corpus.include_ext = [".py", ".ipynb"]  # document formats are tested in test_documents.py
     s.chunking.lines_per_chunk = 6

@@ -38,8 +38,10 @@ from pathlib import Path
 import httpx
 from pydantic import BaseModel
 
+from rag_agent import modelfiles
 from rag_agent.hardware import short_name
 from rag_agent.llm import BaseLLM, LLMError
+from rag_agent.model_settings import ModelSettings
 
 log = logging.getLogger(__name__)
 
@@ -344,68 +346,104 @@ class ImageGenerator:
     def __init__(self, settings):
         self.settings, self.cfg = settings, settings.imagegen
         self.root = settings.data_dir / "generated"
+        self.store = ModelSettings(settings.data_dir / "model_settings.json")
         self._device: dict | None = None
+
+    # the settings of a model: the imagegen section (for the configured model and builds of its family), a
+    # family preset (a model of models/image or of imagegen.models), the entry of imagegen.models, the UI
+    SETTING_KEYS = ("steps", "cfg_scale", "sampler", "scheduler", "negative_prompt", "strength",
+                    "text_encoder_on_cpu", "flash_attention", "vae_tiling")
+
+    def catalog(self) -> dict[str, dict]:
+        """name -> {path, vae, llm, source}: the configured model and the builds of its family next to it (or in
+        imagegen.models_dir), the models of imagegen.models, the folders of models/image."""
+        c = self.cfg
+        out: dict[str, dict] = {}
+        if c.diffusion_model:
+            default = Path(c.diffusion_model)
+            out[default.name] = {"path": str(default), "vae": c.vae, "llm": c.llm, "source": "config"}
+            skip = {Path(p).name.lower() for p in (c.vae, c.llm, *(x for m in c.models for x in (m.vae, m.llm))) if p}
+            for d in dict.fromkeys([default.parent, *([Path(c.models_dir)] if c.models_dir else [])]):
+                if d.is_dir():
+                    for f in sorted(d.iterdir()):
+                        if (f.suffix.lower() in (".gguf", ".safetensors") and f.name.lower() not in skip
+                                and not _NOT_DIT.search(f.name)):
+                            out.setdefault(f.name, {"path": str(f), "vae": c.vae, "llm": c.llm, "source": "family"})
+        for m in c.models:
+            if m.path:
+                out[Path(m.path).name] = {"path": m.path, "vae": m.vae or c.vae, "llm": m.llm or c.llm,
+                                          "source": "profile"}
+        for m in modelfiles.scan(self.settings.models_dir, "image"):
+            out.setdefault(m["name"], {"path": m["path"], "vae": m["vae"], "llm": m["llm"], "source": "models"})
+        return out
+
+    def default_name(self) -> str:
+        """The model used when the UI names none: the configured one, else the first of models/image."""
+        cat = self.catalog()
+        if self.cfg.diffusion_model:
+            return Path(self.cfg.diffusion_model).name
+        return next(iter(cat), "")
+
+    def _complete(self, entry: dict) -> bool:
+        return all(entry.get(k) and Path(entry[k]).exists() for k in ("path", "vae", "llm"))
 
     @property
     def available(self) -> bool:
         c = self.cfg
-        return bool(c.enabled and c.sd_cli and c.diffusion_model and c.vae and c.llm) and all(
-            Path(p).exists() for p in (c.sd_cli, c.diffusion_model, c.vae, c.llm))
+        entry = self.catalog().get(self.default_name())
+        return bool(c.enabled and c.sd_cli and Path(c.sd_cli).exists() and entry and self._complete(entry))
 
     def missing(self) -> list[str]:
         c = self.cfg
         if not c.enabled:
             return ["imagegen.enabled"]
-        return [k for k in ("sd_cli", "diffusion_model", "vae", "llm") if not getattr(c, k) or not Path(getattr(c, k)).exists()]
+        out = [] if c.sd_cli and Path(c.sd_cli).exists() else ["sd_cli"]
+        entry = self.catalog().get(self.default_name())
+        if not entry:
+            return out + ["diffusion_model (или папка models/image)"]
+        return out + [{"path": "diffusion_model"}.get(k, k) for k in ("path", "vae", "llm")
+                      if not entry.get(k) or not Path(entry[k]).exists()]
 
     def _model_files(self) -> dict[str, Path]:
+        return {name: Path(e["path"]) for name, e in self.catalog().items()}
+
+    def recommended(self, name: str) -> dict:
+        """The settings of a model before the UI's: the section, the family preset, the imagegen.models entry."""
         c = self.cfg
-        if not c.diffusion_model:
-            return {}
-        default = Path(c.diffusion_model)
-        skip = {Path(p).name.lower() for p in (c.vae, c.llm, *(x for m in c.models for x in (m.vae, m.llm))) if p}
-        found = {default.name: default, **{Path(m.path).name: Path(m.path) for m in c.models if m.path}}
-        for d in dict.fromkeys([default.parent, *([Path(c.models_dir)] if c.models_dir else [])]):
-            if d.is_dir():
-                for f in sorted(d.iterdir()):
-                    if (f.suffix.lower() in (".gguf", ".safetensors") and f.name.lower() not in skip
-                            and not _NOT_DIT.search(f.name)):
-                        found.setdefault(f.name, f)
-        return found
+        entry = self.catalog().get(name) or {}
+        out = {k: getattr(c, k) for k in self.SETTING_KEYS}
+        if entry.get("source") in ("profile", "models"):
+            out.update(modelfiles.preset(entry["path"], entry.get("llm", "")))
+        prof = next((m for m in c.models if Path(m.path).name == name), None)
+        if prof:
+            out.update({k: v for k in ("steps", "cfg_scale", "sampler", "scheduler", "text_encoder_on_cpu")
+                        if (v := getattr(prof, k)) not in (None, "")})
+        return {k: out[k] for k in self.SETTING_KEYS if k in out}
 
     def profile(self, name: str) -> dict:
-        """How a model runs: its VAE, text encoder and sampling — from its entry in ``imagegen.models`` if it
-        has one, the rest from the imagegen section (the default model and builds of its family)."""
-        c = self.cfg
-        prof = next((m for m in c.models if Path(m.path).name == name), None)
-        return {"vae": (prof and prof.vae) or c.vae, "llm": (prof and prof.llm) or c.llm,
-                "steps": (prof and prof.steps) or c.steps,
-                "cfg_scale": prof.cfg_scale if prof and prof.cfg_scale is not None else c.cfg_scale,
-                "sampler": (prof and prof.sampler) or c.sampler, "scheduler": (prof and prof.scheduler) or c.scheduler,
-                "text_encoder_on_cpu": (prof.text_encoder_on_cpu if prof and prof.text_encoder_on_cpu is not None
-                                        else c.text_encoder_on_cpu)}
+        """How a model runs: its files and its settings, the UI's over the recommended ones."""
+        entry = self.catalog().get(name) or {"vae": self.cfg.vae, "llm": self.cfg.llm}
+        return {**self.recommended(name), **self.store.get("image", name), "vae": entry["vae"], "llm": entry["llm"]}
 
     def models(self) -> list[dict]:
-        """The diffusion models to choose from: the configured one, the models of ``imagegen.models`` (each with
-        its own VAE, encoder and sampling) and the other weights of the default model's folder and of
-        ``imagegen.models_dir`` — builds of the default model's family, which share its VAE and text encoder."""
-        default = Path(self.cfg.diffusion_model) if self.cfg.diffusion_model else None
+        """The diffusion models to choose from, with what they are and how they run."""
+        default = self.default_name()
         out = []
-        for name, p in self._model_files().items():
+        for name, e in self.catalog().items():
+            p = Path(e["path"])
             m = _QUANT.search(p.stem)
             prof = self.profile(name)
             out.append({"name": name, "size": p.stat().st_size if p.exists() else 0,
-                        "quant": m.group(1).upper() if m else "", "default": p == default,
-                        "steps": prof["steps"], "cfg_scale": prof["cfg_scale"]})
+                        "quant": m.group(1).upper() if m else "", "default": name == default,
+                        "label": modelfiles.label(p), "family": modelfiles.family(p), "source": e["source"],
+                        "complete": self._complete(e), "steps": prof["steps"], "cfg_scale": prof["cfg_scale"]})
         return out
 
     def model_path(self, name: str | None) -> str:
-        if not name:
-            return self.cfg.diffusion_model
-        found = self._model_files().get(name)
-        if found is None or not found.exists():
+        entry = self.catalog().get(name or self.default_name())
+        if entry is None or not Path(entry["path"]).exists():
             raise ImageGenError(f"модель картинок «{name}» не найдена в папке моделей")
-        return str(found)
+        return entry["path"]
 
     def device(self) -> dict:
         """Where sd-cli computes: its first GPU device, asked from sd-cli itself (``--list-devices``), e.g.
@@ -497,17 +535,17 @@ class ImageGenerator:
                 "-s", str(seed), "-p", prompt, "-o", os.path.join(w, "out.png")]
         if prof["scheduler"]:
             args += ["--scheduler", prof["scheduler"]]
-        if c.negative_prompt:
-            args += ["-n", c.negative_prompt]
+        if prof["negative_prompt"]:
+            args += ["-n", prof["negative_prompt"]]
         if prof["text_encoder_on_cpu"]:
             # an edit feeds the picture itself to the vision-language encoder: hundreds of image tokens, which
             # the CPU encodes for minutes; then the weights stay in RAM and the GPU computes (181 s vs 312 s)
             args += ["--params-backend", "te=cpu"] if mode == "edit" else ["--backend", "te=cpu"]
         if c.offload_to_cpu:
             args.append("--offload-to-cpu")
-        if c.flash_attention:
+        if prof["flash_attention"]:
             args.append("--fa")
-        if c.vae_tiling:
+        if prof["vae_tiling"]:
             args.append("--vae-tiling")
         try:
             if source is not None:
@@ -519,7 +557,7 @@ class ImageGenerator:
             if mode == "inpaint":
                 strength = strength if strength is not None else 1.0
             elif mode == "redraw":
-                strength = strength if strength is not None else c.strength
+                strength = strength if strength is not None else prof["strength"]
             else:
                 strength = None
             if mode == "outpaint":

@@ -30,6 +30,9 @@ class CorpusConfig(BaseModel):
 class StorageConfig(BaseModel):
     data_dir: str = "~/.local-rag-agent"
     qdrant_url: str | None = None
+    # weights the user drops in: models/text (GGUF for Ollama), models/image and models/video (a folder per
+    # model with its VAE and text encoder); relative to the project folder, ignored by git
+    models_dir: str = "models"
 
 
 class ChunkingConfig(BaseModel):
@@ -341,6 +344,11 @@ class Settings(BaseModel):
     @property
     def data_dir(self) -> Path:
         return Path(os.path.expandvars(self.storage.data_dir)).expanduser().resolve()
+
+    @property
+    def models_dir(self) -> Path:
+        p = Path(os.path.expandvars(self.storage.models_dir)).expanduser()
+        return (p if p.is_absolute() else REPO_ROOT / p).resolve()
 
 
 def _deep_merge(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:

@@ -298,3 +298,26 @@ def test_an_attached_picture_asks_the_plan_whatever_the_words(gen_engine):
     gen_engine.llm.image_plan = {**gen_engine.llm.image_plan, "action": "none"}  # "что на фото?" is not a picture
     ans = gen_engine.ask("Что на фото?", uploads=[info.id], session="d9", upload_fallback=True)
     assert ans.route != "image" and not ans.image
+
+
+def test_a_model_dropped_into_models_image_runs_with_its_files_and_the_ui_settings(gen_engine):
+    folder = gen_engine.settings.models_dir / "image" / "krea2-turbo"
+    folder.mkdir(parents=True)
+    for name in ("Krea2_turbo-Q4_K_M.gguf", "qwen_image_vae.safetensors", "qwen3vl_4b_fp8_scaled.safetensors"):
+        (folder / name).write_bytes(b"x")
+    models = {m["name"]: m for m in gen_engine.imagegen.models()}
+    krea = models["Krea2_turbo-Q4_K_M.gguf"]
+    assert krea["source"] == "models" and krea["complete"] and (krea["steps"], krea["cfg_scale"]) == (8, 1.0)
+    assert krea["label"] == "Krea 2 (Krea2_turbo-Q4_K_M)" and models["dit.gguf"]["default"]
+
+    def opt(args, flag):
+        return args[args.index(flag) + 1]
+
+    gen_engine.ask("Нарисуй лису", session="d10", image={"model": "Krea2_turbo-Q4_K_M.gguf"})
+    args = gen_engine.fake_sd.calls[-1]
+    assert opt(args, "--vae") == str(folder / "qwen_image_vae.safetensors") and "te=cpu" not in args
+    assert (opt(args, "--steps"), opt(args, "--scheduler")) == ("8", "simple")
+    gen_engine.imagegen.store.set("image", "Krea2_turbo-Q4_K_M.gguf", {"steps": 12, "cfg_scale": 1.5})
+    gen_engine.ask("Нарисуй лису", session="d10", image={"model": "Krea2_turbo-Q4_K_M.gguf"})
+    args = gen_engine.fake_sd.calls[-1]
+    assert (opt(args, "--steps"), opt(args, "--cfg-scale")) == ("12", "1.5")  # the UI's settings win

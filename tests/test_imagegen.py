@@ -273,3 +273,28 @@ def test_an_sd_cli_failure_names_its_cause():
     assert msg.startswith("движок аварийно завершился (код 3221225477)") and "get_learned_condition" in msg
     msg = imagegen.sd_error(1, log + "[ERROR  ] model.cpp:12 - unknown tensor type\n", devices)
     assert msg.startswith("движок завершился с ошибкой") and "unknown tensor type" in msg
+
+
+def test_the_chat_model_knows_itself_and_the_selected_generator(gen_engine, tmp_path):
+    from rag_agent.config import ImageModelProfile
+
+    d = tmp_path / "k2"
+    d.mkdir()
+    for name in ("krea2-turbo-Q4_K_M.gguf", "vae.st", "te.st"):
+        (d / name).write_bytes(b"x")
+    gen_engine.settings.imagegen.models = [ImageModelProfile(path=str(d / "krea2-turbo-Q4_K_M.gguf"),
+                                                             vae=str(d / "vae.st"), llm=str(d / "te.st"))]
+    text = gen_engine.capabilities("off", "off", False, "krea2-turbo-Q4_K_M.gguf")
+    assert "генератор Krea 2 (krea2-turbo-Q4_K_M)" in text and gen_engine.llm.name.removeprefix("ollama:") in text
+    assert "image-to-image" in text and "не говори, что не умеешь" in text
+    assert "генератор dit" in gen_engine.capabilities("off", "off", False)  # the default one when none is chosen
+
+
+def test_an_attached_picture_asks_the_plan_whatever_the_words(gen_engine):
+    info = gen_engine.upload("d9", "me.png", png(color=(9, 9, 9)))
+    gen_engine.llm.image_plan = {**gen_engine.llm.image_plan, "action": "edit", "prompt": "a knight in armour"}
+    ans = gen_engine.ask("А теперь рыцарем, пожалуйста", uploads=[info.id], session="d9", upload_fallback=True)
+    assert ans.route == "image" and ans.image["source"] == f"upload:{info.id}"
+    gen_engine.llm.image_plan = {**gen_engine.llm.image_plan, "action": "none"}  # "что на фото?" is not a picture
+    ans = gen_engine.ask("Что на фото?", uploads=[info.id], session="d9", upload_fallback=True)
+    assert ans.route != "image" and not ans.image

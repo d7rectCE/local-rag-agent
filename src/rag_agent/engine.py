@@ -18,6 +18,7 @@ from rag_agent.code.sandbox import DockerSandbox
 from rag_agent.code.workspace import Workspace, WorkspaceError
 from rag_agent.imagegen import (ASPECTS, ImageGenerator, ImageGenError, parse_size, plan_image, wants_edit,
                                 wants_image)
+from rag_agent import modelfiles
 from rag_agent.config import REPO_ROOT, Settings, load_settings
 from rag_agent.policy import Policy, Provenance, defang_markdown
 from rag_agent import generation
@@ -503,10 +504,13 @@ class Engine:
         return Answer(question=question, answer=text, answerable=True, grounded=True, route="image",
                       model=self.llm.name, image={**info.model_dump(), "url": info.url})
 
-    def capabilities(self, web_mode: str, code_mode: str, sandbox_net: bool) -> str:
+    def capabilities(self, web_mode: str, code_mode: str, sandbox_net: bool, image_model: str | None = None) -> str:
         """What the app can do right now, for the general answer: it must neither deny abilities the
-        user has turned on (the internet, running code) nor claim ones that are off."""
-        lines = ["Что ты умеешь в этом приложении сейчас:"]
+        user has turned on (the internet, running code) nor claim ones that are off, and it names the models
+        the user has selected (the chat model itself, the picture generator), not the ones of the config."""
+        lines = ["Что ты умеешь в этом приложении сейчас:",
+                 f"- ты — языковая модель {self.llm.name.removeprefix('ollama:')} (её выбирают слева внизу, в карточке "
+                 "модели чата); отвечаешь на вопросы, пишешь тексты и код;"]
         try:
             idx = self.index
         except NoCorpusError:
@@ -532,10 +536,19 @@ class Engine:
                              "запускаешь;")
         lines.append("- к вопросу можно прикрепить файл скрепкой: по нему отвечаешь в этом диалоге.")
         if self.imagegen.available:
-            lines.append("- картинки: рисуешь по описанию и редактируешь прикреплённые или нарисованные ранее (генератор "
-                         "Qwen-Image-2.1 на этом компьютере); просьба «нарисуй…» запускает его сама; если ты "
-                         "отвечаешь текстом, генератор в этом ответе не запускался — не пиши, что нарисовал или "
-                         "изменил картинку, а подскажи, как попросить («нарисуй…», «перерисуй в стиле…»);")
+            try:
+                dit = self.imagegen.model_path(image_model)
+            except ImageGenError:
+                dit = self.imagegen.cfg.diffusion_model
+            lines.append(
+                f"- картинки: генератор {modelfiles.label(dit)} на этом компьютере (его выбирают слева, в карточке модели "
+                "для картинок). Ты рисуешь по описанию и меняешь картинки (image-to-image): прикреплённое фото или "
+                "нарисованную раньше картинку можно изменить по описанию, сохранив позу, лицо, освещение и композицию "
+                "(правка по образцу), перерисовать в другом стиле, дорисовать выделенную кистью область, расширить за "
+                "края. Просьба «нарисуй…», «перерисуй…», «сделай её…» запускает генератор сама. Если ты отвечаешь "
+                "текстом, генератор в этом ответе не запускался: не пиши, что нарисовал или изменил картинку, и не "
+                "говори, что не умеешь, — подскажи, как попросить (прикрепить фото скрепкой и написать, что сделать: "
+                "«перерисуй в стиле аниме, сохрани позу и лицо», «сделай фон ночным»);")
         return "\n".join(lines)
 
     @staticmethod
@@ -869,9 +882,13 @@ class Engine:
         # pictures: an explicit request from the UI (a mode: edit, inpaint with a mask, outpaint with sides), words
         # like "нарисуй" / "перерисуй", or words of a change ("в стиле акварели", "убери фон") when the dialog has
         # a picture to change; the UI's choice of model and size alone ({"model", "size"}) is not a request
+        # (an image attached to the question always asks the plan: "сделай из меня рыцаря" has no word of the lists,
+        # and the plan says "none" for "что на фото?", which then goes to the files as before)
         explicit = bool(image and image.get("mode"))
+        attached = bool(session) and any(self.uploads.get(session, u).file_type in IMAGE_EXTS for u in uploads or [])
         if session and self.imagegen.available and (
-                explicit or wants_image(question) or (wants_edit(question) and self._has_picture(session, uploads))):
+                explicit or attached or wants_image(question)
+                or (wants_edit(question) and self._has_picture(session, uploads))):
             answer = self._answer_image(question, turns, session, uploads, image, steps)
         # a question for the internet does not go to the files that merely stay attached to the dialog
         if answer is None and uploads and not (upload_fallback and wants_web and web_mode != "off"):
@@ -917,7 +934,8 @@ class Engine:
             answer.question = question
         elif chosen == "general":
             answer = generate_general(question, turns, self.llm, reasoning_budget=budget,
-                                      capabilities=self.capabilities(web_mode, code_mode, sandbox_net))
+                                      capabilities=self.capabilities(web_mode, code_mode, sandbox_net,
+                                                                     (image or {}).get("model")))
         else:
             answer, escalated = self._answer_corpus(
                 standalone, index, steps, top_k=top_k, mode=mode, agent=agent, rerank=rerank, symbols=symbols,

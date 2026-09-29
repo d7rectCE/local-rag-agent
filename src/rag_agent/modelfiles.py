@@ -1,0 +1,97 @@
+"""Model files on this machine: what a weights file is (its family, from the GGUF metadata or the name) and
+the settings its family is known to work with.
+
+The UI names the models by what they are ("Krea 2", "Qwen-Image-2.1"), and the chat model is told which one
+is selected, so it does not describe a generator the user has switched away from."""
+
+from __future__ import annotations
+
+import re
+import struct
+from functools import lru_cache
+from pathlib import Path
+
+# the families sd.cpp runs, by general.architecture of the GGUF; sampling as each family works best here
+FAMILIES: dict[str, dict] = {
+    "qwen_image21": {"label": "Qwen-Image-2.1", "kind": "image"},
+    "qwen_image": {"label": "Qwen-Image", "kind": "image"},
+    "krea2": {"label": "Krea 2", "kind": "image"},
+    "flux": {"label": "FLUX", "kind": "image"},
+    "z_image": {"label": "Z-Image", "kind": "image"},
+    "ltx2": {"label": "LTX-2", "kind": "video"},
+    "ltxv": {"label": "LTX-Video", "kind": "video"},
+    "wan": {"label": "Wan", "kind": "video"},
+    "hunyuan_video": {"label": "HunyuanVideo", "kind": "video"},
+}
+# when a file carries no architecture (safetensors), its name tells
+_NAME_FAMILY = [(re.compile(p, re.IGNORECASE), f) for p, f in (
+    (r"qwen[-_]?image[-_]?2\.?1", "qwen_image21"), (r"qwen[-_]?image", "qwen_image"), (r"krea[-_]?2", "krea2"),
+    (r"flux", "flux"), (r"z[-_]?image", "z_image"), (r"ltx[-_]?2", "ltx2"), (r"ltx", "ltxv"), (r"\bwan", "wan"),
+    (r"hunyuan[-_]?video", "hunyuan_video"))]
+# a distilled build: few steps, no classifier-free guidance
+TURBO = re.compile(r"turbo|lightning|distill|schnell|hyper|lcm|\bfast\b", re.IGNORECASE)
+
+_TYPES = {0: "<B", 1: "<b", 2: "<H", 3: "<h", 4: "<I", 5: "<i", 6: "<f", 7: "<?", 10: "<Q", 11: "<q", 12: "<d"}
+
+
+@lru_cache(maxsize=64)
+def _gguf_meta(path: str, mtime: float) -> dict:
+    out: dict = {}
+    with open(path, "rb") as f:
+        if f.read(4) != b"GGUF":
+            return out
+        f.read(4)  # version
+        _, n_kv = struct.unpack("<QQ", f.read(16))
+
+        def string() -> str:
+            (n,) = struct.unpack("<Q", f.read(8))
+            return f.read(n).decode("utf-8", "replace")
+
+        def value(t: int):
+            if t == 8:
+                return string()
+            if t == 9:
+                item, n = struct.unpack("<IQ", f.read(12))
+                vals = [value(item) for _ in range(n)]
+                return vals[:8]
+            fmt = _TYPES[t]
+            return struct.unpack(fmt, f.read(struct.calcsize(fmt)))[0]
+
+        for _ in range(min(n_kv, 256)):
+            key = string()
+            (t,) = struct.unpack("<I", f.read(4))
+            val = value(t)
+            if key.startswith("general."):
+                out[key] = val
+    return out
+
+
+def gguf_meta(path: str | Path) -> dict:
+    """The general.* metadata of a GGUF file ({} for other files or a broken header)."""
+    p = Path(path)
+    if p.suffix.lower() != ".gguf" or not p.is_file():
+        return {}
+    try:
+        return _gguf_meta(str(p), p.stat().st_mtime)
+    except (OSError, struct.error, KeyError, ValueError):
+        return {}
+
+
+def family(path: str | Path) -> str:
+    arch = str(gguf_meta(path).get("general.architecture") or "")
+    if arch:
+        return arch
+    name = Path(path).name
+    return next((f for rx, f in _NAME_FAMILY if rx.search(name)), "")
+
+
+def label(path: str | Path) -> str:
+    """A human name: the family and the build ("Krea 2 (Krea2_turbo_uncensored_edit_v1.1-Q4_K_M)")."""
+    fam = FAMILIES.get(family(path), {}).get("label")
+    stem = Path(path).stem
+    return f"{fam} ({stem})" if fam else stem
+
+
+def is_turbo(path: str | Path) -> bool:
+    meta = gguf_meta(path)
+    return bool(TURBO.search(Path(path).name) or TURBO.search(str(meta.get("general.name") or "")))

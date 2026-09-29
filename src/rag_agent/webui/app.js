@@ -429,11 +429,11 @@ function openImageModelModal() {
     h('span', { class: 'folder-icon', icon: m.name === cur ? 'check' : 'image' }),
     h('span', { style: 'display:flex;flex-direction:column;min-width:0' },
       h('b', {}, stem(m.name), m.default ? h('span', { class: 'tag', style: 'margin-left:8px', text: 'по умолчанию' }) : null),
-      h('span', { class: 'path', text: [m.quant, m.size ? fmtSize(m.size) : ''].filter(Boolean).join(' · ') }))));
+      h('span', { class: 'path', text: [m.quant, m.size ? fmtSize(m.size) : '', m.steps ? `${m.steps} шагов, CFG ${m.cfg_scale}` : ''].filter(Boolean).join(' · ') }))));
   }
   openModal('Модель для картинок', [
     list,
-    h('p', { class: 'hint', style: 'margin:0' }, 'В списке — сборки той же модели (Qwen-Image-2.1 с другим квантованием или другим файн-тюном): у них общий VAE и текстовый энкодер. Чтобы модель появилась здесь, положите её файл .gguf или .safetensors рядом с моделью по умолчанию или в папку imagegen.models_dir (configs/local.yaml).'),
+    h('p', { class: 'hint', style: 'margin:0' }, 'Сборки модели по умолчанию (другое квантование, файн-тюн) достаточно положить рядом с ней или в папку imagegen.models_dir: у них общий VAE и текстовый энкодер. Модель другого семейства или turbo-версия со своими VAE, энкодером, шагами и CFG описывается в imagegen.models (configs/local.yaml).'),
   ], [h('button', { type: 'button', class: 'btn accent', onclick: closeModal }, 'Готово')]);
 }
 

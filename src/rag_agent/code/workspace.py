@@ -25,6 +25,9 @@ import sys
 from pathlib import Path
 
 TEXT_EXTS = {".py", ".ipynb", ".txt", ".md", ".log", ".csv", ".tsv", ".json", ".yaml", ".yml", ".toml", ".cfg", ".ini"}
+# data the code reads (a database for a service, a table for a report): copied, but ignored by git — never in
+# the diff and never applied back, so a run that writes into a copy cannot reach the user's data
+DATA_EXTS = {".db", ".sqlite", ".sqlite3", ".parquet", ".feather", ".xlsx", ".xls"}
 SKIP_DIRS = {".git", "__pycache__", ".ipynb_checkpoints", ".venv", "venv", "node_modules", ".mypy_cache", ".pytest_cache"}
 INITIAL = "initial"  # tag of the starting state
 
@@ -67,29 +70,36 @@ class Workspace:
     # --- creation and git --------------------------------------------------------------
     @classmethod
     def create(cls, root: Path, source: Path | None, exclude: list[str] = (), max_mb: float = 50.0,
-               file_max_mb: float = 2.0) -> Workspace:
+               file_max_mb: float = 2.0, data_max_mb: float = 200.0) -> Workspace:
         root.mkdir(parents=True, exist_ok=False)
         ws = cls(root)
-        total = 0
+        total = data_total = 0
         if source is not None:
             for path in sorted(source.rglob("*")):
                 rel = path.relative_to(source)
                 if any(part in SKIP_DIRS or part.startswith(".") for part in rel.parts[:-1]) or not path.is_file():
                     continue
-                if path.suffix.lower() not in TEXT_EXTS or any(fnmatch.fnmatch(p, pat) for p in rel.parts for pat in exclude):
+                suffix = path.suffix.lower()
+                if suffix not in TEXT_EXTS | DATA_EXTS or any(fnmatch.fnmatch(p, pat) for p in rel.parts for pat in exclude):
                     continue
                 size = path.stat().st_size
-                if size > file_max_mb * 2**20 or total + size > max_mb * 2**20:
+                if suffix in DATA_EXTS:
+                    if data_total + size > data_max_mb * 2**20:
+                        continue
+                    data_total += size
+                elif size > file_max_mb * 2**20 or total + size > max_mb * 2**20:
                     continue
+                else:
+                    total += size
                 dest = root / rel
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(path, dest)
-                total += size
         ws.git("init", "-q")
         ws.git("config", "user.name", "rag-agent")
         ws.git("config", "user.email", "agent@localhost")
         ws.git("config", "core.autocrlf", "false")
-        (root / ".gitignore").write_text(".agent/\n__pycache__/\n.ipynb_checkpoints/\n", encoding="utf-8")
+        (root / ".gitignore").write_text(".agent/\n__pycache__/\n.ipynb_checkpoints/\n.pytest_cache/\n"
+                                         + "".join(f"*{ext}\n" for ext in sorted(DATA_EXTS)), encoding="utf-8")
         ws.git("add", "-A")
         ws.git("commit", "-q", "--allow-empty", "-m", "начальное состояние")
         ws.git("tag", INITIAL)

@@ -129,7 +129,8 @@ class FakeLLM(BaseLLM):
     def __init__(self, settings: Settings, reply: dict | str | None = None, route: dict | str | None = None,
                  general: str = "Общий ответ.", extraction: dict | None = None, sql: list[dict] | None = None,
                  agent: list[dict] | None = None, pipeline: dict | None = None, web_query: str = "scikit-learn latest version",
-                 conflicts: list[dict] | None = None, code: bool = False, image_plan: dict | None = None):
+                 conflicts: list[dict] | None = None, code: bool = False, image_plan: dict | None = None,
+                 project_plan: dict | None = None, project_files: dict[str, str] | None = None):
         super().__init__(settings.llm)
         self.reply = reply if reply is not None else {"answerable": True, "answer": "Learning rate был 0.05 [1].", "general": ""}
         self.route = route  # None -> corpus with the question unchanged
@@ -143,6 +144,8 @@ class FakeLLM(BaseLLM):
         self.code = code  # the chat's check "does the request need running code"
         self.image_plan = image_plan or {"action": "none", "prompt": "", "aspect": "square", "sides": [],
                                          "minor_sexual": False}
+        self.project_plan = project_plan  # the code agent's plan of a new program
+        self.project_files = project_files or {}  # its files by path ("pkg/models.py"), written one per call
         self.calls: list[list[dict]] = []
         self.kinds: list[str] = []
         self.budgets: list[int] = []  # reasoning budgets of chat_reasoning calls
@@ -179,6 +182,9 @@ class FakeLLM(BaseLLM):
         elif "pipeline" in props:
             self.kinds.append("code_pipeline")
             reply = self.pipeline
+        elif "architecture" in props:
+            self.kinds.append("project_plan")
+            reply = self.project_plan
         elif "minor_sexual" in props:
             self.kinds.append("image_plan")
             reply = self.image_plan
@@ -198,6 +204,11 @@ class FakeLLM(BaseLLM):
             self.kinds.append("judge")
             reply = {"correctness": "correct", "faithful": True, "supported_citations": [1], "relevant": True,
                      "rationale": "ok"}
+        elif not props and (m := re.search(r"^Файл: (\S+)$", messages[-1]["content"], re.MULTILINE)) \
+                and m.group(1) in self.project_files:
+            self.kinds.append("project_file")
+            fence = "markdown" if m.group(1).endswith(".md") else "python"
+            reply = f"```{fence}\n{self.project_files[m.group(1)]}\n```"
         else:
             self.kinds.append("general")
             reply = self.general

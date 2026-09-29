@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from rag_agent.code.agent import CodeAgent, parse_command
+from rag_agent.code.agent import CodeAgent, compact_history, parse_command
 from rag_agent.code.sandbox import DockerSandbox, RunResult
 from rag_agent.code.workspace import Workspace, WorkspaceError
 from rag_agent.config import CodeConfig
@@ -97,10 +97,36 @@ def test_fix_loop_uses_execution_feedback(settings, tmp_path: Path, project: Pat
     res = agent.run()
     assert res.status == "done" and res.runs == 2 and res.failed_runs == 1
     assert "ZeroDivisionError" in res.lessons[0] and "0.5" in res.steps[2]["observation"]
-    # the lesson from the failed run is in the system prompt of the following steps (Reflexion)
-    assert "Выводы из прошлых попыток" in agent.llm.calls[-1][0]["content"]
+    # the lesson from the failed run comes right after the failure (Reflexion) ...
+    steps = agent.llm.calls[1:]  # calls[0] chose the pipeline
+    assert "Выводы из прошлых попыток" in steps[1][-1]["content"] and "Выводы" not in steps[1][0]["content"]
+    # ... and the prompt only grows: every call starts with the whole previous one (the model's cache holds)
+    for before, after in zip(steps[:-1], steps[1:]):
+        assert after[:len(before)] == before
     assert "+print(ratio(1, 2))" in res.diff and res.broken_files == []
     assert len(res.checkpoints) == 2 and (project / "scripts" / "ratio.py").read_text(encoding="utf-8").endswith("(1, 0))\n")
+
+
+def test_rereading_and_endless_reading_are_called_out(settings, tmp_path: Path, project: Path):
+    view = {"thought": "", "action": "view_file", "args": {"path": "scripts/ratio.py"}}
+    search = [{"thought": "", "action": "search", "args": {"pattern": f"x{i}"}} for i in range(5)]
+    script = [view, view, *search, {"thought": "", "action": "finish", "args": {"summary": "-"}}]
+    res = make_agent(settings, tmp_path, project, script).run()
+    assert "def ratio" in res.steps[0]["observation"]
+    assert "уже показан на шаге 1" in res.steps[1]["observation"] and "def ratio" not in res.steps[1]["observation"]
+    assert "только читаешь" not in res.steps[4]["observation"] and "6 шагов подряд только читаешь" in res.steps[5]["observation"]
+
+
+def test_old_outputs_are_cut_once_the_history_is_long():
+    history = []
+    for i in range(10):
+        history += [{"role": "assistant", "content": f'{{"action": "view_file", "i": {i}}}'},
+                    {"role": "user", "content": f"Результат view_file:\nfile{i}\n" + "x" * 5000}]
+    out = compact_history(history)
+    assert len(out) == len(history) and out[-12:] == history[-12:]  # the last steps stay whole
+    assert out[1]["content"].startswith("Результат view_file:\nfile0\n(вывод сокращён")
+    assert out[0] == history[0]  # the model's own calls stay
+    assert sum(len(m["content"]) for m in out) < 0.7 * sum(len(m["content"]) for m in history)
 
 
 def test_single_attempt_stops_after_the_first_failure(settings, tmp_path: Path, project: Path):

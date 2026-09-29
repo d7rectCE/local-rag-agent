@@ -236,3 +236,40 @@ def test_the_generator_reports_its_device_and_sizes(gen_engine):
         info = client.get("/imagegen").json()
     assert info["available"] and info["device"] == {"backend": "Vulkan", "name": "RX 9070 XT"}
     assert {"id": "16:9", "width": 2752, "height": 1536} in info["sizes"] and info["models"][0]["name"] == "dit.gguf"
+
+
+def test_a_model_of_another_family_brings_its_own_files_and_sampling(gen_engine, tmp_path):
+    from rag_agent.config import ImageModelProfile
+
+    d = tmp_path / "krea"
+    d.mkdir()
+    for name in ("krea-turbo-Q4_K_M.gguf", "wan_vae.safetensors", "te4b.safetensors"):
+        (d / name).write_bytes(b"x")
+    g = gen_engine.settings.imagegen
+    g.models = [ImageModelProfile(path=str(d / "krea-turbo-Q4_K_M.gguf"), vae=str(d / "wan_vae.safetensors"),
+                                  llm=str(d / "te4b.safetensors"), steps=8, cfg_scale=1.0, sampler="euler",
+                                  scheduler="simple", text_encoder_on_cpu=False)]
+    models = {m["name"]: m for m in gen_engine.imagegen.models()}
+    assert models["krea-turbo-Q4_K_M.gguf"]["steps"] == 8 and models["dit.gguf"]["steps"] == g.steps
+
+    def opt(args, flag):
+        return args[args.index(flag) + 1]
+
+    gen_engine.ask("Нарисуй лису", session="d8", image={"model": "krea-turbo-Q4_K_M.gguf"})
+    args = gen_engine.fake_sd.calls[-1]
+    assert opt(args, "--vae") == str(d / "wan_vae.safetensors") and opt(args, "--llm") == str(d / "te4b.safetensors")
+    assert (opt(args, "--steps"), opt(args, "--cfg-scale"), opt(args, "--scheduler")) == ("8", "1.0", "simple")
+    assert "te=cpu" not in args  # the whole model on the GPU
+    gen_engine.ask("Нарисуй лису", session="d8")  # the default model keeps its own files and sampling
+    args = gen_engine.fake_sd.calls[-1]
+    assert opt(args, "--vae") == g.vae and opt(args, "--steps") == str(g.steps) and "--scheduler" not in args
+    assert "te=cpu" in args
+
+
+def test_an_sd_cli_failure_names_its_cause():
+    devices = "ggml_vulkan: 0 = AMD Radeon RX 7900 XTX\nload_backend: loaded CPU backend from ggml-cpu.dll\n"
+    log = "[INFO   ] model_loader.cpp:1383 - loading tensors completed\n[INFO   ] image.cpp:529 - get_learned_condition\n"
+    msg = imagegen.sd_error(3221225477, log, devices)  # a crash: the device list alone said nothing
+    assert msg.startswith("движок аварийно завершился (код 3221225477)") and "get_learned_condition" in msg
+    msg = imagegen.sd_error(1, log + "[ERROR  ] model.cpp:12 - unknown tensor type\n", devices)
+    assert msg.startswith("движок завершился с ошибкой") and "unknown tensor type" in msg

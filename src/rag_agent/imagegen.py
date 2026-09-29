@@ -311,6 +311,24 @@ def step_cost(width: int, height: int, mode: str = "generate") -> float:
     return mp * (1 + mp / 4.4)
 
 
+# a crash rather than an error: access violation on Windows, SIGSEGV / SIGABRT elsewhere
+_CRASH = {3221225477, -1073741819, 3221226505, -1073740791, 139, -11, 134, -6}
+
+
+def sd_error(code: int, stdout: str, stderr: str) -> str:
+    """What went wrong, from sd-cli's own log: sd.cpp writes it to stdout ([INFO] / [ERROR] lines), while
+    stderr holds the device list of ggml — which is all the user saw before."""
+    lines = (stdout + "\n" + stderr).splitlines()
+    errors = [ln.strip() for ln in lines if "[ERROR" in ln]
+    if errors:
+        detail = "\n".join(errors[-3:])
+    else:
+        info = [ln.strip() for ln in stdout.splitlines() if ln.startswith("[INFO")]
+        detail = f"последний шаг: {info[-1]}" if info else (stdout or stderr)[-400:].strip()
+    what = "движок аварийно завершился" if code in _CRASH else "движок завершился с ошибкой"
+    return f"{what} (код {code}): {detail}"
+
+
 def fit32(size: tuple[int, int], limit: int = 1344, least: int = 1024) -> tuple[int, int]:
     """A generation size with the source's proportions, within the model's range and divisible by 32: a small
     photo is drawn larger (the model gives little detail far below a megapixel), a large one smaller."""
@@ -344,8 +362,8 @@ class ImageGenerator:
         if not c.diffusion_model:
             return {}
         default = Path(c.diffusion_model)
-        skip = {Path(p).name.lower() for p in (c.vae, c.llm) if p}
-        found = {default.name: default}
+        skip = {Path(p).name.lower() for p in (c.vae, c.llm, *(x for m in c.models for x in (m.vae, m.llm))) if p}
+        found = {default.name: default, **{Path(m.path).name: Path(m.path) for m in c.models if m.path}}
         for d in dict.fromkeys([default.parent, *([Path(c.models_dir)] if c.models_dir else [])]):
             if d.is_dir():
                 for f in sorted(d.iterdir()):
@@ -354,15 +372,30 @@ class ImageGenerator:
                         found.setdefault(f.name, f)
         return found
 
+    def profile(self, name: str) -> dict:
+        """How a model runs: its VAE, text encoder and sampling — from its entry in ``imagegen.models`` if it
+        has one, the rest from the imagegen section (the default model and builds of its family)."""
+        c = self.cfg
+        prof = next((m for m in c.models if Path(m.path).name == name), None)
+        return {"vae": (prof and prof.vae) or c.vae, "llm": (prof and prof.llm) or c.llm,
+                "steps": (prof and prof.steps) or c.steps,
+                "cfg_scale": prof.cfg_scale if prof and prof.cfg_scale is not None else c.cfg_scale,
+                "sampler": (prof and prof.sampler) or c.sampler, "scheduler": (prof and prof.scheduler) or c.scheduler,
+                "text_encoder_on_cpu": (prof.text_encoder_on_cpu if prof and prof.text_encoder_on_cpu is not None
+                                        else c.text_encoder_on_cpu)}
+
     def models(self) -> list[dict]:
-        """The diffusion models to choose from: the configured one and the other weights of its folder (and of
-        ``imagegen.models_dir``) — other builds of the same model family, which share its VAE and text encoder."""
+        """The diffusion models to choose from: the configured one, the models of ``imagegen.models`` (each with
+        its own VAE, encoder and sampling) and the other weights of the default model's folder and of
+        ``imagegen.models_dir`` — builds of the default model's family, which share its VAE and text encoder."""
         default = Path(self.cfg.diffusion_model) if self.cfg.diffusion_model else None
         out = []
         for name, p in self._model_files().items():
             m = _QUANT.search(p.stem)
+            prof = self.profile(name)
             out.append({"name": name, "size": p.stat().st_size if p.exists() else 0,
-                        "quant": m.group(1).upper() if m else "", "default": p == default})
+                        "quant": m.group(1).upper() if m else "", "default": p == default,
+                        "steps": prof["steps"], "cfg_scale": prof["cfg_scale"]})
         return out
 
     def model_path(self, name: str | None) -> str:
@@ -446,6 +479,10 @@ class ImageGenerator:
             raise ImageGenError("для этого режима нужна картинка-источник")
         c = self.cfg
         dit = self.model_path(model)
+        prof = self.profile(Path(dit).name)
+        for part in ("vae", "llm"):
+            if not prof[part] or not Path(prof[part]).exists():
+                raise ImageGenError(f"у модели {Path(dit).name} не найден файл {part}: {prof[part] or 'не задан'}")
         out_dir = self._dir(dialog)
         out_dir.mkdir(parents=True, exist_ok=True)
         image_id = uuid.uuid4().hex[:12]
@@ -453,13 +490,15 @@ class ImageGenerator:
         work.mkdir()
         w = short_path(work)
         seed = int(seed if seed is not None else uuid.uuid4().int % 2**31)
-        steps = int(steps or c.steps)
-        args = [c.sd_cli, "--diffusion-model", dit, "--vae", c.vae, "--llm", c.llm,
-                "--cfg-scale", str(c.cfg_scale), "--sampling-method", c.sampler, "--steps", str(steps),
+        steps = int(steps or prof["steps"])
+        args = [c.sd_cli, "--diffusion-model", dit, "--vae", prof["vae"], "--llm", prof["llm"],
+                "--cfg-scale", str(prof["cfg_scale"]), "--sampling-method", prof["sampler"], "--steps", str(steps),
                 "-s", str(seed), "-p", prompt, "-o", os.path.join(w, "out.png")]
+        if prof["scheduler"]:
+            args += ["--scheduler", prof["scheduler"]]
         if c.negative_prompt:
             args += ["-n", c.negative_prompt]
-        if c.text_encoder_on_cpu:
+        if prof["text_encoder_on_cpu"]:
             # an edit feeds the picture itself to the vision-language encoder: hundreds of image tokens, which
             # the CPU encodes for minutes; then the weights stay in RAM and the GPU computes (181 s vs 312 s)
             args += ["--params-backend", "te=cpu"] if mode == "edit" else ["--backend", "te=cpu"]
@@ -523,9 +562,7 @@ class ImageGenerator:
             elapsed = round(time.perf_counter() - t0, 1)
             produced = work / "out.png"
             if proc.returncode != 0 or not produced.exists():
-                errors = [ln for ln in (proc.stderr or proc.stdout or "").splitlines() if "[ERROR" in ln]
-                tail = "\n".join(errors[-3:]) or (proc.stderr or proc.stdout or "")[-400:]
-                raise ImageGenError(f"движок завершился с ошибкой ({proc.returncode}): {tail}")
+                raise ImageGenError(sd_error(proc.returncode, proc.stdout or "", proc.stderr or ""))
             if mode == "outpaint":
                 blend_back(produced, work / "init.png", work / "keep.png")
             out = out_dir / f"{image_id}.png"

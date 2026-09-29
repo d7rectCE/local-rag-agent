@@ -199,9 +199,15 @@ class CodeConfig(BaseModel):
     pids: int = 256
     max_iterations: int = 5  # failed runs before the agent stops (H13: 1 = no fixing from execution feedback)
     max_steps: int = 20
+    # a new multi-module program (the "project" pipeline): the fix loop after the planned files gets more room
+    project_max_steps: int = 40
+    project_max_iterations: int = 8
     aci: bool = True  # view / search / edit with a syntax check; false: whole-file overwrite (H14 baseline)
     workspace_max_mb: float = 50.0  # text files copied from the corpus into the working copy
     file_max_mb: float = 2.0
+    # databases and tables (SQLite, Parquet, Excel) are copied too, to be read by the code; they are ignored by
+    # git, so they never show in the diff and are never copied back into the user's folder
+    data_max_mb: float = 200.0
     # the whole corpus read-only at /corpus: off by default — it would expose folders excluded from indexing
     # (e.g. "Аккаунты"); the working copy already holds the filtered text files
     mount_corpus: bool = False
@@ -254,6 +260,22 @@ class ImagesConfig(BaseModel):
     channel: Literal["text", "visual", "fusion"] = "text"
 
 
+class ImageModelProfile(BaseModel):
+    """A diffusion model with its own companions and sampling: another family (its own VAE and text encoder)
+    or a distilled "turbo" build (few steps, CFG 1). Empty fields fall back to the imagegen section."""
+
+    path: str
+    vae: str = ""
+    llm: str = ""
+    steps: int | None = None
+    cfg_scale: float | None = None
+    sampler: str = ""
+    scheduler: str = ""  # sd-cli --scheduler (simple, discrete, karras, ...); empty: the model's default
+    # None: as the imagegen section. A small model fits the GPU whole; an fp8 encoder must not run on the CPU
+    # (the CPU backend of sd.cpp crashed on Qwen3-VL-4B fp8 weights, the Vulkan one runs them)
+    text_encoder_on_cpu: bool | None = None
+
+
 class ImageGenConfig(BaseModel):
     """Image generation and editing in the chat (Qwen-Image-2.1 through stable-diffusion.cpp's sd-cli).
     Off by default: the engine and the weights are the user's local choice; the paths belong in
@@ -272,6 +294,9 @@ class ImageGenConfig(BaseModel):
     # stripes: their strength (FFT at 8 px) fell 117 -> 44 -> 23 at CFG 6 -> 4 -> 3, the same on Vulkan and ROCm
     cfg_scale: float = 3.0
     sampler: str = "euler"
+    scheduler: str = ""  # sd-cli --scheduler; empty: the model's default
+    # more models for the UI picker, each with its own VAE, text encoder and sampling (see ImageModelProfile)
+    models: list[ImageModelProfile] = []
     strength: float = 0.75  # redraw: how far the result may move from the source
     negative_prompt: str = ""
     # the text encoder (8B) runs on the CPU (~9 s per prompt) and the DiT + VAE stay on the GPU: offloading all

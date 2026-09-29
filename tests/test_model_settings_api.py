@@ -59,3 +59,32 @@ def test_settings_endpoints(settings, fake_embedder):
         assert client.get("/settings/image").status_code == 404  # no generator configured
         assert client.get("/settings/audio").status_code == 404
     eng.close()
+
+
+def test_chat_models_of_models_text_are_imported_into_ollama(settings, fake_embedder, monkeypatch):
+    import subprocess as sp
+
+    from rag_agent import api as api_module
+
+    folder = settings.models_dir / "text"
+    folder.mkdir(parents=True)
+    (folder / "My-Chat 8B.Q4_K_M.gguf").write_bytes(b"x")
+    calls = []
+
+    def fake_run(args, **kwargs):
+        if args[:2] == ["ollama", "create"]:
+            calls.append((args, open(args[-1], encoding="utf-8").read()))
+            return sp.CompletedProcess(args, 0, "success", "")
+        return real(args, **kwargs)
+
+    real = sp.run
+    monkeypatch.setattr(api_module.subprocess, "run", fake_run)
+    eng = Engine(settings, embedder=fake_embedder, llm=FakeLLM(settings))
+    with TestClient(create_app(eng)) as client:
+        [f] = client.get("/models").json()["files"]
+        assert f["ollama"] == "my-chat-8b.q4_k_m" and not f["imported"]
+        assert client.post("/models/import", json={"file": "../secret.gguf"}).status_code == 404  # names only
+        assert client.post("/models/import", json={"file": f["name"]}).json() == {"model": "my-chat-8b.q4_k_m"}
+    [(args, modelfile)] = calls
+    assert args[2] == "my-chat-8b.q4_k_m" and modelfile.startswith('FROM "') and "My-Chat 8B.Q4_K_M.gguf" in modelfile
+    eng.close()

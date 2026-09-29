@@ -2119,8 +2119,23 @@ async function openModelModal() {
       h('span', { class: 'path', text: meta }))));
   }
   if (!list.childElementCount) list.append(h('p', { class: 'small muted', style: 'margin:0', text: 'Ollama не отвечает или в ней нет моделей: ollama pull qwen3.5:9b' }));
+  // GGUF files of models/text that Ollama does not have yet
+  const files = (S.models?.files || []).filter((f) => !f.imported);
+  const importList = files.length ? h('div', { class: 'list models' }, files.map((f) => {
+    const btn = h('button', { type: 'button', class: 'btn-pill accent', onclick: async () => {
+      btn.disabled = true;
+      btn.textContent = 'Импортирую…';
+      const res = await guarded(() => api('POST', '/models/import', { file: f.name }), `В Ollama: ${f.ollama}`);
+      if (res) { await guarded(loadModels); closeModal(); openModelModal(); }
+      else { btn.disabled = false; btn.textContent = 'Импортировать в Ollama'; }
+    } }, 'Импортировать в Ollama');
+    return h('div', { class: 'file-row', style: 'align-items:center' }, h('span', { class: 'folder-icon', icon: 'upload' }),
+      h('span', { style: 'display:flex;flex-direction:column;min-width:0;flex:1' }, h('b', { text: f.name }), h('span', { class: 'path', text: `${fmtSize(f.size)} · станет ${f.ollama}` })), btn);
+  })) : null;
   openModal('Модель', [
     list,
+    importList ? h('div', { class: 'field' }, h('span', { class: 'label', text: 'В папке models/text' }), importList,
+      h('span', { class: 'hint', text: 'Ollama копирует веса к себе: большой модели нужно несколько минут. После импорта файл в models/text можно удалить.' })) : null,
     h('p', { class: 'hint', style: 'margin:0' }, `Выбранная модель отвечает на новые вопросы в этом браузере и работает код-агентом. Индексация и каталог экспериментов остаются на модели по умолчанию (${def}), на ней же сделаны все замеры в отчётах. Две модели одновременно в память видеокарты могут не поместиться: Ollama выгрузит прежнюю, и первый ответ новой будет дольше.`),
   ], [h('button', { type: 'button', class: 'btn accent', onclick: closeModal }, 'Готово')]);
 }

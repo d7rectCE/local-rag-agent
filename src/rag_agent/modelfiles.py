@@ -161,6 +161,12 @@ def scan(root: Path, kind: str) -> list[dict]:
     return out
 
 
+def ollama_name(file_name: str) -> str:
+    """The Ollama name of a chat model from models/text: its file name, lower case, without the extension."""
+    stem = Path(file_name).stem.lower()
+    return re.sub(r"[^a-z0-9._-]+", "-", stem).strip("-.")[:80] or "model"
+
+
 # sampling each family is known to work with (the UI's settings go over it)
 PRESETS: dict[str, dict] = {
     "qwen_image21": {"steps": 20, "cfg_scale": 3.0, "sampler": "euler"},

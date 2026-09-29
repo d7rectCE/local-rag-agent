@@ -57,6 +57,10 @@ class DialogRequest(BaseModel):
     title: str = ""
 
 
+class ImportRequest(BaseModel):
+    file: str
+
+
 class ModelSettingsRequest(BaseModel):
     values: dict = {}
 
@@ -291,9 +295,42 @@ def create_app(engine: Engine | None = None) -> FastAPI:
 
     @app.get("/models")
     def models() -> dict:
-        """Installed chat models for the UI picker; ``default`` is the configured one (the eval runs use it)."""
+        """Installed chat models for the UI picker; ``default`` is the configured one (the eval runs use it);
+        ``files``: the GGUF chat models of models/text, with the name they get (or have) in Ollama."""
+        from rag_agent import modelfiles
+
         e = eng()
-        return {"default": e.settings.llm.model, "models": e.llm.installed()}
+        installed = e.llm.installed()
+        names = {m["name"] for m in installed} | {m["name"].removesuffix(":latest") for m in installed}
+        files = [{"name": f["name"], "size": f["size"], "ollama": modelfiles.ollama_name(f["name"]),
+                  "imported": modelfiles.ollama_name(f["name"]) in names}
+                 for f in modelfiles.scan(e.settings.models_dir, "text")]
+        return {"default": e.settings.llm.model, "models": installed, "files": files}
+
+    @app.post("/models/import")
+    def import_model(req: ImportRequest) -> dict:
+        """A GGUF of models/text into Ollama (``ollama create`` from the file; Ollama copies the weights into
+        its store, which takes a while for a big model). Only files of that folder, by name."""
+        import tempfile
+
+        from rag_agent import modelfiles
+
+        e = eng()
+        found = next((f for f in modelfiles.scan(e.settings.models_dir, "text") if f["name"] == req.file), None)
+        if found is None:
+            raise HTTPException(404, f"в models/text нет файла «{req.file}»")
+        name = modelfiles.ollama_name(found["name"])
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = Path(tmp) / "Modelfile"
+            spec.write_text(f'FROM "{found["path"]}"\n', encoding="utf-8")
+            try:
+                res = subprocess.run(["ollama", "create", name, "-f", str(spec)], capture_output=True, text=True,
+                                     encoding="utf-8", errors="replace", timeout=3600)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                raise HTTPException(502, f"ollama create не запустился: {exc}") from exc
+        if res.returncode != 0:
+            raise HTTPException(502, f"ollama create: {(res.stderr or res.stdout).strip()[-400:]}")
+        return {"model": name}
 
     @app.post("/pick-folder")
     def pick_folder(req: PickFolderRequest) -> dict:

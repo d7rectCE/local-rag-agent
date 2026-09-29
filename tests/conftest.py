@@ -131,7 +131,8 @@ class FakeLLM(BaseLLM):
                  general: str = "Общий ответ.", extraction: dict | None = None, sql: list[dict] | None = None,
                  agent: list[dict] | None = None, pipeline: dict | None = None, web_query: str = "scikit-learn latest version",
                  conflicts: list[dict] | None = None, code: bool = False, image_plan: dict | None = None,
-                 project_plan: dict | None = None, project_files: dict[str, str] | None = None):
+                 project_plan: dict | None = None, project_files: dict[str, str] | None = None,
+                 video_plan: dict | None = None):
         super().__init__(settings.llm)
         self.reply = reply if reply is not None else {"answerable": True, "answer": "Learning rate был 0.05 [1].", "general": ""}
         self.route = route  # None -> corpus with the question unchanged
@@ -146,6 +147,8 @@ class FakeLLM(BaseLLM):
         self.image_plan = image_plan or {"action": "none", "prompt": "", "aspect": "square", "sides": [],
                                          "minor_sexual": False}
         self.project_plan = project_plan  # the code agent's plan of a new program
+        self.video_plan = video_plan or {"action": "none", "prompt": "", "seconds": 0, "aspect": "landscape",
+                                         "minor_sexual": False}
         self.project_files = project_files or {}  # its files by path ("pkg/models.py"), written one per call
         self.calls: list[list[dict]] = []
         self.kinds: list[str] = []
@@ -186,6 +189,9 @@ class FakeLLM(BaseLLM):
         elif "architecture" in props:
             self.kinds.append("project_plan")
             reply = self.project_plan
+        elif "seconds" in props:
+            self.kinds.append("video_plan")
+            reply = self.video_plan
         elif "minor_sexual" in props:
             self.kinds.append("image_plan")
             reply = self.image_plan

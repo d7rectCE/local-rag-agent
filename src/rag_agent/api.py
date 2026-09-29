@@ -98,12 +98,14 @@ class AskRequest(BaseModel):
     # a picture action from the UI: {mode: generate|edit|redraw|inpaint|outpaint, source: "generated:<id>" |
     # "upload:<id>", mask: PNG as base64 (white = redraw), sides: [left, right, top, bottom], strength, seed}
     image: dict | None = None
+    video: dict | None = None  # {"mode": "animate", "source": ..., "model": ...}
 
 
 WEBUI = Path(__file__).with_name("webui")
 # rule 4 (ТЗ ч.2 S20) for the page itself: nothing is loaded from outside the machine, whatever an
 # answer contains; inline styles are allowed for the few computed widths (trace bars)
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+       "media-src 'self'; "
        "font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; "
        "form-action 'self'")
 _PICKER = """
@@ -186,6 +188,27 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             "policies": e.settings.security.policies,
         }
 
+    @app.get("/videos/{dialog_id}/{name}")
+    def generated_video(dialog_id: str, name: str) -> FileResponse:
+        """A generated video of a dialog (``<id>.webm``)."""
+        from rag_agent.videogen import VideoGenError
+
+        try:
+            p = eng().videogen.path(dialog_id, name.removesuffix(".webm"))
+        except VideoGenError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        if not p.exists():
+            raise HTTPException(404, "видео не найдено")
+        return FileResponse(p, media_type="video/webm")
+
+    @app.get("/videogen")
+    def videogen_info() -> dict:
+        """The video generator for the UI: its models and the device it computes on."""
+        v = eng().videogen
+        if not v.available:
+            return {"available": False, "missing": v.missing(), "models": v.models()}
+        return {"available": True, "models": v.models(), "device": eng().imagegen.device()}
+
     @app.get("/imagegen")
     def imagegen_info() -> dict:
         """The picture generator for the UI: its models, the device it computes on, the sizes of the model
@@ -229,6 +252,18 @@ def create_app(engine: Engine | None = None) -> FastAPI:
                     "recommended": g.recommended(name), "choices": {"sampler": SAMPLERS, "scheduler": SCHEDULERS},
                     "info": {"label": modelfiles.label(entry["path"]), "vae": Path(entry["vae"]).name if entry["vae"] else "",
                              "llm": Path(entry["llm"]).name if entry["llm"] else "", "source": entry["source"]}}
+        if kind == "video":
+            v = e.videogen
+            name = name or v.default_name()
+            entry = v.catalog().get(name)
+            if entry is None:
+                raise HTTPException(404, f"видеомодель «{name}» не найдена")
+            from rag_agent import modelfiles
+
+            files = {k: Path(entry[k]).name for k in ("vae", "llm", "audio_vae", "connectors") if entry.get(k)}
+            return {"kind": kind, "name": name, "values": v.store.get("video", name),
+                    "recommended": v.recommended(name), "choices": {"sampler": SAMPLERS, "scheduler": SCHEDULERS},
+                    "info": {"label": modelfiles.label(entry["path"]), **files, "source": entry["source"]}}
         raise HTTPException(404, f"настройки для «{kind}» пока не поддерживаются")
 
     @app.get("/settings/{kind}")
@@ -306,6 +341,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
         for info in eng().uploads.list(dialog_id):  # the dialog is the upload session
             eng().uploads.delete(dialog_id, info.id)
         eng().imagegen.delete_dialog(dialog_id)
+        eng().videogen.delete_dialog(dialog_id)
         return {"deleted": dialog_id}
 
     @app.get("/images/{dialog_id}/{name}")
@@ -535,6 +571,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
                 model=req.model,
                 upload_fallback=req.upload_fallback,
                 image=req.image,
+                video=req.video,
             )
             if req.dialog_id:
                 if not req.replace_last:
@@ -543,7 +580,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
                                                 "reasoning": req.reasoning, "code": req.code,
                                                 "sandbox_net": req.sandbox_net, "model": req.model,
                                                 "image": {k: v for k, v in (req.image or {}).items() if k != "mask"}
-                                                or None})
+                                                or None, "video": req.video})
                 dialogs().add_turn(req.dialog_id, "assistant", "answer", answer.answer, payload=answer.model_dump(),
                                    ref=answer.code["task_id"] if answer.code else None)
             return answer

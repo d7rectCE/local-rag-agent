@@ -33,6 +33,7 @@ const ICONS = {
   external: '<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
   image: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-9 8"/>',
   frame: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+  film: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>',
 };
 
 function icon(name, size = 16, width = 1.8) {
@@ -113,7 +114,8 @@ function loadPrefs() {
 }
 function savePrefs() {
   const p = { route: S.route, reasoning: S.reasoning, web: S.web, sandboxNet: S.sandboxNet, model: S.model, settings: S.settings,
-    imageModel: S.imageModel, imageSize: S.imageSize, panelTab: S.panelTab, settingsKind: S.settingsKind };
+    imageModel: S.imageModel, imageSize: S.imageSize, panelTab: S.panelTab, settingsKind: S.settingsKind,
+    videoModel: S.videoModel };
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch { /* private mode */ }
 }
 
@@ -133,7 +135,9 @@ const S = {
   sandboxNet: !!prefs.sandboxNet,  // code may run with network; every such task is confirmed
   model: prefs.model || null,      // null: the configured model
   models: null,                    // {default, models: [...]} from /models
-  imagegen: null,                  // the picture generator: models, device, sizes, time model (/imagegen)
+  imagegen: null,                  // the picture generator: models, device, sizes (/imagegen)
+  videogen: null,                  // the video generator: models, device (/videogen)
+  videoModel: prefs.videoModel || null,  // null: the first video model
   imageModel: prefs.imageModel || null,  // null: the configured diffusion model
   imageSize: prefs.imageSize || 'auto',  // auto | source | an official ratio ("16:9") | "WxH"
   panelTab: prefs.panelTab || 'trace',   // the right panel: the course of the answer or the model settings
@@ -208,6 +212,11 @@ async function loadImagegen() {
   S.imagegen = await api('GET', '/imagegen');
   const names = (S.imagegen.models || []).map((m) => m.name);
   if (S.imageModel && !names.includes(S.imageModel)) { S.imageModel = null; savePrefs(); } // the file is gone
+}
+async function loadVideogen() {
+  S.videogen = await api('GET', '/videogen');
+  const names = (S.videogen.models || []).map((m) => m.name);
+  if (S.videoModel && !names.includes(S.videoModel)) { S.videoModel = null; savePrefs(); }
 }
 async function loadDialogs() { S.dialogs = await api('GET', '/dialogs'); renderDialogs(); }
 async function loadUploads() {
@@ -416,6 +425,45 @@ function renderImageModel() {
     h('span', { class: 'dot', role: 'img', 'aria-label': 'Генератор картинок настроен', title: 'Генератор картинок настроен' }));
 }
 
+function renderVideoModel() {
+  const el = $('#video-model');
+  const vg = S.videogen;
+  el.hidden = !vg?.available;
+  if (!vg?.available) return;
+  const def = (vg.models || []).find((m) => m.default)?.name;
+  const name = stem(S.videoModel || def) || '—';
+  const dev = vg.device || {};
+  el.replaceChildren(
+    h('div', { class: 'model-icon', icon: 'film' }),
+    h('button', { type: 'button', class: 'model-name', title: 'Выбрать модель для видео', 'aria-label': `Модель видео ${name}. Выбрать другую`, onclick: openVideoModelModal },
+      h('b', { text: name }), h('span', { text: ['sd.cpp', dev.backend, dev.name].filter(Boolean).join(' · ') + (S.videoModel ? ' · выбрана' : '') })),
+    h('span', { class: 'dot', role: 'img', 'aria-label': 'Генератор видео настроен', title: 'Генератор видео настроен' }));
+}
+
+function openVideoModelModal() {
+  const vg = S.videogen || {};
+  const def = (vg.models || []).find((m) => m.default)?.name;
+  const cur = S.videoModel || def;
+  const list = h('div', { class: 'list models' });
+  for (const m of vg.models || []) {
+    list.append(h('button', { type: 'button', 'aria-pressed': String(m.name === cur), onclick: () => {
+      S.videoModel = m.name === def ? null : m.name;
+      savePrefs();
+      closeModal();
+      renderVideoModel();
+      toast(`Модель видео: ${stem(m.name)}`);
+    } },
+    h('span', { class: 'folder-icon', icon: m.name === cur ? 'check' : 'film' }),
+    h('span', { style: 'display:flex;flex-direction:column;min-width:0' },
+      h('b', {}, m.label || stem(m.name), m.default ? h('span', { class: 'tag', style: 'margin-left:8px', text: 'по умолчанию' }) : null),
+      h('span', { class: 'path', text: [m.size ? fmtSize(m.size) : '', m.audio ? 'со звуком' : 'без звука', m.steps ? `${m.steps} шагов, CFG ${m.cfg_scale}` : ''].filter(Boolean).join(' · ') }))));
+  }
+  openModal('Модель для видео', [
+    list,
+    h('p', { class: 'hint', style: 'margin:0' }, 'Видеомодели лежат папками в models/video: модель, VAE видео, VAE звука, текстовый энкодер и коннекторы (для LTX-2.3). Настройки — во вкладке «Видео» панели настроек.'),
+  ], [h('button', { type: 'button', class: 'btn accent', onclick: closeModal }, 'Готово')]);
+}
+
 function openImageModelModal() {
   const ig = S.imagegen || {};
   const def = (ig.models || []).find((m) => m.default)?.name;
@@ -570,7 +618,7 @@ function renderAttachments() {
   if (S.imageTarget) {
     const t = S.imageTarget;
     box.append(h('span', { class: 'att image-target', title: 'Следующее сообщение изменит эту картинку' },
-      h('img', { class: 'att-thumb', src: t.url, alt: '' }), h('b', { text: 'Правка картинки' }),
+      h('img', { class: 'att-thumb', src: t.url, alt: '' }), h('b', { text: t.video ? 'Оживление картинки' : 'Правка картинки' }),
       h('button', { type: 'button', class: 'mini-btn', 'aria-label': 'Отменить правку', onclick: () => { S.imageTarget = null; renderControls(); }, icon: ['x', 12, 2.2] })));
   }
   for (const id of S.attachments) {
@@ -711,6 +759,7 @@ function routeLabel(a) {
   const web = (a.sources || []).some((s) => s.file_type === 'web');
   if (a.route === 'code') return 'код-агент';
   if (a.route === 'image') return 'картинка';
+  if (a.route === 'video') return 'видео';
   if (a.route === 'general') return 'общие знания';
   if (a.route === 'web') return (a.sources || []).some((s) => s.file_type !== 'web') ? 'веб + мои файлы' : 'веб';
   if (a.route === 'upload') return 'загруженный файл';
@@ -781,7 +830,11 @@ function renderAnswer(turn, turns, idx) {
           h('button', { type: 'button', class: 'btn-pill', onclick: (e) => { e.currentTarget.closest('.notice').remove(); } }, 'Не надо')))));
   }
 
-  if (a.image) {  // a generated or edited picture
+  if (a.video) {  // a generated video
+    art.append(videoCard(a.video));
+    if (a.answer) art.append(renderMarkdown(a.answer, []));
+  }
+  else if (a.image) {  // a generated or edited picture
     art.append(imageCard(a.image));
     if (a.answer) art.append(renderMarkdown(a.answer, []));
   }
@@ -829,7 +882,18 @@ function renderAnswer(turn, turns, idx) {
 // --------------------------------------------------------------------------- pictures (imagegen)
 
 const IMAGE_MODES = { generate: 'нарисовано', edit: 'изменено', redraw: 'перерисовано', inpaint: 'область дорисована', outpaint: 'расширено' };
+const VIDEO_RE = /видео|ролик|клип\b|анимир|анимаци|оживи|\b(video|animate|clip)\b/i;
 const IMAGE_RE = /нарису|перерису|дорису|изобрази|сгенерир\S*\s+(картин|изображ|фото|рисун|логотип|иконк)|\b(draw|paint|generate an image)\b/i;
+
+const VIDEO_MODES = { text: 'снято по описанию', image: 'картинка оживлена' };
+
+function videoCard(v) {
+  return h('figure', { class: 'gen-image gen-video' },
+    h('video', { src: v.url, controls: true, preload: 'metadata', playsinline: true, 'aria-label': v.prompt || 'видео' }),
+    h('figcaption', {}, h('span', { class: 'muted small', text: [VIDEO_MODES[v.mode] || v.mode, `${v.width}×${v.height}`, `${v.seconds} с · ${v.frames} кадров`, stem(v.model), `seed ${v.seed}`, fmtSec(v.elapsed_s)].filter(Boolean).join(' · ') }),
+      h('span', { class: 'gen-actions' },
+        h('a', { class: 'btn-pill', href: v.url, download: `video-${v.id}.webm` }, 'Скачать'))));
+}
 
 function imageCard(img) {
   const pic = h('img', { src: img.url, alt: img.prompt || 'картинка', loading: 'lazy', title: 'Открыть крупно' });
@@ -843,7 +907,8 @@ function imageCard(img) {
         h('a', { class: 'btn-pill', href: img.url, download: `image-${img.id}.png` }, 'Скачать'),
         h('button', { type: 'button', class: 'btn-pill', disabled: !!S.busy, onclick: () => setImageTarget({ source, mode: 'edit', url: img.url }) }, 'Изменить'),
         h('button', { type: 'button', class: 'btn-pill', disabled: !!S.busy, onclick: () => openMaskEditor(source, img.url) }, 'Дорисовать область'),
-        h('button', { type: 'button', class: 'btn-pill', disabled: !!S.busy, onclick: () => openOutpaint(source, img.url) }, 'Расширить'))));
+        h('button', { type: 'button', class: 'btn-pill', disabled: !!S.busy, onclick: () => openOutpaint(source, img.url) }, 'Расширить'),
+        S.videogen?.available ? h('button', { type: 'button', class: 'btn-pill', disabled: !!S.busy, title: 'Снять ролик, где эта картинка — первый кадр', onclick: () => setImageTarget({ source, mode: 'animate', url: img.url, video: true }) }, 'Оживить') : null)));
 }
 
 // the next message edits this picture: a chip above the input, cleared after sending
@@ -851,7 +916,8 @@ function setImageTarget(target) {
   S.imageTarget = target;
   renderControls();
   const msg = $('#msg');
-  msg.placeholder = 'Что изменить на картинке? Например: сделай фон ночным, добавь снег, перерисуй акварелью';
+  msg.placeholder = target.video ? 'Что происходит в ролике? Например: машина трогается и входит в поворот, слышен мотор'
+    : 'Что изменить на картинке? Например: сделай фон ночным, добавь снег, перерисуй акварелью';
   msg.focus();
 }
 
@@ -1104,7 +1170,7 @@ function renderThread() {
     const update = () => {
       const s = (Date.now() - S.busy.started) / 1000;
       const spent = s < 90 ? `${Math.floor(s)} с` : `${Math.floor(s / 60)} мин ${Math.floor(s % 60)} с`;
-      label.textContent = `${S.busy.drawing ? 'Рисую картинку' : S.busy.kind === 'code' ? 'Код-агент работает в песочнице' : s > 20 ? 'Работаю: поиск, рассуждение или запуск кода' : 'Ищу и думаю'} · ${spent}`;
+      label.textContent = `${S.busy.filming ? 'Снимаю видео' : S.busy.drawing ? 'Рисую картинку' : S.busy.kind === 'code' ? 'Код-агент работает в песочнице' : s > 20 ? 'Работаю: поиск, рассуждение или запуск кода' : 'Ищу и думаю'} · ${spent}`;
     };
     update();
     clearInterval(tickTimer);
@@ -1273,11 +1339,27 @@ const SETTING_FIELDS = {
     { key: 'flash_attention', label: 'Flash attention', type: 'switch' },
     { key: 'vae_tiling', label: 'VAE тайлами', type: 'switch', hint: 'Без тайлов сборка Vulkan может не выделить память под декодер' },
   ],
+  video: [
+    { key: 'frames', label: 'Кадров по умолчанию', type: 'number', min: 9, max: 241, step: 8, hint: 'LTX берёт 8k + 1 кадров (33, 65, 97, 121); если в просьбе названа длительность — считается из неё' },
+    { key: 'fps', label: 'Кадров в секунду', type: 'number', min: 8, max: 60, step: 1 },
+    { key: 'width', label: 'Ширина (площадь кадра)', type: 'number', min: 256, max: 1920, step: 32, hint: 'Задаёт число пикселей кадра; пропорции берутся из просьбы или из картинки' },
+    { key: 'height', label: 'Высота (площадь кадра)', type: 'number', min: 256, max: 1920, step: 32 },
+    { key: 'steps', label: 'Шаги', type: 'number', min: 1, max: 100, step: 1 },
+    { key: 'cfg_scale', label: 'CFG', type: 'range', min: 1, max: 12, step: 0.1 },
+    { key: 'sampler', label: 'Сэмплер', type: 'select' },
+    { key: 'scheduler', label: 'Расписание шума', type: 'select', empty: 'по умолчанию модели' },
+    { key: 'negative_prompt', label: 'Негативный промпт', type: 'textarea' },
+    { key: 'text_encoder_on_cpu', label: 'Энкодер на процессоре', type: 'switch', hint: '22B-модель и 12B-энкодер вместе не помещаются в 24 ГБ' },
+    { key: 'offload_to_cpu', label: 'Веса в оперативной памяти', type: 'switch', hint: 'Если не хватает видеопамяти: медленнее, но влезает' },
+    { key: 'flash_attention', label: 'Flash attention', type: 'switch' },
+    { key: 'vae_tiling', label: 'VAE тайлами (и по времени)', type: 'switch' },
+  ],
 };
 
 function settingsName(kind) {
   if (kind === 'text') return S.model || S.models?.default || '';
   if (kind === 'image') return S.imageModel || (S.imagegen?.models || []).find((m) => m.default)?.name || '';
+  if (kind === 'video') return S.videoModel || (S.videogen?.models || []).find((m) => m.default)?.name || '';
   return '';
 }
 
@@ -1360,8 +1442,8 @@ function renderSettingsCard() {
     el.append(h('p', { class: 'panel-empty', style: 'margin:0', text: 'Генератор картинок не настроен: положите модель в папку models/image или укажите её в configs/local.yaml (см. models/README.md).' }));
     return;
   }
-  if (kind === 'video') {
-    el.append(h('p', { class: 'panel-empty', style: 'margin:0', text: 'Видеомодели пока нет: положите её папкой в models/video (для LTX-2 — модель, VAE видео и звука, энкодер Gemma и коннекторы).' }));
+  if (kind === 'video' && !S.videogen?.available) {
+    el.append(h('p', { class: 'panel-empty', style: 'margin:0', text: 'Видеомодели пока нет: положите её папкой в models/video (для LTX-2 — модель, VAE видео и звука, энкодер Gemma и коннекторы) и перезапустите сервер.' }));
     return;
   }
   const data = S.modelSettings[kind];
@@ -1370,24 +1452,26 @@ function renderSettingsCard() {
     loadModelSettings(kind).then(renderSettingsCard).catch((e) => toast(e.message, 'error'));
     return;
   }
-  const models = kind === 'text' ? (S.models?.models || []).map((m) => [m.name, m.name]) : (S.imagegen?.models || []).map((m) => [m.name, m.label || m.name]);
+  const models = kind === 'text' ? (S.models?.models || []).map((m) => [m.name, m.name])
+    : ((kind === 'video' ? S.videogen : S.imagegen)?.models || []).map((m) => [m.name, m.label || m.name]);
   const select = h('select', { class: 'input', 'aria-label': 'Модель' }, models.map(([v, t]) => h('option', { value: v, text: t })));
   select.value = data.name;
   select.addEventListener('change', () => {
-    const def = kind === 'text' ? S.models?.default : (S.imagegen?.models || []).find((m) => m.default)?.name;
+    const def = kind === 'text' ? S.models?.default : ((kind === 'video' ? S.videogen : S.imagegen)?.models || []).find((m) => m.default)?.name;
     if (kind === 'text') { S.model = select.value === def ? null : select.value; renderModel(); }
+    else if (kind === 'video') { S.videoModel = select.value === def ? null : select.value; renderVideoModel(); }
     else { S.imageModel = select.value === def ? null : select.value; renderImageModel(); }
     savePrefs();
     renderSettingsCard();
   });
   const info = data.info || {};
-  const files = [info.vae && `VAE: ${info.vae}`, info.llm && `энкодер: ${info.llm}`].filter(Boolean).join(' · ');
+  const files = [info.vae && `VAE: ${info.vae}`, info.audio_vae && `звук: ${info.audio_vae}`, info.llm && `энкодер: ${info.llm}`, info.connectors && `коннекторы: ${info.connectors}`].filter(Boolean).join(' · ');
   el.append(h('div', { class: 'set-field' }, h('div', { class: 'set-head' }, h('span', { text: 'Модель' })), select,
     files ? h('span', { class: 'set-info', text: files }) : null));
   for (const f of SETTING_FIELDS[kind]) el.append(settingField(kind, f, data));
   el.append(h('button', { type: 'button', class: 'btn ghost', onclick: async () => {
     const res = await guarded(() => api('DELETE', `/settings/${kind}?name=${encodeURIComponent(data.name)}`), 'Настройки модели сброшены');
-    if (res) { S.modelSettings[kind] = res; if (kind === 'image') loadImagegen().catch(() => {}); renderSettingsCard(); }
+    if (res) { S.modelSettings[kind] = res; if (kind === 'image') loadImagegen().catch(() => {}); if (kind === 'video') loadVideogen().catch(() => {}); renderSettingsCard(); }
   } }, 'Сбросить к рекомендованным'),
   h('p', { class: 'hint', style: 'margin:0' }, 'Настройки хранятся на этом компьютере отдельно для каждой модели и применяются к новым запросам. «рек.» — значение, рекомендованное для модели (по её семейству и конфигу).'));
 }
@@ -1416,6 +1500,7 @@ function renderAll() {
   renderFolder();
   renderDialogs();
   renderModel();
+  renderVideoModel();
   renderImageModel();
   renderHeader();
   renderControls();
@@ -1449,7 +1534,13 @@ function askBody(text, opts = {}) {
     replace_last: !!opts.replaceLast,
     upload_fallback: true,  // files stay attached: a question they do not answer is routed as usual
     image: opts.replaceLast ? (from.image || null) : imageRequest(opts.image),
+    video: opts.replaceLast ? (from.video || null) : videoRequest(opts.video),
   };
+}
+
+function videoRequest(explicit) {
+  const extra = S.videoModel ? { model: S.videoModel } : {};
+  return explicit || S.videoModel ? { ...extra, ...(explicit || {}) } : null;
 }
 
 // the picture part of a request: an explicit action (a mode) and the user's model and size, which count
@@ -1470,10 +1561,14 @@ async function send(text, kind = 'ask', opts = {}) {
   if (!text || S.busy) return;
   // busy at once: a second Enter while the dialog is being created must not send the question twice
   S.error = null;
-  if (!opts.image && S.imageTarget && !opts.replaceLast) opts = { ...opts, image: { mode: S.imageTarget.mode, source: S.imageTarget.source } };
-  const drawing = !!opts.image || (!!S.policy?.imagegen && IMAGE_RE.test(text));
+  if (S.imageTarget && !opts.replaceLast && !opts.image && !opts.video) {
+    const t = S.imageTarget;
+    opts = t.video ? { ...opts, video: { mode: 'animate', source: t.source } } : { ...opts, image: { mode: t.mode, source: t.source } };
+  }
+  const filming = !!opts.video || (!!S.videogen?.available && VIDEO_RE.test(text));
+  const drawing = !filming && (!!opts.image || (!!S.policy?.imagegen && IMAGE_RE.test(text)));
   S.imageTarget = null;
-  S.busy = { kind, text, uploads: opts.replaceLast ? [] : [...S.attachments], started: Date.now(), replace: !!opts.replaceLast, drawing };
+  S.busy = { kind, text, uploads: opts.replaceLast ? [] : [...S.attachments], started: Date.now(), replace: !!opts.replaceLast, drawing, filming };
   if (!opts.keepInput) {
     $('#msg').value = '';
     autoGrow();
@@ -1893,7 +1988,7 @@ async function boot() {
   bindEvents();
   renderControls();
   try {
-    await Promise.all([loadStatus(), loadPolicy().catch(() => {}), loadModels().catch(() => {}), loadImagegen().catch(() => {}), loadDialogs()]);
+    await Promise.all([loadStatus(), loadPolicy().catch(() => {}), loadModels().catch(() => {}), loadImagegen().catch(() => {}), loadVideogen().catch(() => {}), loadDialogs()]);
   } catch (e) {
     toast(e.message, 'error');
   }

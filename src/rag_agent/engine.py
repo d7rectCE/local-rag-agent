@@ -20,6 +20,7 @@ from rag_agent.imagegen import (ASPECTS, ImageGenerator, ImageGenError, parse_si
                                 wants_image)
 from rag_agent import modelfiles
 from rag_agent.model_settings import ModelSettings
+from rag_agent.videogen import VideoGenError, VideoGenerator, plan_video, wants_video
 from rag_agent.config import REPO_ROOT, Settings, load_settings
 from rag_agent.policy import Policy, Provenance, defang_markdown
 from rag_agent import generation
@@ -442,6 +443,51 @@ class Engine:
             return ""
 
     @property
+    def videogen(self) -> VideoGenerator:
+        if getattr(self, "_videogen", None) is None:
+            self._videogen = VideoGenerator(self.settings)
+        return self._videogen
+
+    def _answer_video(self, question: str, turns: list[dict], session: str, uploads: list[str] | None,
+                      request: dict | None, steps: list[TraceStep]) -> Answer | None:
+        """Make a video from the words or from a picture; None when the request is not about a video."""
+        request = request or {}
+        source, source_ref = self._image_source(session, uploads, request.get("source"))
+        try:
+            dit = self.videogen.model_path(request.get("model"))
+        except VideoGenError as exc:
+            return Answer(question=question, answer=f"Не удалось снять видео: {exc}", answerable=False, grounded=True,
+                          route="video", model=self.llm.name)
+        t0 = time.perf_counter()
+        plan = plan_video(question, turns, self.llm, has_source=source is not None, label=modelfiles.label(dit))
+        steps.append(TraceStep(name="video_plan", duration_s=round(time.perf_counter() - t0, 3), detail={
+            "action": plan.action, "prompt": plan.prompt, "seconds": plan.seconds, "aspect": plan.aspect,
+            "source": source_ref, "refused": bool(plan.refused)}))
+        if plan.refused:
+            return Answer(question=question, answer=plan.refused, answerable=False, grounded=True, route="video",
+                          model=self.llm.name)
+        action = "image" if request.get("mode") == "animate" and source is not None else plan.action
+        if action == "none":
+            return None
+        use_source = action == "image"
+        try:
+            info = self.videogen.run(session, plan.prompt or question, request=question,
+                                     source=source if use_source else None, source_ref=source_ref if use_source else None,
+                                     seconds=plan.seconds, aspect=plan.aspect, seed=request.get("seed"),
+                                     model=request.get("model"))
+        except (VideoGenError, OSError) as exc:
+            return Answer(question=question, answer=f"Не удалось снять видео: {exc}", answerable=False, grounded=True,
+                          route="video", model=self.llm.name)
+        steps.append(TraceStep(name="video_gen", duration_s=info.elapsed_s, detail={
+            "mode": info.mode, "seed": info.seed, "size": [info.width, info.height], "frames": info.frames,
+            "fps": info.fps, "steps": info.steps}))
+        done = "Оживил картинку" if info.mode == "image" else "Снял видео"
+        text = (f"{done}: {info.width}×{info.height}, {info.seconds} с ({info.frames} кадров, {info.fps} к/с), "
+                f"{info.elapsed_s:.0f} с.\n\n**Промпт для генератора:** {info.prompt}")
+        return Answer(question=question, answer=text, answerable=True, grounded=True, route="video",
+                      model=self.llm.name, video={**info.model_dump(), "url": info.url, "seconds": info.seconds})
+
+    @property
     def imagegen(self) -> ImageGenerator:
         if getattr(self, "_imagegen", None) is None:
             self._imagegen = ImageGenerator(self.settings)
@@ -551,6 +597,12 @@ class Engine:
                 "текстом, генератор в этом ответе не запускался: не пиши, что нарисовал или изменил картинку, и не "
                 "говори, что не умеешь, — подскажи, как попросить (прикрепить фото скрепкой и написать, что сделать: "
                 "«перерисуй в стиле аниме, сохрани позу и лицо», «сделай фон ночным»);")
+        if self.videogen.available:
+            dit = self.videogen.catalog().get(self.videogen.default_name(), {}).get("path", "")
+            lines.append(f"- видео: генератор {modelfiles.label(dit)} на этом компьютере снимает ролик со звуком на "
+                         "несколько секунд по описанию или оживляет картинку (прикреплённую или нарисованную): "
+                         "просьба «сними видео…», «анимируй…», «оживи картинку» запускает его сама; если ты отвечаешь "
+                         "текстом, видео в этом ответе не снималось;")
         return "\n".join(lines)
 
     @staticmethod
@@ -799,6 +851,7 @@ class Engine:
         model: str | None = None,
         upload_fallback: bool = False,
         image: dict | None = None,
+        video: dict | None = None,
     ) -> Answer:
         """Route the question, then answer it from the user's files (with citations)
         or from general knowledge. ``history`` is the previous chat turns
@@ -810,10 +863,10 @@ class Engine:
         stay attached to the dialog): when the attached files do not answer, the question is routed as usual."""
         with self.llm.use(model, self.model_settings.get("text", model or self.settings.llm.model)):
             return self._ask(question, history, top_k, mode, route, rerank, symbols, reasoning, agent, uploads, session,
-                             confirmed, web, code, sandbox_net, upload_fallback, image)
+                             confirmed, web, code, sandbox_net, upload_fallback, image, video)
 
     def _ask(self, question, history, top_k, mode, route, rerank, symbols, reasoning, agent, uploads, session,
-             confirmed, web, code, sandbox_net, upload_fallback=False, image=None) -> Answer:
+             confirmed, web, code, sandbox_net, upload_fallback=False, image=None, video=None) -> Answer:
         question = question.strip()
         if not question:
             raise ValueError("empty question")
@@ -886,9 +939,12 @@ class Engine:
         # a picture to change; the UI's choice of model and size alone ({"model", "size"}) is not a request
         # (an image attached to the question always asks the plan: "сделай из меня рыцаря" has no word of the lists,
         # and the plan says "none" for "что на фото?", which then goes to the files as before)
+        # videos first: "анимируй её" is about a picture too; the plan says "none" when no video is wanted
+        if session and self.videogen.available and ((video and video.get("mode")) or wants_video(question)):
+            answer = self._answer_video(question, turns, session, uploads, video, steps)
         explicit = bool(image and image.get("mode"))
         attached = bool(session) and any(self.uploads.get(session, u).file_type in IMAGE_EXTS for u in uploads or [])
-        if session and self.imagegen.available and (
+        if answer is None and session and self.imagegen.available and (
                 explicit or attached or wants_image(question)
                 or (wants_edit(question) and self._has_picture(session, uploads))):
             answer = self._answer_image(question, turns, session, uploads, image, steps)

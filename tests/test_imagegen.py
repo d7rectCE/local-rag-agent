@@ -46,7 +46,10 @@ class FakeSd:
         for flag in ("-i", "--mask", "-r"):
             if flag in opt:
                 self.inputs[flag] = Path(opt[flag]).read_bytes()
-        Image.new("RGB", (int(opt["-W"]), int(opt["-H"])), (200, 60, 60)).save(opt["-o"])
+        if opt["-o"].endswith(".webm"):  # a video (videogen): a few bytes stand for the clip
+            Path(opt["-o"]).write_bytes(b"webm")
+        else:
+            Image.new("RGB", (int(opt["-W"]), int(opt["-H"])), (200, 60, 60)).save(opt["-o"])
 
         class Done:
             returncode, stdout, stderr = 0, "", ""

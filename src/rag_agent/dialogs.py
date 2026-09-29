@@ -169,7 +169,9 @@ class DialogStore:
             payload = json.loads(r["payload"]) if r["payload"] else {}
             code = payload if r["kind"] == "code" else (payload or {}).get("code") if r["kind"] == "answer" else None
             image = (payload or {}).get("image") if r["kind"] == "answer" else None
-            content = code_summary(code) if code else image_summary(image) if image else r["content"]
+            video = (payload or {}).get("video") if r["kind"] == "answer" else None
+            content = (code_summary(code) if code else image_summary(image) if image else
+                       video_summary(video) if video else r["content"])
             out.append({"role": r["role"], "content": content})
         return out
 
@@ -184,6 +186,13 @@ def image_summary(img: dict) -> str:
     would copy ("Перерисовал картинку: …") when asked for another change without drawing anything."""
     return (f"[Генератор картинок {IMAGE_DONE.get(img.get('mode'), 'сделал картинку')} "
             f"{img.get('width')}×{img.get('height')}, она показана пользователю. Промпт: {img.get('prompt') or ''}]")
+
+
+def video_summary(v: dict) -> str:
+    """A video as one assistant turn: what the generator made (see image_summary)."""
+    what = "оживил картинку в ролик" if v.get("mode") == "image" else "снял ролик"
+    return (f"[Генератор видео {what} {v.get('width')}×{v.get('height')}, {v.get('frames')} кадров при "
+            f"{v.get('fps')} к/с, он показан пользователю. Промпт: {v.get('prompt') or ''}]")
 
 
 CODE_STATUS = {"done": "готово", "failed": "не удалось", "limit": "лимит шагов", "error": "ошибка", "running": "идёт"}

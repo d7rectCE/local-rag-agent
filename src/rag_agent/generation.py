@@ -129,6 +129,8 @@ class Answer(BaseModel):
     truncated: bool = False  # the answer hit the generation limit (llm.max_tokens)
     # a generated or edited image (imagegen): id, dialog, mode, prompt, size, seed, url
     image: dict | None = None
+    # a generated video (videogen): id, dialog, mode, prompt, size, frames, fps, url
+    video: dict | None = None
 
 
 def _call(llm: BaseLLM, messages: list[dict], json_schema: dict | None, purpose: str, reasoning_budget: int | None):

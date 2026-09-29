@@ -26,7 +26,7 @@ FAMILIES: dict[str, dict] = {
 # when a file carries no architecture (safetensors), its name tells
 _NAME_FAMILY = [(re.compile(p, re.IGNORECASE), f) for p, f in (
     (r"qwen[-_]?image[-_]?2\.?1", "qwen_image21"), (r"qwen[-_]?image", "qwen_image"), (r"krea[-_]?2", "krea2"),
-    (r"flux", "flux"), (r"z[-_]?image", "z_image"), (r"ltx[-_]?2", "ltx2"), (r"ltx", "ltxv"), (r"\bwan", "wan"),
+    (r"flux", "flux"), (r"z[-_]?image", "z_image"), (r"ltxv?[-_]?2", "ltx2"), (r"ltx", "ltxv"), (r"\bwan", "wan"),
     (r"hunyuan[-_]?video", "hunyuan_video"))]
 # a distilled build: few steps, no classifier-free guidance
 TURBO = re.compile(r"turbo|lightning|distill|schnell|hyper|lcm|\bfast\b", re.IGNORECASE)
@@ -79,9 +79,11 @@ def gguf_meta(path: str | Path) -> dict:
 
 def family(path: str | Path) -> str:
     arch = str(gguf_meta(path).get("general.architecture") or "")
+    name = Path(path).name
+    if arch.startswith("ltx") and re.search(r"ltxv?[-_]?2", name, re.IGNORECASE):
+        return "ltx2"  # LTX-2 builds may carry a generic "ltxv" architecture
     if arch:
         return arch
-    name = Path(path).name
     return next((f for rx, f in _NAME_FAMILY if rx.search(name)), "")
 
 
@@ -101,7 +103,7 @@ def is_turbo(path: str | Path) -> bool:
 MODEL_EXTS = {".gguf", ".safetensors"}
 _AUDIO_VAE = re.compile(r"audio[-_ ]?vae|vocoder", re.IGNORECASE)
 _VAE = re.compile(r"vae|autoencoder", re.IGNORECASE)
-_CONNECTORS = re.compile(r"connector", re.IGNORECASE)
+_CONNECTORS = re.compile(r"connector|projections", re.IGNORECASE)  # LTX-2.3: "embeddings connectors" / "projections"
 _ENCODER = re.compile(r"text[-_]?enc|qwen[\d._-]*vl|gemma|umt5|t5xxl|clip[-_]?(l|g|vision)?\b|llava|mistral|llama|"
                       r"qwen\d[\d._-]*[-_]\d+b", re.IGNORECASE)
 _TEXT_ARCH = re.compile(r"^(llama|qwen\d*\w*|gemma\d*|mistral\w*|phi\d*|t5\w*|clip\w*|bert|glm\w*|deepseek\w*)$")

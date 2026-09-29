@@ -316,6 +316,34 @@ class ImageGenConfig(BaseModel):
     timeout_s: float = 900.0
 
 
+class VideoGenConfig(BaseModel):
+    """Video generation in the chat (LTX-2 through sd-cli -M vid_gen). On as soon as a model is found in
+    models/video (a folder: the model, the video VAE, the audio VAE, the text encoder, the connectors) and
+    imagegen.sd_cli exists; the paths below are for a model elsewhere."""
+
+    enabled: bool = True
+    sd_cli: str = ""  # default: imagegen.sd_cli
+    diffusion_model: str = ""
+    vae: str = ""
+    llm: str = ""
+    audio_vae: str = ""
+    connectors: str = ""
+    steps: int = 20
+    cfg_scale: float = 6.0
+    sampler: str = "euler"
+    scheduler: str = ""
+    negative_prompt: str = ""
+    frames: int = 33  # 8k + 1 frames: 33 at 24 fps is 1.4 s
+    fps: int = 24
+    width: int = 1024  # the pixel count of a frame; the proportions come from the request or the source picture
+    height: int = 576
+    text_encoder_on_cpu: bool = True  # a 22B model and a 12B encoder do not fit 24 GB together
+    offload_to_cpu: bool = False
+    flash_attention: bool = True
+    vae_tiling: bool = True  # spatial and temporal tiles of the video VAE decode
+    timeout_s: float = 3600.0
+
+
 class SecurityConfig(BaseModel):
     """Policy layer switch (ТЗ ч.2 S20). Turning it off is only for the H16 comparison in red-team runs."""
 
@@ -339,6 +367,7 @@ class Settings(BaseModel):
     web: WebConfig = WebConfig()
     images: ImagesConfig = ImagesConfig()
     imagegen: ImageGenConfig = ImageGenConfig()
+    videogen: VideoGenConfig = VideoGenConfig()
     security: SecurityConfig = SecurityConfig()
     tracing: TracingConfig = TracingConfig()
     evaluation: EvaluationConfig = EvaluationConfig()

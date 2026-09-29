@@ -625,6 +625,15 @@ class Engine:
                 "текстом, генератор в этом ответе не запускался: не пиши, что нарисовал или изменил картинку, и не "
                 "говори, что не умеешь, — подскажи, как попросить (прикрепить фото скрепкой и написать, что сделать: "
                 "«перерисуй в стиле аниме, сохрани позу и лицо», «сделай фон ночным»);")
+            if modelfiles.is_turbo(dit):
+                # a distilled build redraws a face in its own manner: the eyes and hair of a character change
+                keep = [m["label"] for m in self.imagegen.models()
+                        if m["complete"] and not modelfiles.is_turbo(self.imagegen.catalog()[m["name"]]["path"])]
+                lines.append(
+                    "  выбранная модель — быстрая (турбо-сборка на несколько шагов): при правке она перерисовывает лица "
+                    "по-своему, у персонажа могут поменяться черты, цвет глаз и волос. Если просят сохранить "
+                    "человека или персонажа с картинки, предупреди об этом"
+                    + (f" и посоветуй выбрать слева {', '.join(keep)}: без турбо лицо с картинки сохраняется;" if keep else ";"))
         if self.videogen.available:
             dit = self.videogen.catalog().get(self.videogen.default_name(), {}).get("path", "")
             lines.append(f"- видео: генератор {modelfiles.label(dit)} на этом компьютере снимает ролик со звуком на "

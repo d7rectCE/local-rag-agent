@@ -298,7 +298,10 @@ def test_the_chat_model_knows_itself_and_the_selected_generator(gen_engine, tmp_
     text = gen_engine.capabilities("off", "off", False, "krea2-turbo-Q4_K_M.gguf")
     assert "генератор Krea 2 (krea2-turbo-Q4_K_M)" in text and gen_engine.llm.name.removeprefix("ollama:") in text
     assert "image-to-image" in text and "не говори, что не умеешь" in text
-    assert "генератор dit" in gen_engine.capabilities("off", "off", False)  # the default one when none is chosen
+    # a turbo build redraws faces its own way: the chat model warns about it when a likeness is asked for
+    assert "турбо-сборка" in text and "цвет глаз" in text
+    default = gen_engine.capabilities("off", "off", False)
+    assert "генератор dit" in default and "турбо-сборка" not in default  # the default one when none is chosen
 
 
 def test_an_attached_picture_asks_the_plan_whatever_the_words(gen_engine):
